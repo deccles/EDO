@@ -41,12 +41,15 @@ public class EliteLogParser {
                 return parseFsdTarget(ts, obj);
             case SAASIGNALS_FOUND:
                 return parseSaaSignalsFound(ts, obj);
+
+            // NEW: system/bodies-related events
             case SCAN:
                 return parseScan(ts, obj);
             case FSS_DISCOVERY_SCAN:
                 return parseFssDiscoveryScan(ts, obj);
             case FSS_BODY_SIGNAL_DISCOVERED:
                 return parseFssBodySignals(ts, obj);
+
             case NAV_ROUTE:
                 return new EliteLogEvent.NavRouteEvent(ts, obj);
             case NAV_ROUTE_CLEAR:
@@ -56,7 +59,7 @@ public class EliteLogParser {
             case STATUS:
                 return parseStatus(ts, obj);
             default:
-                // For now, map all other events to GenericEvent, but keep the type and raw JSON.
+                // For everything else, fall back to generic event.
                 return new EliteLogEvent.GenericEvent(ts, type, obj);
         }
     }

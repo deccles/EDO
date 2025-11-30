@@ -36,7 +36,7 @@ import java.util.Map;
  */
 public class SystemTabPanel extends JPanel {
 
-    // Close to the default ED HUD orange
+    // ED-style orange
     private static final Color ED_ORANGE = new Color(255, 140, 0);
 
     private final JLabel headerLabel;
@@ -135,7 +135,7 @@ public class SystemTabPanel extends JPanel {
         scrollPane.setBorder(new EmptyBorder(4, 4, 4, 4));
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
-        // Hide scrollbar (mouse wheel still works)
+        // Hide scroll bar (mouse wheel still works)
         JScrollBar vBar = scrollPane.getVerticalScrollBar();
         if (vBar != null) {
             vBar.setPreferredSize(new Dimension(0, 0));
@@ -143,23 +143,21 @@ public class SystemTabPanel extends JPanel {
 
         add(scrollPane, BorderLayout.CENTER);
 
-        // 1) Preload bodies from the last 2 journal files so we see the
-        //    current system immediately at startup.
+        // Preload last 2 journal files to reconstruct current system on startup
         preloadFromHistory();
 
-        // 2) Subscribe to live journal events (tail only) for updates.
+        // Then start listening for live events
         LiveJournalMonitor.getInstance().addListener(this::onLogEvent);
     }
 
     private void preloadFromHistory() {
         try {
             EliteJournalReader reader = new EliteJournalReader();
-            // Last 2 files in case the game just rolled over logs.
             for (EliteLogEvent event : reader.readEventsFromLastNJournalFiles(2)) {
                 tracker.handleEvent(event);
             }
         } catch (IOException | IllegalStateException ex) {
-            // If anything goes wrong, just fall back to live tailing.
+            // If it fails, we just rely on live tailing.
         }
     }
 
@@ -200,9 +198,11 @@ public class SystemTabPanel extends JPanel {
             if (event instanceof EliteLogEvent.LocationEvent) {
                 EliteLogEvent.LocationEvent e = (EliteLogEvent.LocationEvent) event;
                 enterSystem(e.getStarSystem(), e.getSystemAddress());
+
             } else if (event instanceof EliteLogEvent.FsdJumpEvent) {
                 EliteLogEvent.FsdJumpEvent e = (EliteLogEvent.FsdJumpEvent) event;
                 enterSystem(e.getStarSystem(), e.getSystemAddress());
+
             } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
                 EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
                 if (systemName == null) {
@@ -214,6 +214,7 @@ public class SystemTabPanel extends JPanel {
                 fssProgress = e.getProgress();
                 totalBodies = e.getBodyCount();
                 nonBodyCount = e.getNonBodyCount();
+
             } else if (event instanceof EliteLogEvent.ScanEvent) {
                 EliteLogEvent.ScanEvent e = (EliteLogEvent.ScanEvent) event;
 
@@ -231,9 +232,11 @@ public class SystemTabPanel extends JPanel {
                 info.gravityMS = e.getSurfaceGravity();
                 info.atmoOrType = chooseAtmoOrType(e);
                 info.highValue = isHighValue(e);
+
             } else if (event instanceof SaasignalsFoundEvent) {
                 SaasignalsFoundEvent e = (SaasignalsFoundEvent) event;
                 handleSignals(e.getBodyId(), e.getSignals());
+
             } else if (event instanceof EliteLogEvent.FssBodySignalsEvent) {
                 EliteLogEvent.FssBodySignalsEvent e = (EliteLogEvent.FssBodySignalsEvent) event;
                 handleSignals(e.getBodyId(), e.getSignals());

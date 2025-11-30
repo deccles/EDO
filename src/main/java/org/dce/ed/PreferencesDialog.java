@@ -4,10 +4,15 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.io.File;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JDialog;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
@@ -16,17 +21,19 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 
 /**
- * Simple Preferences dialog for the overlay.
- * Currently just a stub with a few example fields.
- * Real settings can be hooked into your prefs system later.
+ * Preferences dialog for the overlay.
  */
 public class PreferencesDialog extends JDialog {
+
+    // Logging-tab fields so OK can read them
+    private JCheckBox autoDetectCheckBox;
+    private JTextField customPathField;
 
     public PreferencesDialog(OverlayFrame owner) {
         super(owner, "Overlay Preferences", true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
-        setMinimumSize(new Dimension(420, 320));
+        setMinimumSize(new Dimension(460, 340));
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("General", createGeneralPanel());
@@ -43,16 +50,16 @@ public class PreferencesDialog extends JDialog {
     private JPanel createGeneralPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        panel.setOpaque(false);
 
-        JPanel content = new JPanel();
+        JPanel content = new JPanel(new GridBagLayout());
         content.setOpaque(false);
-        content.setLayout(new java.awt.GridBagLayout());
 
-        java.awt.GridBagConstraints gbc = new java.awt.GridBagConstraints();
+        GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
-        gbc.anchor = java.awt.GridBagConstraints.WEST;
-        gbc.insets = new java.awt.Insets(4, 4, 4, 4);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(4, 4, 4, 4);
 
         JLabel startWithWindowsLabel = new JLabel("Start overlay with Windows (stub):");
         JCheckBox startWithWindows = new JCheckBox();
@@ -69,60 +76,97 @@ public class PreferencesDialog extends JDialog {
     private JPanel createOverlayPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        panel.setOpaque(false);
 
-        JPanel content = new JPanel();
+        JPanel content = new JPanel(new GridBagLayout());
         content.setOpaque(false);
-        content.setLayout(new java.awt.GridBagLayout());
 
-        java.awt.GridBagConstraints gbc = new java.awt.GridBagConstraints();
+        GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
-        gbc.anchor = java.awt.GridBagConstraints.WEST;
-        gbc.insets = new java.awt.Insets(4, 4, 4, 4);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(4, 4, 4, 4);
 
-        JLabel opacityLabel = new JLabel("Overlay opacity (0.0 - 1.0):");
-        JTextField opacityField = new JTextField("0.8", 6);
-
-        content.add(opacityLabel, gbc);
-        gbc.gridx = 1;
-        content.add(opacityField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy++;
-        JLabel mouseHint = new JLabel("Mouse behavior options will go here.");
-        content.add(mouseHint, gbc);
+        JLabel dummyLabel = new JLabel("Overlay options (stub, to be expanded later).");
+        content.add(dummyLabel, gbc);
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
     }
 
+    /**
+     * Logging tab: choose between auto-detected live folder and a custom test folder.
+     */
     private JPanel createLoggingPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        panel.setOpaque(false);
 
-        JPanel content = new JPanel();
+        JPanel content = new JPanel(new GridBagLayout());
         content.setOpaque(false);
-        content.setLayout(new java.awt.GridBagLayout());
 
-        java.awt.GridBagConstraints gbc = new java.awt.GridBagConstraints();
+        GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
-        gbc.anchor = java.awt.GridBagConstraints.WEST;
-        gbc.insets = new java.awt.Insets(4, 4, 4, 4);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(4, 4, 4, 4);
 
+        // --- Auto-detect checkbox ---
         JLabel journalLabel = new JLabel("Use auto-detected ED log folder:");
-        JCheckBox autoDetect = new JCheckBox();
-        autoDetect.setSelected(true);
-        autoDetect.setOpaque(false);
+        autoDetectCheckBox = new JCheckBox();
+        autoDetectCheckBox.setOpaque(false);
+
+        // Load current prefs
+        boolean auto = OverlayPreferences.isAutoLogDir();
+        autoDetectCheckBox.setSelected(auto);
 
         content.add(journalLabel, gbc);
         gbc.gridx = 1;
-        content.add(autoDetect, gbc);
+        content.add(autoDetectCheckBox, gbc);
 
+        // --- Custom path field + browse button ---
         gbc.gridx = 0;
         gbc.gridy++;
-        JLabel pathLabel = new JLabel("(Custom path fields / browse button can go here.)");
+        JLabel pathLabel = new JLabel("Custom journal folder (for testing):");
         content.add(pathLabel, gbc);
+
+        gbc.gridx = 1;
+        JPanel pathPanel = new JPanel(new BorderLayout(4, 0));
+        pathPanel.setOpaque(false);
+
+        customPathField = new JTextField(24);
+        customPathField.setText(OverlayPreferences.getCustomLogDir());
+
+        JButton browseButton = new JButton("Browse...");
+        browseButton.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser();
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            chooser.setDialogTitle("Select Elite Dangerous journal folder");
+            String existing = customPathField.getText().trim();
+            if (!existing.isEmpty()) {
+                File f = new File(existing);
+                if (f.isDirectory()) {
+                    chooser.setCurrentDirectory(f);
+                }
+            }
+            int result = chooser.showOpenDialog(PreferencesDialog.this);
+            if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
+                customPathField.setText(chooser.getSelectedFile().getAbsolutePath());
+            }
+        });
+
+        pathPanel.add(customPathField, BorderLayout.CENTER);
+        pathPanel.add(browseButton, BorderLayout.EAST);
+        content.add(pathPanel, gbc);
+
+        // Enable/disable fields based on auto-detect state
+        Runnable updateEnabled = () -> {
+            boolean useAuto = autoDetectCheckBox.isSelected();
+            customPathField.setEnabled(!useAuto);
+            browseButton.setEnabled(!useAuto);
+        };
+        autoDetectCheckBox.addActionListener(e -> updateEnabled.run());
+        updateEnabled.run();
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
@@ -137,7 +181,7 @@ public class PreferencesDialog extends JDialog {
         JButton cancel = new JButton("Cancel");
 
         ok.addActionListener(e -> {
-            // TODO: persist settings
+            applyAndSavePreferences();
             dispose();
         });
 
@@ -146,5 +190,16 @@ public class PreferencesDialog extends JDialog {
         panel.add(cancel);
         panel.add(ok);
         return panel;
+    }
+
+    private void applyAndSavePreferences() {
+        if (autoDetectCheckBox != null && customPathField != null) {
+            boolean auto = autoDetectCheckBox.isSelected();
+            OverlayPreferences.setAutoLogDir(auto);
+            if (!auto) {
+                OverlayPreferences.setCustomLogDir(customPathField.getText().trim());
+            }
+        }
+        // Other tabs can be wired into OverlayPreferences later as needed.
     }
 }

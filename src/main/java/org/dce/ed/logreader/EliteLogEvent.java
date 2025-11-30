@@ -611,18 +611,8 @@ public abstract class EliteLogEvent {
     }
 
     /**
-     * Generic catch-all event when we don't have a specific subclass yet.
-     */
-    public static final class GenericEvent extends EliteLogEvent {
-        public GenericEvent(Instant timestamp, EliteEventType type, JsonObject rawJson) {
-            super(timestamp, type, rawJson);
-        }
-    }
-    
-    /**
-     * Body or star scan (Scan event).
-     *
-     * We only keep the fields needed for the overlay System tab for now.
+     * Scan event for stars and bodies.
+     * Backed by the journal "Scan" event.
      */
     public static final class ScanEvent extends EliteLogEvent {
 
@@ -634,7 +624,7 @@ public abstract class EliteLogEvent {
         private final String planetClass;
         private final String atmosphere;
         private final String terraformState;
-        private final Double surfaceGravity; // m/s^2, may be null
+        private final Double surfaceGravity;
         private final boolean wasDiscovered;
         private final boolean wasMapped;
         private final String starType;
@@ -719,7 +709,7 @@ public abstract class EliteLogEvent {
     }
 
     /**
-     * FSSDiscoveryScan – “honk”: contains body and non-body counts for the system.
+     * FSSDiscoveryScan ("honk") – summary of bodies known in the system.
      */
     public static final class FssDiscoveryScanEvent extends EliteLogEvent {
 
@@ -736,7 +726,6 @@ public abstract class EliteLogEvent {
                                      int nonBodyCount,
                                      String systemName,
                                      long systemAddress) {
-
             super(timestamp, EliteEventType.FSS_DISCOVERY_SCAN, rawJson);
             this.progress = progress;
             this.bodyCount = bodyCount;
@@ -765,6 +754,7 @@ public abstract class EliteLogEvent {
             return systemAddress;
         }
     }
+
 
     /**
      * FSSBodySignals – very similar to SAASignalsFound, but coming from the FSS.
@@ -805,6 +795,14 @@ public abstract class EliteLogEvent {
 
         public List<SaasignalsFoundEvent.Signal> getSignals() {
             return signals;
+        }
+    }
+    /**
+     * Generic catch-all event when we don't have a specific subclass yet.
+     */
+    public static final class GenericEvent extends EliteLogEvent {
+        public GenericEvent(Instant timestamp, EliteEventType type, JsonObject rawJson) {
+            super(timestamp, type, rawJson);
         }
     }
 
