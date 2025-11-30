@@ -16,6 +16,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.dce.ed.OverlayPreferences;
+
 /**
  * High-level convenience API for reading Elite Dangerous journal events.
  */
@@ -29,7 +31,7 @@ public class EliteJournalReader {
      * @throws IllegalStateException if the directory cannot be located.
      */
     public EliteJournalReader() {
-        this(EliteLogFileLocator.findDefaultJournalDirectory());
+    	this(OverlayPreferences.resolveJournalDirectory());
     }
 
     /**
