@@ -1,24 +1,5 @@
 package org.dce.ed;
 
-import org.dce.ed.logreader.EliteJournalReader;
-import org.dce.ed.logreader.EliteLogEvent;
-import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
-import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
-
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JScrollBar;
-import javax.swing.ScrollPaneConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.ListSelectionModel;
-import javax.swing.border.EmptyBorder;
-import javax.swing.table.AbstractTableModel;
-import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.JTableHeader;
-import javax.swing.table.TableColumnModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -32,6 +13,27 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollBar;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.JViewport;
+import javax.swing.ListSelectionModel;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.border.EmptyBorder;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableColumnModel;
+
+import org.dce.ed.logreader.EliteJournalReader;
+import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
+import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
+import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
+
 /**
  * System tab – shows system bodies based on local journal events,
  * with a fallback to EDSM lookup when we don't have enough history.
@@ -42,7 +44,7 @@ import java.util.Map;
 public class SystemTabPanel extends JPanel {
 
     // Close to the default ED HUD orange
-    private static final Color ED_ORANGE = new Color(255, 140, 0);
+    private static final Color ED_ORANGE = new Color(255, 120, 0);
 
     private final JLabel headerLabel;
     private final SystemBodiesTableModel tableModel;
@@ -70,6 +72,7 @@ public class SystemTabPanel extends JPanel {
         table.setShowVerticalLines(false);
         table.setForeground(ED_ORANGE);
         table.setBackground(new Color(0, 0, 0, 0));
+        
         table.setRowHeight(table.getRowHeight() + 2);
         table.setIntercellSpacing(new Dimension(4, 1));
         table.setFont(table.getFont().deriveFont(12f));
@@ -78,19 +81,13 @@ public class SystemTabPanel extends JPanel {
         table.setColumnSelectionAllowed(false);
         table.setCellSelectionEnabled(false);
 
-        // Transparent, orange header row
+     // ED-style header row: bold orange text on black background
         JTableHeader header = table.getTableHeader();
-        header.setOpaque(false);
+        header.setOpaque(true);
         header.setForeground(ED_ORANGE);
-        header.setBackground(new Color(0, 0, 0, 0));
+        header.setBackground(Color.BLACK);
         header.setFont(header.getFont().deriveFont(Font.BOLD, 11f));
         header.setDefaultRenderer(new DefaultTableCellRenderer() {
-            {
-                setOpaque(false);
-                setForeground(ED_ORANGE);
-                setBorder(new EmptyBorder(2, 4, 2, 4));
-            }
-
             @Override
             public Component getTableCellRendererComponent(JTable table,
                                                            Object value,
@@ -98,9 +95,17 @@ public class SystemTabPanel extends JPanel {
                                                            boolean hasFocus,
                                                            int row,
                                                            int column) {
-                super.getTableCellRendererComponent(table, value, false, false, row, column);
-                setText(value == null ? "" : value.toString());
-                return this;
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                        table, value, false, false, row, column);
+
+                // Solid black so the LAF's grey header bar never shows through
+                label.setOpaque(true);
+                label.setBackground(Color.BLACK);
+                label.setForeground(ED_ORANGE);
+                label.setFont(label.getFont().deriveFont(Font.BOLD));
+                label.setBorder(null);
+
+                return label;
             }
         });
 
@@ -140,7 +145,15 @@ public class SystemTabPanel extends JPanel {
         scrollPane.getViewport().setOpaque(false);
         scrollPane.setBorder(new EmptyBorder(4, 4, 4, 4));
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-
+        scrollPane.getViewport().setOpaque(false);
+        
+     // This is the piece painting the white bar:
+        JViewport headerViewport = scrollPane.getColumnHeader();
+        if (headerViewport != null) {
+            headerViewport.setOpaque(false);
+            headerViewport.setBackground(new Color(0, 0, 0, 0));
+        }
+        
         // Hide scrollbar (mouse wheel still works)
         JScrollBar vBar = scrollPane.getVerticalScrollBar();
         if (vBar != null) {

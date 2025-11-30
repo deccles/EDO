@@ -43,6 +43,7 @@ public final class SystemCache {
     private SystemCache() {
         this.gson = new GsonBuilder()
                 .setPrettyPrinting()
+                .serializeSpecialFloatingPointValues()
                 .create();
         String home = System.getProperty("user.home");
         if (home == null || home.isEmpty()) {
@@ -89,6 +90,8 @@ public final class SystemCache {
             return;
         }
 
+        System.out.println("SystemCache: loading from " + cachePath.toAbsolutePath());
+        
         try (BufferedReader reader = Files.newBufferedReader(cachePath, StandardCharsets.UTF_8)) {
             Type type = new TypeToken<List<CachedSystem>>() {}.getType();
             List<CachedSystem> systems = gson.fromJson(reader, type);
