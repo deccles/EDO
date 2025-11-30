@@ -99,11 +99,15 @@ public class OverlayFrame extends JFrame {
         // Load saved bounds if available; otherwise use defaults
         loadBoundsFromPreferences(prefs, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
 
-        // Add custom resize handler for edges/corners
+     // Add custom resize handler for edges/corners
         ResizeHandler resizeHandler = new ResizeHandler(this);
         JComponent root = getRootPane();
         root.addMouseListener(resizeHandler);
         root.addMouseMotionListener(resizeHandler);
+
+        // Also attach to the title bar so top-edge drags on the bar can resize
+        titleBar.addMouseListener(resizeHandler);
+        titleBar.addMouseMotionListener(resizeHandler);
     }
 
     public void showOverlay() {

@@ -87,33 +87,6 @@ public class EliteJournalReader {
     }
 
     /**
-     * Read events from the last N journal files (by name, ascending).
-     * N <= 0 means "nothing".
-     */
-    public List<EliteLogEvent> readEventsFromLastNJournalFiles(int n) throws IOException {
-        if (n <= 0) {
-            return List.of();
-        }
-
-        List<Path> journalFiles = listJournalFiles();
-        if (journalFiles.isEmpty()) {
-            return List.of();
-        }
-
-        int start = Math.max(0, journalFiles.size() - n);
-        List<EliteLogEvent> events = new ArrayList<>();
-
-        for (int i = start; i < journalFiles.size(); i++) {
-            readEventsFromFile(journalFiles.get(i), events);
-        }
-
-        // sort by timestamp to keep consistent ordering
-        events.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
-        return events;
-    }
-
-    
-    /**
      * Read only events whose timestamp's local date is "today"
      * (according to the system default time zone).
      */
@@ -183,6 +156,32 @@ public class EliteJournalReader {
         return filteredByDate;
     }
 
+    /**
+     * Read events from the last N journal files (by file name order).
+     * N <= 0 means "no events".
+     */
+    public List<EliteLogEvent> readEventsFromLastNJournalFiles(int n) throws IOException {
+        if (n <= 0) {
+            return List.of();
+        }
+
+        List<Path> journalFiles = listJournalFiles();
+        if (journalFiles.isEmpty()) {
+            return List.of();
+        }
+
+        int start = Math.max(0, journalFiles.size() - n);
+        List<EliteLogEvent> events = new ArrayList<>();
+
+        for (int i = start; i < journalFiles.size(); i++) {
+            readEventsFromFile(journalFiles.get(i), events);
+        }
+
+        events.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
+        return events;
+    }
+
+    
     /**
      * Return a sorted list of all local dates for which there is at least one
      * Journal.*.log file in the journal directory.

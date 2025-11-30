@@ -101,6 +101,25 @@ public class EliteOverlayTabbedPane extends JPanel {
         routeButton.doClick();
 
         add(tabBar, BorderLayout.NORTH);
+        
+        
+        try {
+            org.dce.ed.logreader.LiveJournalMonitor monitor =
+                    org.dce.ed.logreader.LiveJournalMonitor.getInstance();
+
+            monitor.addListener(event -> {
+                // Log tab (if you added a live handler there)
+                // logTabPanel.handleLogEvent(event);
+
+                // System tab: this is "step 4"
+                systemTab.handleLogEvent(event);
+            });
+
+//            monitor.start(); // if your monitor requires an explicit start
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        
         add(cardPanel, BorderLayout.CENTER);
     }
 

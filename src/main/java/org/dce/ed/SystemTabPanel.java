@@ -2,8 +2,9 @@ package org.dce.ed;
 
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
+import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
 import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
-import org.dce.ed.logreader.LiveJournalMonitor;
 
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -13,11 +14,11 @@ import javax.swing.JScrollBar;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.ListSelectionModel;
+import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
-import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -32,18 +33,24 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * System tab – shows system bodies based on journal events.
+ * System tab – shows system bodies based on local journal events,
+ * with a fallback to EDSM lookup when we don't have enough history.
+ *
+ * Bodies are also cached on disk via {@link SystemCache} so we can
+ * instantly populate systems we've seen before.
  */
 public class SystemTabPanel extends JPanel {
 
-    // ED-style orange
+    // Close to the default ED HUD orange
     private static final Color ED_ORANGE = new Color(255, 140, 0);
 
     private final JLabel headerLabel;
     private final SystemBodiesTableModel tableModel;
     private final JTable table;
 
-    private final SystemTracker tracker = new SystemTracker();
+    final SystemTracker tracker = new SystemTracker();
+    private final SystemCache cache = SystemCache.getInstance();
+    private final EdsmClient edsmClient = new EdsmClient();
 
     public SystemTabPanel() {
         super(new BorderLayout());
@@ -53,7 +60,6 @@ public class SystemTabPanel extends JPanel {
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 6, 4, 6));
         headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
-
         add(headerLabel, BorderLayout.NORTH);
 
         tableModel = new SystemBodiesTableModel();
@@ -72,7 +78,7 @@ public class SystemTabPanel extends JPanel {
         table.setColumnSelectionAllowed(false);
         table.setCellSelectionEnabled(false);
 
-        // Transparent, orange header
+        // Transparent, orange header row
         JTableHeader header = table.getTableHeader();
         header.setOpaque(false);
         header.setForeground(ED_ORANGE);
@@ -135,7 +141,7 @@ public class SystemTabPanel extends JPanel {
         scrollPane.setBorder(new EmptyBorder(4, 4, 4, 4));
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
-        // Hide scroll bar (mouse wheel still works)
+        // Hide scrollbar (mouse wheel still works)
         JScrollBar vBar = scrollPane.getVerticalScrollBar();
         if (vBar != null) {
             vBar.setPreferredSize(new Dimension(0, 0));
@@ -143,30 +149,123 @@ public class SystemTabPanel extends JPanel {
 
         add(scrollPane, BorderLayout.CENTER);
 
-        // Preload last 2 journal files to reconstruct current system on startup
-        preloadFromHistory();
-
-        // Then start listening for live events
-        LiveJournalMonitor.getInstance().addListener(this::onLogEvent);
+        // On startup, try to reconstruct the current system using:
+        //  1) local cache (previous session)
+        //  2) recent journal events
+        //  3) EDSM lookup
+        preloadSystem();
     }
 
-    private void preloadFromHistory() {
-        try {
-            EliteJournalReader reader = new EliteJournalReader();
-            for (EliteLogEvent event : reader.readEventsFromLastNJournalFiles(2)) {
-                tracker.handleEvent(event);
-            }
-        } catch (IOException | IllegalStateException ex) {
-            // If it fails, we just rely on live tailing.
+    /**
+     * Call this from your live log-tail code whenever a new event arrives
+     * so the System tab can stay up to date while the game runs.
+     */
+    public void handleLogEvent(EliteLogEvent event) {
+        if (event == null) {
+            return;
         }
-    }
-
-    private void onLogEvent(EliteLogEvent event) {
         if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> onLogEvent(event));
+            SwingUtilities.invokeLater(() -> handleLogEvent(event));
             return;
         }
         tracker.handleEvent(event);
+        cacheCurrentSystem();
+    }
+
+    private void preloadSystem() {
+        EliteJournalReader reader;
+            reader = new EliteJournalReader();
+
+        String systemName = null;
+        long systemAddress = 0L;
+
+        try {
+            List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
+            // Walk backwards to find the last Location/FSD Jump
+            for (int i = events.size() - 1; i >= 0; i--) {
+                EliteLogEvent e = events.get(i);
+                if (e instanceof LocationEvent) {
+                    LocationEvent le = (LocationEvent) e;
+                    systemName = le.getStarSystem();
+                    systemAddress = le.getSystemAddress();
+                    break;
+                } else if (e instanceof FsdJumpEvent) {
+                    FsdJumpEvent fe = (FsdJumpEvent) e;
+                    systemName = fe.getStarSystem();
+                    systemAddress = fe.getSystemAddress();
+                    break;
+                }
+            }
+        } catch (IOException ex) {
+            headerLabel.setText("Could not read latest journal.");
+            return;
+        }
+
+        if (systemName == null && systemAddress == 0L) {
+            headerLabel.setText("Current system unknown.");
+            return;
+        }
+
+        tracker.setCurrentSystem(systemName, systemAddress);
+
+        // 1) Try cache
+        SystemCache.CachedSystem cached = cache.get(systemAddress, systemName);
+        if (cached != null && cached.bodies != null && !cached.bodies.isEmpty()) {
+            tracker.loadFromCache(cached);
+            return;
+        }
+
+        // 2) Try to reconstruct from local journal events (best-effort)
+        boolean builtFromJournal = buildFromJournalHistory(reader, systemName, systemAddress);
+        if (builtFromJournal) {
+            cacheCurrentSystem();
+            return;
+        }
+
+        // 3) Fallback to EDSM lookup
+        loadFromEdsm(systemName);
+    }
+
+    private boolean buildFromJournalHistory(EliteJournalReader reader, String systemName, long systemAddress) {
+        try {
+            // For now we only use the latest journal file; if you want to
+            // be more aggressive you can add a "readEventsFromLastNJournalFiles"
+            // method to EliteJournalReader and iterate over more history.
+            List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
+            for (EliteLogEvent event : events) {
+                tracker.handleEvent(event);
+            }
+            // If we saw any bodies, consider it a success.
+            return tracker.getBodyCount() > 0;
+        } catch (IOException ex) {
+            return false;
+        }
+    }
+
+    private void loadFromEdsm(String systemName) {
+        if (systemName == null || systemName.isEmpty()) {
+            return;
+        }
+
+        new Thread(() -> {
+            List<EdsmClient.EdsmBody> bodies = edsmClient.fetchSystemBodies(systemName);
+            if (bodies == null || bodies.isEmpty()) {
+                return;
+            }
+
+            SwingUtilities.invokeLater(() -> {
+                tracker.loadFromEdsm(systemName, bodies);
+                cacheCurrentSystem();
+            });
+        }, "EDSM-SystemLookup").start();
+    }
+
+    private void cacheCurrentSystem() {
+        if (tracker.systemName == null && tracker.systemAddress == 0L) {
+            return;
+        }
+        List<SystemCache.CachedBody> cachedBodies = tracker.toCachedBodies();
+        cache.put(tracker.systemAddress, tracker.systemName, cachedBodies);
     }
 
     /* ---------- Tracking + table model ---------- */
@@ -184,7 +283,7 @@ public class SystemTabPanel extends JPanel {
         String atmoOrType = "";
     }
 
-    private final class SystemTracker {
+    final class SystemTracker {
 
         String systemName = null;
         long systemAddress = 0L;
@@ -194,15 +293,19 @@ public class SystemTabPanel extends JPanel {
 
         final Map<Integer, BodyInfo> bodies = new HashMap<>();
 
+        void setCurrentSystem(String name, long addr) {
+            this.systemName = name;
+            this.systemAddress = addr;
+            refreshTable();
+        }
+
         void handleEvent(EliteLogEvent event) {
-            if (event instanceof EliteLogEvent.LocationEvent) {
-                EliteLogEvent.LocationEvent e = (EliteLogEvent.LocationEvent) event;
+            if (event instanceof LocationEvent) {
+                LocationEvent e = (LocationEvent) event;
                 enterSystem(e.getStarSystem(), e.getSystemAddress());
-
-            } else if (event instanceof EliteLogEvent.FsdJumpEvent) {
-                EliteLogEvent.FsdJumpEvent e = (EliteLogEvent.FsdJumpEvent) event;
+            } else if (event instanceof FsdJumpEvent) {
+                FsdJumpEvent e = (FsdJumpEvent) event;
                 enterSystem(e.getStarSystem(), e.getSystemAddress());
-
             } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
                 EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
                 if (systemName == null) {
@@ -214,7 +317,6 @@ public class SystemTabPanel extends JPanel {
                 fssProgress = e.getProgress();
                 totalBodies = e.getBodyCount();
                 nonBodyCount = e.getNonBodyCount();
-
             } else if (event instanceof EliteLogEvent.ScanEvent) {
                 EliteLogEvent.ScanEvent e = (EliteLogEvent.ScanEvent) event;
 
@@ -232,11 +334,9 @@ public class SystemTabPanel extends JPanel {
                 info.gravityMS = e.getSurfaceGravity();
                 info.atmoOrType = chooseAtmoOrType(e);
                 info.highValue = isHighValue(e);
-
             } else if (event instanceof SaasignalsFoundEvent) {
                 SaasignalsFoundEvent e = (SaasignalsFoundEvent) event;
                 handleSignals(e.getBodyId(), e.getSignals());
-
             } else if (event instanceof EliteLogEvent.FssBodySignalsEvent) {
                 EliteLogEvent.FssBodySignalsEvent e = (EliteLogEvent.FssBodySignalsEvent) event;
                 handleSignals(e.getBodyId(), e.getSignals());
@@ -246,6 +346,20 @@ public class SystemTabPanel extends JPanel {
         }
 
         private void enterSystem(String name, long addr) {
+            boolean sameName = (name != null && name.equals(systemName));
+            boolean sameAddr = (addr != 0L && addr == systemAddress);
+
+            if (sameName || sameAddr) {
+                // Same system – keep existing body info, just update address/name
+                if (name != null) {
+                    systemName = name;
+                }
+                if (addr != 0L) {
+                    systemAddress = addr;
+                }
+                return;
+            }
+
             systemName = name;
             systemAddress = addr;
             totalBodies = null;
@@ -363,6 +477,83 @@ public class SystemTabPanel extends JPanel {
 
         private String toLower(String s) {
             return s == null ? "" : s.toLowerCase(Locale.ROOT);
+        }
+
+        int getBodyCount() {
+            return bodies.size();
+        }
+
+        void loadFromCache(SystemCache.CachedSystem cs) {
+            if (cs == null || cs.bodies == null) {
+                return;
+            }
+            this.systemName = cs.systemName;
+            this.systemAddress = cs.systemAddress;
+
+            bodies.clear();
+            for (SystemCache.CachedBody cb : cs.bodies) {
+                BodyInfo info = new BodyInfo();
+                info.name = cb.name;
+                info.shortName = computeShortName(cb.name);
+                info.bodyId = cb.bodyId;
+                info.distanceLs = cb.distanceLs;
+                info.gravityMS = cb.gravityMS;
+                info.landable = cb.landable;
+                info.hasBio = cb.hasBio;
+                info.hasGeo = cb.hasGeo;
+                info.highValue = cb.highValue;
+                info.atmoOrType = cb.atmoOrType;
+                bodies.put(info.bodyId, info);
+            }
+            refreshTable();
+        }
+
+        void loadFromEdsm(String systemNameFromEdsm, List<EdsmClient.EdsmBody> edsmBodies) {
+            if (edsmBodies == null) {
+                return;
+            }
+            if (systemNameFromEdsm != null && !systemNameFromEdsm.isEmpty()) {
+                this.systemName = systemNameFromEdsm;
+            }
+
+            bodies.clear();
+            for (EdsmClient.EdsmBody eb : edsmBodies) {
+                BodyInfo info = new BodyInfo();
+                info.name = eb.name;
+                info.shortName = computeShortName(eb.name);
+                info.bodyId = eb.bodyId;
+                info.distanceLs = eb.distanceToArrival;
+                info.gravityMS = eb.gravity;
+                info.landable = eb.landable;
+                info.hasBio = eb.hasBio;
+                info.hasGeo = eb.hasGeo;
+                info.highValue = eb.highValue;
+                if (eb.atmosphereType != null && !eb.atmosphereType.isEmpty()) {
+                    info.atmoOrType = eb.atmosphereType;
+                } else {
+                    info.atmoOrType = eb.subType != null ? eb.subType : "";
+                }
+                bodies.put(info.bodyId, info);
+            }
+            refreshTable();
+        }
+
+        List<SystemCache.CachedBody> toCachedBodies() {
+            List<SystemCache.CachedBody> list = new ArrayList<>();
+            for (BodyInfo b : bodies.values()) {
+                SystemCache.CachedBody cb = new SystemCache.CachedBody();
+                cb.name = b.name;
+                cb.bodyId = b.bodyId;
+                cb.distanceLs = b.distanceLs;
+                cb.gravityMS = b.gravityMS;
+                cb.landable = b.landable;
+                cb.hasBio = b.hasBio;
+                cb.hasGeo = b.hasGeo;
+                cb.highValue = b.highValue;
+                cb.atmoOrType = b.atmoOrType;
+                list.add(cb);
+            }
+            return list;
         }
     }
 

@@ -27,7 +27,8 @@ import javax.swing.border.EmptyBorder;
  * - Provides a custom-painted gear button (opens Preferences)
  */
 public class TitleBarPanel extends JPanel {
-
+    private static final int TOP_RESIZE_STRIP = 6;
+    
     private final OverlayFrame frame;
     private Point dragOffset;
     private final CloseButton closeButton;
@@ -103,13 +104,25 @@ public class TitleBarPanel extends JPanel {
         setPreferredSize(new Dimension(100, 32));
 
         // Drag-to-move behavior
+        // How many pixels from the very top we reserve for "resize", not "drag"
         MouseAdapter dragListener = new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e)) {
-                    dragOffset = e.getPoint();
-                    setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                if (!SwingUtilities.isLeftMouseButton(e)) {
+                    return;
                 }
+
+                // If we’re in the very top strip, this is a “resize zone” – let ResizeHandler handle it.
+                if (e.getY() <= TOP_RESIZE_STRIP) {
+                    dragOffset = null;
+                    setCursor(Cursor.getDefaultCursor());
+                    return;
+                }
+
+                // Normal title-bar drag: use screen coords relative to frame origin
+                java.awt.Point screen = e.getLocationOnScreen();
+                dragOffset = new Point(screen.x - frame.getX(), screen.y - frame.getY());
+                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
             }
 
             @Override
@@ -120,13 +133,20 @@ public class TitleBarPanel extends JPanel {
 
             @Override
             public void mouseDragged(MouseEvent e) {
-                if (dragOffset != null) {
-                    int dx = e.getXOnScreen() - dragOffset.x;
-                    int dy = e.getYOnScreen() - dragOffset.y;
-                    frame.setLocation(dx, dy);
+                if (dragOffset == null) {
+                    return;
                 }
+
+                int newX = e.getXOnScreen() - dragOffset.x;
+                int newY = e.getYOnScreen() - dragOffset.y;
+                frame.setLocation(newX, newY);
             }
         };
+
+
+        addMouseListener(dragListener);
+        addMouseMotionListener(dragListener);
+
 
         addMouseListener(dragListener);
         addMouseMotionListener(dragListener);
