@@ -1,0 +1,46 @@
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>org.dce</groupId>
+	<artifactId>EliteDangerousOverlay</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>EliteDangerousOverlay</name>
+	<description>EliteDangerousOverlay</description>
+
+	<dependencies>
+		<!-- JNA core -->
+		<dependency>
+			<groupId>net.java.dev.jna</groupId>
+			<artifactId>jna</artifactId>
+			<version>5.14.0</version>
+		</dependency>
+
+		<!-- JNA platform-specific helpers (User32, WindowUtils, etc.) -->
+		<dependency>
+			<groupId>net.java.dev.jna</groupId>
+			<artifactId>jna-platform</artifactId>
+			<version>5.14.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.github.kwhat</groupId>
+			<artifactId>jnativehook</artifactId>
+			<version>2.2.2</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.code.gson</groupId>
+			<artifactId>gson</artifactId>
+			<version>2.11.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.formdev</groupId>
+			<artifactId>svgSalamander</artifactId>
+			<version>1.1.4</version>
+		</dependency>
+
+
+	</dependencies>
+
+
+</project>
