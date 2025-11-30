@@ -394,6 +394,18 @@ public class LogTabPanel extends JPanel {
     private void reloadLogs() {
         knownEventNames.clear();
 
+        // Recreate the journal reader so Logging preferences (auto vs custom folder)
+        // take effect each time we reload.
+        try {
+            this.journalReader = new EliteJournalReader();
+            this.journalReaderAvailable = true;
+            this.journalReaderErrorMessage = null;
+        } catch (Exception ex) {
+            this.journalReaderAvailable = false;
+            this.journalReaderErrorMessage = "Log reader not available: " + ex.getMessage();
+            System.err.println("[LogTabPanel] Failed to initialize EliteJournalReader: " + ex);
+        }
+
         if (!journalReaderAvailable) {
             String msg = (journalReaderErrorMessage != null)
                     ? journalReaderErrorMessage
