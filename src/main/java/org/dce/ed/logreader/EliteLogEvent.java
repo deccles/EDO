@@ -625,6 +625,8 @@ public abstract class EliteLogEvent {
         private final String atmosphere;
         private final String terraformState;
         private final Double surfaceGravity;
+        private final Double surfaceTemperature;
+        private final String volcanism;
         private final boolean wasDiscovered;
         private final boolean wasMapped;
         private final String starType;
@@ -640,6 +642,8 @@ public abstract class EliteLogEvent {
                          String atmosphere,
                          String terraformState,
                          Double surfaceGravity,
+                         Double surfaceTemperature,
+                         String volcanism,
                          boolean wasDiscovered,
                          boolean wasMapped,
                          String starType) {
@@ -654,6 +658,8 @@ public abstract class EliteLogEvent {
             this.atmosphere = atmosphere;
             this.terraformState = terraformState;
             this.surfaceGravity = surfaceGravity;
+            this.surfaceTemperature = surfaceTemperature;
+            this.volcanism = volcanism;
             this.wasDiscovered = wasDiscovered;
             this.wasMapped = wasMapped;
             this.starType = starType;
@@ -693,6 +699,16 @@ public abstract class EliteLogEvent {
 
         public Double getSurfaceGravity() {
             return surfaceGravity;
+        }
+
+        /** Surface temperature in Kelvin (may be null if not present). */
+        public Double getSurfaceTemperature() {
+            return surfaceTemperature;
+        }
+
+        /** Raw Volcanism string from the journal (may be null/empty). */
+        public String getVolcanism() {
+            return volcanism;
         }
 
         public boolean isWasDiscovered() {

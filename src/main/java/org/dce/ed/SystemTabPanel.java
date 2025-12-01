@@ -240,21 +240,18 @@ public class SystemTabPanel extends JPanel {
         boolean highValue = false;
         String atmoOrType = "";
 
-        // Additional fields for exobiology prediction / detail rows
-        // These are only populated for main body rows (detailRow == false)
+        // Extra fields used for prediction
         String planetClass;
         String atmosphere;
         Double surfaceTempK;
-        boolean hasVolcanism;
-        String volcanismType;
+        String volcanism;
 
-        // If true, this is a synthetic "detail" row (e.g. a BioCandidate)
+        // Detail-row + prediction data
+        java.util.List<ExobiologyData.BioCandidate> bioCandidates;
         boolean detailRow = false;
         int parentBodyId = -1;
         String bioDetailText;
         String bioDetailValueText;
-
-        List<ExobiologyData.BioCandidate> bioCandidates;
     }
 
     final class SystemTracker {
@@ -307,16 +304,22 @@ public class SystemTabPanel extends JPanel {
                 info.distanceLs = e.getDistanceFromArrivalLs();
                 info.landable = e.isLandable();
                 info.gravityMS = e.getSurfaceGravity();
-                info.planetClass = e.getPlanetClass();
-                info.atmosphere = e.getAtmosphere();
                 info.atmoOrType = chooseAtmoOrType(e);
                 info.highValue = isHighValue(e);
-            } else if (event instanceof SaasignalsFoundEvent) {
-                SaasignalsFoundEvent e = (SaasignalsFoundEvent) event;
-                handleSignals(e.getBodyId(), e.getSignals());
-            } else if (event instanceof EliteLogEvent.FssBodySignalsEvent) {
-                EliteLogEvent.FssBodySignalsEvent e = (EliteLogEvent.FssBodySignalsEvent) event;
-                handleSignals(e.getBodyId(), e.getSignals());
+
+                // NEW: fields used by exobiology prediction
+                info.planetClass = e.getPlanetClass();
+                info.atmosphere = e.getAtmosphere();
+
+                Double temp = e.getSurfaceTemperature();
+                if (temp != null) {
+                    info.surfaceTempK = temp;
+                }
+
+                String volc = e.getVolcanism();
+                if (volc != null && !volc.isEmpty()) {
+                    info.volcanism = volc;
+                }
             }
 
             refreshTable();
@@ -434,17 +437,22 @@ public class SystemTabPanel extends JPanel {
                     }
                 }
 
-                if (b.bioCandidates != null && !b.bioCandidates.isEmpty()) {
+                if (!b.bioCandidates.isEmpty()) {
                     for (ExobiologyData.BioCandidate cand : b.bioCandidates) {
                         BodyInfo detail = new BodyInfo();
                         detail.detailRow = true;
                         detail.parentBodyId = b.bodyId;
                         detail.bioDetailText = cand.getDisplayName();
-                        long baseVal = cand.getBaseValue();
-                        detail.bioDetailValueText = String.format(Locale.US, "%,d Cr", baseVal);
+
+                        long base = cand.getBaseValue();
+                        long potential = base * 5L; // assume first-log bonus (like your screenshot)
+                        detail.bioDetailValueText =
+                                String.format(Locale.US, "%,d Cr", potential);
+
                         rows.add(detail);
                     }
                 } else {
+                    // Fallback: at least show that something biological exists
                     BodyInfo detail = new BodyInfo();
                     detail.detailRow = true;
                     detail.parentBodyId = b.bodyId;
@@ -469,25 +477,30 @@ public class SystemTabPanel extends JPanel {
         private ExobiologyData.BodyAttributes buildBodyAttributes(BodyInfo b) {
             String planetClass = b.planetClass;
             String atmosphere = b.atmosphere;
+
             double gravityG = Double.NaN;
             if (b.gravityMS != null && !Double.isNaN(b.gravityMS)) {
                 gravityG = b.gravityMS / 9.80665;
             }
 
-            if ((planetClass == null || planetClass.isEmpty()) &&
-                (atmosphere == null || atmosphere.isEmpty()) &&
-                Double.isNaN(gravityG)) {
+            double tempK = (b.surfaceTempK != null) ? b.surfaceTempK : Double.NaN;
+            String volcanism = b.volcanism;
+            boolean hasVolcanism = volcanism != null && !volcanism.isEmpty();
+
+            // If we literally know nothing, don't bother calling the predictor
+            if ((planetClass == null || planetClass.isEmpty())
+                    && (atmosphere == null || atmosphere.isEmpty())
+                    && Double.isNaN(gravityG)) {
                 return null;
             }
 
-            // Temperature / volcanism left as defaults for now.
             return new ExobiologyData.BodyAttributes(
                     planetClass,
                     gravityG,
                     atmosphere,
-                    Double.NaN,
-                    false,
-                    null
+                    tempK,
+                    hasVolcanism,
+                    volcanism
             );
         }
 
@@ -634,7 +647,7 @@ public class SystemTabPanel extends JPanel {
         public Object getValueAt(int rowIndex, int columnIndex) {
             BodyInfo b = bodies.get(rowIndex);
 
-            // Detail rows: only Bio + Value columns are populated
+            // Detail rows: only Bio + Value columns are used
             if (b.detailRow) {
                 switch (columnIndex) {
                     case 3:

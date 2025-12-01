@@ -268,6 +268,10 @@ public class EliteLogParser {
         Double surfaceGravity = obj.has("SurfaceGravity")
                 ? obj.get("SurfaceGravity").getAsDouble()
                 : null;
+        Double surfaceTemp = obj.has("SurfaceTemperature")
+                ? obj.get("SurfaceTemperature").getAsDouble()
+                : null;
+        String volcanism = getString(obj, "Volcanism");
         boolean wasDiscovered = obj.has("WasDiscovered") && obj.get("WasDiscovered").getAsBoolean();
         boolean wasMapped = obj.has("WasMapped") && obj.get("WasMapped").getAsBoolean();
         String starType = getString(obj, "StarType");
@@ -284,6 +288,8 @@ public class EliteLogParser {
                 atmosphere,
                 terraformState,
                 surfaceGravity,
+                surfaceTemp,
+                volcanism,
                 wasDiscovered,
                 wasMapped,
                 starType
