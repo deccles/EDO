@@ -77,11 +77,18 @@ public final class SystemCache {
         public boolean hasBio;
         public boolean hasGeo;
         public boolean highValue;
+
         // extra fields used by SystemTabPanel for exobiology prediction / display
         public String planetClass;
         public String atmosphere;
         public String atmoOrType;
+
+        // NEW: extra physical attributes
+        public Double surfaceTempK;
+        public String volcanism;
     }
+
+
 
     /**
      * Represents a cached system and its bodies.

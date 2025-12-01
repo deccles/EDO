@@ -87,16 +87,21 @@ public class RescanJournalsMain {
         boolean highValue = false;
         String atmoOrType = "";
 
-        // New: “detail row” support (used for BIO lines inserted under the body row)
-        boolean detailRow = false;      // true = this row is a child/info row, not the main body
-        int parentBodyId = -1;          // owning bodyId when detailRow == true
-        String bioDetailText;           // text that goes in the Bio column
-        String bioDetailValueText;      // text that goes in the Value column
+        // Fields used for prediction/exobiology, same as SystemTabPanel.BodyInfo
+        String planetClass;
+        String atmosphere;
+        Double surfaceTempK;
+        String volcanism;
+
+        // Detail-row support (not really used by the rescan, but kept for parity)
+        boolean detailRow = false;
+        int parentBodyId = -1;
+        String bioDetailText;
+        String bioDetailValueText;
     }
 
-
     /**
-     * Accumulates data for one system across all events.
+     * Accumulates events for a single system and converts them to CachedBody entries.
      */
     private static final class SystemAccumulator {
         String systemName;
@@ -151,6 +156,7 @@ public class RescanJournalsMain {
             if (id < 0) {
                 return;
             }
+
             BodyInfo info = bodies.computeIfAbsent(id, ignored -> new BodyInfo());
             info.bodyId = id;
             info.name = bodyName;
@@ -159,6 +165,20 @@ public class RescanJournalsMain {
             info.gravityMS = e.getSurfaceGravity();
             info.atmoOrType = chooseAtmoOrType(e);
             info.highValue = isHighValue(e);
+
+            // Match SystemTabPanel: capture prediction-related attributes
+            info.planetClass = e.getPlanetClass();
+            info.atmosphere = e.getAtmosphere();
+
+            Double temp = e.getSurfaceTemperature();
+            if (temp != null) {
+                info.surfaceTempK = temp;
+            }
+
+            String volc = e.getVolcanism();
+            if (volc != null && !volc.isEmpty()) {
+                info.volcanism = volc;
+            }
         }
 
         void applySignals(int bodyId, List<SaasignalsFoundEvent.Signal> signals) {
@@ -202,7 +222,10 @@ public class RescanJournalsMain {
             if (pc.contains("ammonia world")) {
                 return true;
             }
-            return tf.contains("terraformable");
+            if (tf.contains("terraformable")) {
+                return true;
+            }
+            return false;
         }
 
         private static boolean isBeltOrRing(String bodyName) {
@@ -229,7 +252,14 @@ public class RescanJournalsMain {
                 cb.hasBio = b.hasBio;
                 cb.hasGeo = b.hasGeo;
                 cb.highValue = b.highValue;
+
+                // Match SystemTabPanel -> SystemCache mapping
+                cb.planetClass = b.planetClass;
+                cb.atmosphere = b.atmosphere;
                 cb.atmoOrType = b.atmoOrType;
+                cb.surfaceTempK = b.surfaceTempK;
+                cb.volcanism = b.volcanism;
+
                 list.add(cb);
             }
             return list;

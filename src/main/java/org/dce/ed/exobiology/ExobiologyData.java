@@ -207,13 +207,15 @@ public final class ExobiologyData {
         String planet = safe(body.planetClass).toLowerCase(Locale.ROOT);
         String atmo   = safe(body.atmosphere).toLowerCase(Locale.ROOT);
         double g      = body.gravityG;
+        double t      = body.temperatureK;
+        boolean hasTemp = !Double.isNaN(t);
 
         boolean rockyLike =
                 planet.contains("rocky") ||
                 planet.contains("metal") ||
                 planet.contains("high metal");
 
-        boolean icyLike =
+            boolean icyLike =
                 planet.contains("icy");
 
         boolean co2Like =
@@ -237,56 +239,117 @@ public final class ExobiologyData {
         boolean methaneLike =
                 atmo.contains("methane");
 
-        // Recepta: SO2 atmosphere, low gravity, rocky/HMC
-        if (sulphurDioxide && rockyLike && g > 0 && g < 0.28) {
+        boolean nitrogenLike =
+                atmo.contains("nitrogen");
+
+        boolean oxygenLike =
+                atmo.contains("oxygen");
+
+        boolean hasVolcanism = body.hasVolcanism;
+        String volc = safe(body.volcanismType).toLowerCase(Locale.ROOT);
+        boolean silicateVolc = hasVolcanism && volc.contains("silicate");
+        boolean waterVolc    = hasVolcanism && volc.contains("water");
+
+        // Recepta: SO2 atmosphere, low gravity, rocky/HMC or icy
+        if (sulphurDioxide && (rockyLike || icyLike) && g > 0 && g < 0.28) {
             addAllSpeciesForGenus(result, "Recepta",
                     0.95,
-                    "SO₂ atmosphere + low gravity on rocky/HMC world");
+                    "SO2 atmosphere + low gravity on rocky/icy world");
         }
 
-        // Cactoida: rocky/HMC with CO2 or ammonia atmosphere
-        if (rockyLike && (co2Like || ammoniaLike)) {
+        // Stratum: CO2 atmosphere on rocky/HMC with moderate gravity and temperature
+        if (co2Like && rockyLike && hasTemp && t > 150 && t < 250) {
+            double score = silicateVolc ? 0.95 : 0.8;
+            String reason = "CO2 atmosphere on rocky/HMC world"
+                    + (silicateVolc ? " with silicate volcanism" : "");
+            addAllSpeciesForGenus(result, "Stratum", score, reason);
+        }
+
+        // Cactoida: CO2-rich rocky/HMC worlds in the 180–200 K band, low–moderate gravity
+        if (co2Like && rockyLike && hasTemp && t >= 175 && t <= 205 && g > 0 && g < 0.6) {
             addAllSpeciesForGenus(result, "Cactoida",
-                    0.7,
-                    "Rocky/HMC with CO₂/Ammonia atmosphere");
+                    0.85,
+                    "Cool CO2 rocky/HMC world in Cactoida temperature band");
         }
 
-        // Stratum: rocky with SO2/CO2/Ammonia
-        if (rockyLike && (sulphurDioxide || co2Like || ammoniaLike)) {
-            addAllSpeciesForGenus(result, "Stratum",
-                    0.6,
-                    "Rocky world with SO₂/CO₂/Ammonia atmosphere");
-        }
-
-        // Frutexa: rocky/HMC with CO2/Ammonia/Water
-        if (rockyLike && (co2Like || ammoniaLike || waterLike)) {
+        // Frutexa: rocky/HMC worlds with CO2 / water / ammonia at moderate gravity
+        if (rockyLike && (co2Like || waterLike || ammoniaLike) && g >= 0.3 && g <= 1.3) {
             addAllSpeciesForGenus(result, "Frutexa",
-                    0.55,
-                    "Rocky/HMC with CO₂/Ammonia/Water atmosphere");
+                    0.75,
+                    "Rocky/HMC world with dense atmosphere and moderate gravity");
         }
 
-        // Tubus: rocky, usually CO2/Ammonia
-        if (rockyLike && (co2Like || ammoniaLike)) {
+        // Tubus: low-g worlds (rocky or icy) with CO2 or SO2 atmospheres
+        if ((rockyLike || icyLike) && (co2Like || sulphurDioxide) && g > 0 && g < 0.25) {
             addAllSpeciesForGenus(result, "Tubus",
-                    0.5,
-                    "Rocky CO₂/Ammonia world");
+                    0.8,
+                    "Low-gravity CO2/SO2 world typical for Tubus");
         }
 
-        // Tussock: very common on rocky worlds with CO2/Ammonia/Methane/Argon
-        if (rockyLike && (co2Like || ammoniaLike || methaneLike || argonLike)) {
+        // Tussock: very common on temperate rocky/icy bodies with almost any atmosphere
+        if ((rockyLike || icyLike) && !atmo.isEmpty() && !atmo.equals("none")
+                && hasTemp && t > 120 && t < 280) {
             addAllSpeciesForGenus(result, "Tussock",
-                    0.55,
-                    "Rocky world with CO₂/Ammonia/Methane/Argon atmosphere");
+                    0.7,
+                    "Generic temperate rocky/icy body – typical Tussock habitat");
         }
 
-        // Bacterium: pretty much anywhere with *any* atmosphere at all
+        // Concha: water / water-rich atmospheres on rocky or icy worlds in 170–200 K range
+        if ((rockyLike || icyLike) && waterLike && hasTemp && t >= 165 && t <= 205) {
+            addAllSpeciesForGenus(result, "Concha",
+                    0.8,
+                    "Cool water-bearing world, good for Concha");
+        }
+
+        // Fungoida: usually on cold rocky/icy worlds with water/ammonia and often volcanism
+        if ((rockyLike || icyLike) && (waterLike || ammoniaLike)
+                && hasTemp && t >= 150 && t <= 210) {
+            double score = (waterVolc || silicateVolc) ? 0.85 : 0.65;
+            String reason = "Cold water/ammonia world"
+                    + ((waterVolc || silicateVolc) ? " with volcanism" : "");
+            addAllSpeciesForGenus(result, "Fungoida", score, reason);
+        }
+
+        // Fonticulua: usually on icy / rocky-ice worlds with noble-gas or light-gas atmospheres
+        if (icyLike && (argonLike || neonLike || methaneLike || oxygenLike || nitrogenLike)) {
+            addAllSpeciesForGenus(result, "Fonticulua",
+                    0.75,
+                    "Icy world with noble-gas / light-gas atmosphere – typical Fonticulua conditions");
+        }
+
+        // Clypeus: high-value genus on cool rocky/HMC with noble-gas atmospheres
+        if (rockyLike && (argonLike || neonLike) && hasTemp && t >= 180 && t <= 210) {
+            addAllSpeciesForGenus(result, "Clypeus",
+                    0.8,
+                    "Rocky/HMC body with noble-gas atmosphere in Clypeus temp range");
+        }
+
+        // Osseus: often shares conditions with Fonticulua / Tubus on cold, thin-atmo worlds
+        if ((rockyLike || icyLike)
+                && (co2Like || waterLike || argonLike || neonLike)
+                && hasTemp && t >= 160 && t <= 210) {
+            addAllSpeciesForGenus(result, "Osseus",
+                    0.7,
+                    "Cold world with thin atmosphere suitable for Osseus");
+        }
+
+        // Aleoida: often on cool rocky bodies with CO2 / water and mild gravity
+        if (rockyLike && (co2Like || waterLike)
+                && hasTemp && t >= 170 && t <= 210
+                && g > 0 && g < 0.8) {
+            addAllSpeciesForGenus(result, "Aleoida",
+                    0.7,
+                    "Cool rocky world with CO2/water matching Aleoida conditions");
+        }
+
+        // Generic Bacterium hint for any non-vacuum atmosphere
         if (!atmo.isEmpty() && !atmo.equals("none")) {
             addAllSpeciesForGenus(result, "Bacterium",
                     0.4,
                     "Non-vacuum atmosphere supports various Bacterium species");
         }
 
-        // Electricae-style hint (icy, low-g, noble-gas atmospheres)
+        // Electricae: icy, low-g worlds with noble-gas atmospheres
         if (icyLike && (neonLike || argonLike) && g > 0 && g < 0.3) {
             addAllSpeciesForGenus(result, "Electricae",
                     0.5,

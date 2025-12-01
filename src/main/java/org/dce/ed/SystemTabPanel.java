@@ -175,12 +175,13 @@ public class SystemTabPanel extends JPanel {
      */
     public void refreshFromCache() {
         try {
-            // Look at the last journal file and figure out where we are now
             EliteJournalReader reader = new EliteJournalReader();
-            List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
 
             String systemName = null;
             long systemAddress = 0L;
+
+            // 1) First try just the latest journal file
+            List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
 
             for (EliteLogEvent event : events) {
                 if (event instanceof LocationEvent) {
@@ -198,6 +199,34 @@ public class SystemTabPanel extends JPanel {
                     }
                     if (systemAddress == 0L) {
                         systemAddress = e.getSystemAddress();
+                    }
+                }
+            }
+
+            // 2) If we still don't have any system info, look back through
+            //    the last few journal files (including the latest one).
+            if (systemName == null && systemAddress == 0L) {
+                // Adjust N if you want to look further back in history
+                final int N = 10;
+                events = reader.readEventsFromLastNJournalFiles(N);
+
+                for (EliteLogEvent event : events) {
+                    if (event instanceof LocationEvent) {
+                        LocationEvent e = (LocationEvent) event;
+                        systemName = e.getStarSystem();
+                        systemAddress = e.getSystemAddress();
+                    } else if (event instanceof FsdJumpEvent) {
+                        FsdJumpEvent e = (FsdJumpEvent) event;
+                        systemName = e.getStarSystem();
+                        systemAddress = e.getSystemAddress();
+                    } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
+                        EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
+                        if (systemName == null) {
+                            systemName = e.getSystemName();
+                        }
+                        if (systemAddress == 0L) {
+                            systemAddress = e.getSystemAddress();
+                        }
                     }
                 }
             }
@@ -254,9 +283,53 @@ public class SystemTabPanel extends JPanel {
         String bioDetailValueText;
     }
 
-    final class SystemTracker {
+    public class SystemTracker {
 
-        String systemName = null;
+        public String getSystemName() {
+			return systemName;
+		}
+
+		public void setSystemName(String systemName) {
+			this.systemName = systemName;
+		}
+
+		public long getSystemAddress() {
+			return systemAddress;
+		}
+
+		public void setSystemAddress(long systemAddress) {
+			this.systemAddress = systemAddress;
+		}
+
+		public Integer getTotalBodies() {
+			return totalBodies;
+		}
+
+		public void setTotalBodies(Integer totalBodies) {
+			this.totalBodies = totalBodies;
+		}
+
+		public Integer getNonBodyCount() {
+			return nonBodyCount;
+		}
+
+		public void setNonBodyCount(Integer nonBodyCount) {
+			this.nonBodyCount = nonBodyCount;
+		}
+
+		public Double getFssProgress() {
+			return fssProgress;
+		}
+
+		public void setFssProgress(Double fssProgress) {
+			this.fssProgress = fssProgress;
+		}
+
+		public Map<Integer, BodyInfo> getBodies() {
+			return bodies;
+		}
+
+		String systemName = null;
         long systemAddress = 0L;
 
         Integer totalBodies = null;
@@ -275,9 +348,11 @@ public class SystemTabPanel extends JPanel {
             if (event instanceof LocationEvent) {
                 LocationEvent e = (LocationEvent) event;
                 enterSystem(e.getStarSystem(), e.getSystemAddress());
+
             } else if (event instanceof FsdJumpEvent) {
                 FsdJumpEvent e = (FsdJumpEvent) event;
                 enterSystem(e.getStarSystem(), e.getSystemAddress());
+
             } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
                 EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
                 if (systemName == null) {
@@ -289,6 +364,7 @@ public class SystemTabPanel extends JPanel {
                 fssProgress = e.getProgress();
                 totalBodies = e.getBodyCount();
                 nonBodyCount = e.getNonBodyCount();
+
             } else if (event instanceof EliteLogEvent.ScanEvent) {
                 EliteLogEvent.ScanEvent e = (EliteLogEvent.ScanEvent) event;
 
@@ -307,7 +383,7 @@ public class SystemTabPanel extends JPanel {
                 info.atmoOrType = chooseAtmoOrType(e);
                 info.highValue = isHighValue(e);
 
-                // NEW: fields used by exobiology prediction
+                // Fields used by exobiology prediction
                 info.planetClass = e.getPlanetClass();
                 info.atmosphere = e.getAtmosphere();
 
@@ -320,8 +396,26 @@ public class SystemTabPanel extends JPanel {
                 if (volc != null && !volc.isEmpty()) {
                     info.volcanism = volc;
                 }
+
+            } else if (event instanceof SaasignalsFoundEvent) {
+                // SAASignalsFound from the journal
+                SaasignalsFoundEvent e = (SaasignalsFoundEvent) event;
+                // Optionally tighten systemAddress if we don't have one yet
+                if (e.getSystemAddress() != 0L && systemAddress == 0L) {
+                    systemAddress = e.getSystemAddress();
+                }
+                handleSignals(e.getBodyId(), e.getSignals());
+
+            } else if (event instanceof EliteLogEvent.FssBodySignalsEvent) {
+                // FSSBodySignalsDiscovered events (same signal structure)
+                EliteLogEvent.FssBodySignalsEvent e = (EliteLogEvent.FssBodySignalsEvent) event;
+                if (e.getSystemAddress() != 0L && systemAddress == 0L) {
+                    systemAddress = e.getSystemAddress();
+                }
+                handleSignals(e.getBodyId(), e.getSignals());
             }
 
+            // Rebuild rows, recompute predictions, and update SystemCache
             refreshTable();
         }
 
@@ -542,12 +636,18 @@ public class SystemTabPanel extends JPanel {
                 info.atmoOrType = cb.atmoOrType;
                 info.planetClass = cb.planetClass;
                 info.atmosphere = cb.atmosphere;
+
+                // NEW: restore extra physical attributes from cache
+                info.surfaceTempK = cb.surfaceTempK;
+                info.volcanism = cb.volcanism;
+
                 bodies.put(info.bodyId, info);
             }
             refreshTable();
         }
 
-        List<SystemCache.CachedBody> toCachedBodies() {
+
+        public List<SystemCache.CachedBody> toCachedBodies() {
             List<SystemCache.CachedBody> list = new ArrayList<>();
             for (BodyInfo b : bodies.values()) {
                 SystemCache.CachedBody cb = new SystemCache.CachedBody();
@@ -562,10 +662,16 @@ public class SystemTabPanel extends JPanel {
                 cb.atmoOrType = b.atmoOrType;
                 cb.planetClass = b.planetClass;
                 cb.atmosphere = b.atmosphere;
+
+                // NEW: persist extra physical attributes
+                cb.surfaceTempK = b.surfaceTempK;
+                cb.volcanism = b.volcanism;
+
                 list.add(cb);
             }
             return list;
         }
+
 
         private String computeShortName(String name) {
             if (name == null) {

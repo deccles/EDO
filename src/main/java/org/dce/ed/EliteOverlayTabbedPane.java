@@ -81,6 +81,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         cardPanel.add(biologyTab, CARD_BIOLOGY);
         cardPanel.add(logTab, CARD_LOG);
 
+        systemButton.setSelected(true);
         systemTab.refreshFromCache();
         
         // Wire up buttons to show cards
@@ -113,7 +114,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         });
         
         // Select Route tab by default
-        routeButton.doClick();
+        systemButton.doClick();
 
         add(tabBar, BorderLayout.NORTH);
         
