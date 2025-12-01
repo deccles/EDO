@@ -45,6 +45,8 @@ public class EliteLogParser {
             // NEW: system/bodies-related events
             case SCAN:
                 return parseScan(ts, obj);
+            case SCAN_ORGANIC:
+            	return parseScanOrganic(ts, obj);
             case FSS_DISCOVERY_SCAN:
                 return parseFssDiscoveryScan(ts, obj);
             case FSS_BODY_SIGNAL_DISCOVERED:
@@ -253,7 +255,29 @@ public class EliteLogParser {
                 cargo, legalState, balance
         );
     }
+    private EliteLogEvent.ScanOrganicEvent parseScanOrganic(Instant ts, JsonObject json) {
+    long systemAddress = json.get("SystemAddress").getAsLong();
+    String bodyName = getString(json, "Body");
+    int bodyId = Integer.parseInt(getString(json, "BodyID"));
+    String scanType = getString(json, "ScanType");
+    String genus = getString(json, "Genus");
+    String genusLocalised = getString(json, "Genus_Localised");
+    String species = getString(json, "Species");
+    String speciesLocalised = getString(json, "Species_Localised");
 
+    return new EliteLogEvent.ScanOrganicEvent(
+        ts,
+        json,
+        systemAddress,
+        bodyName,
+        bodyId,
+        scanType,
+        genus,
+        genusLocalised,
+        species,
+        speciesLocalised
+    );
+    }
     private EliteLogEvent.ScanEvent parseScan(Instant ts, JsonObject obj) {
         String bodyName = getString(obj, "BodyName");
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;

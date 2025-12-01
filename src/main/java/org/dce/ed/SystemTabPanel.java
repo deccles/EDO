@@ -25,12 +25,14 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
+import org.dce.ed.SystemTabPanel.BodyInfo;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
 import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
 import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
+import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
 
 /**
  * System tab – shows system bodies based on local journal events,
@@ -281,55 +283,58 @@ public class SystemTabPanel extends JPanel {
         int parentBodyId = -1;
         String bioDetailText;
         String bioDetailValueText;
+
+        // SAASignalsFound refinement
+        java.util.Set<String> observedGenusPrefixes;
     }
 
     public class SystemTracker {
 
         public String getSystemName() {
-			return systemName;
-		}
+            return systemName;
+        }
 
-		public void setSystemName(String systemName) {
-			this.systemName = systemName;
-		}
+        public void setSystemName(String systemName) {
+            this.systemName = systemName;
+        }
 
-		public long getSystemAddress() {
-			return systemAddress;
-		}
+        public long getSystemAddress() {
+            return systemAddress;
+        }
 
-		public void setSystemAddress(long systemAddress) {
-			this.systemAddress = systemAddress;
-		}
+        public void setSystemAddress(long systemAddress) {
+            this.systemAddress = systemAddress;
+        }
 
-		public Integer getTotalBodies() {
-			return totalBodies;
-		}
+        public Integer getTotalBodies() {
+            return totalBodies;
+        }
 
-		public void setTotalBodies(Integer totalBodies) {
-			this.totalBodies = totalBodies;
-		}
+        public void setTotalBodies(Integer totalBodies) {
+            this.totalBodies = totalBodies;
+        }
 
-		public Integer getNonBodyCount() {
-			return nonBodyCount;
-		}
+        public Integer getNonBodyCount() {
+            return nonBodyCount;
+        }
 
-		public void setNonBodyCount(Integer nonBodyCount) {
-			this.nonBodyCount = nonBodyCount;
-		}
+        public void setNonBodyCount(Integer nonBodyCount) {
+            this.nonBodyCount = nonBodyCount;
+        }
 
-		public Double getFssProgress() {
-			return fssProgress;
-		}
+        public Double getFssProgress() {
+            return fssProgress;
+        }
 
-		public void setFssProgress(Double fssProgress) {
-			this.fssProgress = fssProgress;
-		}
+        public void setFssProgress(Double fssProgress) {
+            this.fssProgress = fssProgress;
+        }
 
-		public Map<Integer, BodyInfo> getBodies() {
-			return bodies;
-		}
+        public Map<Integer, BodyInfo> getBodies() {
+            return bodies;
+        }
 
-		String systemName = null;
+        String systemName = null;
         long systemAddress = 0L;
 
         Integer totalBodies = null;
@@ -364,6 +369,24 @@ public class SystemTabPanel extends JPanel {
                 fssProgress = e.getProgress();
                 totalBodies = e.getBodyCount();
                 nonBodyCount = e.getNonBodyCount();
+
+            } else if (event instanceof ScanOrganicEvent) {
+                ScanOrganicEvent e = (ScanOrganicEvent) event;
+
+                if (e.getSystemAddress() != 0L && systemAddress == 0L) {
+                    systemAddress = e.getSystemAddress();
+                }
+
+                BodyInfo info = bodies.computeIfAbsent(e.getBodyId(), id -> new BodyInfo());
+                info.bodyId = e.getBodyId();
+
+                if (info.name == null || info.name.isEmpty()) {
+                    info.name = e.getBodyName();
+                    info.shortName = computeShortName(e.getBodyName());
+                }
+
+                // We now know there is confirmed bio on this body
+                info.hasBio = true;
 
             } else if (event instanceof EliteLogEvent.ScanEvent) {
                 EliteLogEvent.ScanEvent e = (EliteLogEvent.ScanEvent) event;
@@ -405,6 +428,7 @@ public class SystemTabPanel extends JPanel {
                     systemAddress = e.getSystemAddress();
                 }
                 handleSignals(e.getBodyId(), e.getSignals());
+                handleGenuses(e.getBodyId(), e.getGenuses());
 
             } else if (event instanceof EliteLogEvent.FssBodySignalsEvent) {
                 // FSSBodySignalsDiscovered events (same signal structure)
@@ -477,6 +501,22 @@ public class SystemTabPanel extends JPanel {
             }
         }
 
+        private void handleGenuses(int bodyId, java.util.List<SaasignalsFoundEvent.Genus> genuses) {
+            if (bodyId < 0 || genuses == null || genuses.isEmpty()) {
+                return;
+            }
+            BodyInfo info = bodies.computeIfAbsent(bodyId, id -> new BodyInfo());
+            if (info.observedGenusPrefixes == null) {
+                info.observedGenusPrefixes = new java.util.HashSet<>();
+            }
+            for (SaasignalsFoundEvent.Genus g : genuses) {
+                String genusName = toLower(g.getGenus());
+                if (!genusName.isEmpty()) {
+                    info.observedGenusPrefixes.add(genusName);
+                }
+            }
+        }
+
         void refreshTable() {
             StringBuilder sb = new StringBuilder();
             if (systemName != null && !systemName.isEmpty()) {
@@ -540,7 +580,37 @@ public class SystemTabPanel extends JPanel {
                 }
 
                 if (!b.bioCandidates.isEmpty()) {
-                    for (ExobiologyData.BioCandidate cand : b.bioCandidates) {
+                    // Start from the full prediction list
+                    java.util.List<ExobiologyData.BioCandidate> displayCandidates =
+                            new java.util.ArrayList<>(b.bioCandidates);
+
+                    // If the DSS has told us which genera are actually present on this body,
+                    // narrow the list to those genera only.
+                    if (b.observedGenusPrefixes != null && !b.observedGenusPrefixes.isEmpty()) {
+                        java.util.List<ExobiologyData.BioCandidate> filtered =
+                                new java.util.ArrayList<>();
+                        for (ExobiologyData.BioCandidate cand : displayCandidates) {
+                            String nameLower = toLower(cand.getDisplayName());
+                            boolean matches = false;
+                            for (String genusPrefix : b.observedGenusPrefixes) {
+                                if (nameLower.startsWith(genusPrefix + " ")
+                                        || nameLower.equals(genusPrefix)) {
+                                    matches = true;
+                                    break;
+                                }
+                            }
+                            if (matches) {
+                                filtered.add(cand);
+                            }
+                        }
+                        // Only shrink the list if we actually matched something –
+                        // otherwise keep the broader prediction list.
+                        if (!filtered.isEmpty()) {
+                            displayCandidates = filtered;
+                        }
+                    }
+
+                    for (ExobiologyData.BioCandidate cand : displayCandidates) {
                         BodyInfo detail = new BodyInfo();
                         detail.detailRow = true;
                         detail.parentBodyId = b.bodyId;
@@ -565,7 +635,7 @@ public class SystemTabPanel extends JPanel {
             }
 
             tableModel.setBodies(rows);
-            
+
             if (systemName != null && systemAddress != 0L && !bodies.isEmpty()) {
                 try {
                     List<SystemCache.CachedBody> cachedBodies = toCachedBodies();
@@ -646,7 +716,6 @@ public class SystemTabPanel extends JPanel {
             refreshTable();
         }
 
-
         public List<SystemCache.CachedBody> toCachedBodies() {
             List<SystemCache.CachedBody> list = new ArrayList<>();
             for (BodyInfo b : bodies.values()) {
@@ -672,17 +741,32 @@ public class SystemTabPanel extends JPanel {
             return list;
         }
 
-
-        private String computeShortName(String name) {
-            if (name == null) {
+        private String computeShortName(String fullName) {
+            if (fullName == null) {
                 return "";
             }
-            int idx = name.lastIndexOf(' ');
-            if (idx >= 0 && idx + 1 < name.length()) {
-                return name.substring(idx + 1);
+
+            // If we know the system name, strip it off the front
+            // "HIP 30377 A 1" with systemName "HIP 30377" => "A 1"
+            // "HIP 82152 1"  with systemName "HIP 82152" => "1"
+            if (systemName != null && !systemName.isEmpty()) {
+                String prefix = systemName + " ";
+                if (fullName.startsWith(prefix)) {
+                    String suffix = fullName.substring(prefix.length());
+                    if (!suffix.isEmpty()) {
+                        return suffix;
+                    }
+                }
             }
-            return name;
+
+            // Fallback: keep last token if we couldn't match the system name
+            int idx = fullName.lastIndexOf(' ');
+            if (idx >= 0 && idx + 1 < fullName.length()) {
+                return fullName.substring(idx + 1);
+            }
+            return fullName;
         }
+
 
         private String chooseAtmoOrType(EliteLogEvent.ScanEvent e) {
             String atmo = e.getAtmosphere();

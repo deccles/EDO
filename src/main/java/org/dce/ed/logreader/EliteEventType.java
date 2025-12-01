@@ -42,7 +42,8 @@ public enum EliteEventType {
     RESERVOIR_REPLENISHED("ReservoirReplenished"),
     STATUS("Status"), // from Status.json or live journal
     // Catch-all for events we don't model explicitly yet:
-    UNKNOWN("UNKNOWN");
+    SCAN_ORGANIC("ScanOrganic"),
+    UNKNOWN("UNKNOWN") ;
 
     private final String journalName;
     private static final Map<String, EliteEventType> BY_NAME = new HashMap<>();
