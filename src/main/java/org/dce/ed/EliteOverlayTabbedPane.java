@@ -81,6 +81,8 @@ public class EliteOverlayTabbedPane extends JPanel {
         cardPanel.add(biologyTab, CARD_BIOLOGY);
         cardPanel.add(logTab, CARD_LOG);
 
+        systemTab.refreshFromCache();
+        
         // Wire up buttons to show cards
         routeButton.addActionListener(new ActionListener() {
             @Override
@@ -122,7 +124,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
             monitor.addListener(event -> {
                 // Log tab (if you added a live handler there)
-                 logTab.handleLogEvent(event);
+//                 logTab.handleLogEvent(event);
 
                 // System tab
                 systemTab.handleLogEvent(event);

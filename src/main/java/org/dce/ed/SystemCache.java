@@ -26,6 +26,9 @@ import java.util.Map;
  * previously scanned systems can be shown immediately on future runs.
  */
 public final class SystemCache {
+    // Remember the last system we saw in the cache file so callers
+    // can easily restore "whatever was loaded last" at startup.
+    private CachedSystem lastLoadedSystem;
 
     private static final String CACHE_FILE_NAME = ".edOverlaySystems.json";
 
@@ -55,7 +58,13 @@ public final class SystemCache {
     public static SystemCache getInstance() {
         return INSTANCE;
     }
-
+    
+    public static CachedSystem load() throws IOException {
+        SystemCache cache = getInstance();
+        cache.ensureLoaded();
+        return cache.lastLoadedSystem;
+    }
+    
     /**
      * Represents one body as stored in the cache.
      */
@@ -68,6 +77,9 @@ public final class SystemCache {
         public boolean hasBio;
         public boolean hasGeo;
         public boolean highValue;
+        // extra fields used by SystemTabPanel for exobiology prediction / display
+        public String planetClass;
+        public String atmosphere;
         public String atmoOrType;
     }
 
@@ -79,7 +91,7 @@ public final class SystemCache {
         public String systemName;
         public List<CachedBody> bodies = new ArrayList<>();
     }
-
+    
     private synchronized void ensureLoaded() {
         if (loaded) {
             return;
@@ -91,7 +103,7 @@ public final class SystemCache {
         }
 
         System.out.println("SystemCache: loading from " + cachePath.toAbsolutePath());
-        
+
         try (BufferedReader reader = Files.newBufferedReader(cachePath, StandardCharsets.UTF_8)) {
             Type type = new TypeToken<List<CachedSystem>>() {}.getType();
             List<CachedSystem> systems = gson.fromJson(reader, type);
@@ -108,6 +120,8 @@ public final class SystemCache {
                 if (cs.systemName != null && !cs.systemName.isEmpty()) {
                     byName.put(cs.systemName, cs);
                 }
+                // NEW: remember the last one we saw
+                lastLoadedSystem = cs;
             }
         } catch (IOException ex) {
             // ignore; cache will just start empty

@@ -5,7 +5,6 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -15,19 +14,18 @@ import java.util.Map;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JViewport;
 import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
-import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
+import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
@@ -36,52 +34,43 @@ import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
 
 /**
  * System tab – shows system bodies based on local journal events,
- * with a fallback to EDSM lookup when we don't have enough history.
+ * with exobiology predictions and a cache-backed preload using SystemCache.
  *
- * Bodies are also cached on disk via {@link SystemCache} so we can
- * instantly populate systems we've seen before.
+ * Bodies are cached on disk via {@link SystemCache}, so that
+ * we can re-load system info when ED isn't running.
  */
 public class SystemTabPanel extends JPanel {
 
-    // Close to the default ED HUD orange
-    private static final Color ED_ORANGE = new Color(255, 120, 0);
+    private static final long serialVersionUID = 1L;
 
+    private static final Color ED_ORANGE = new Color(255, 140, 0);
+
+    private final JTable table;
     private final JLabel headerLabel;
     private final SystemBodiesTableModel tableModel;
-    private final JTable table;
-
-    final SystemTracker tracker = new SystemTracker();
-    private final SystemCache cache = SystemCache.getInstance();
-    private final EdsmClient edsmClient = new EdsmClient();
+    private final SystemTracker tracker;
 
     public SystemTabPanel() {
         super(new BorderLayout());
+
         setOpaque(false);
 
         headerLabel = new JLabel("Waiting for system data…");
         headerLabel.setForeground(ED_ORANGE);
-        headerLabel.setBorder(new EmptyBorder(4, 6, 4, 6));
+        headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
-        add(headerLabel, BorderLayout.NORTH);
 
         tableModel = new SystemBodiesTableModel();
         table = new JTable(tableModel);
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
-        table.setShowHorizontalLines(false);
-        table.setShowVerticalLines(false);
-        table.setForeground(ED_ORANGE);
-        table.setBackground(new Color(0, 0, 0, 0));
-        
-        table.setRowHeight(table.getRowHeight() + 2);
-        table.setIntercellSpacing(new Dimension(4, 1));
-        table.setFont(table.getFont().deriveFont(12f));
+        table.setShowGrid(false);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setRowSelectionAllowed(false);
+        table.setRowSelectionAllowed(true);
         table.setColumnSelectionAllowed(false);
-        table.setCellSelectionEnabled(false);
+        table.setPreferredScrollableViewportSize(new Dimension(500, 300));
 
-     // ED-style header row: bold orange text on black background
+        // Header styling
         JTableHeader header = table.getTableHeader();
         header.setOpaque(true);
         header.setForeground(ED_ORANGE);
@@ -98,12 +87,12 @@ public class SystemTabPanel extends JPanel {
                 JLabel label = (JLabel) super.getTableCellRendererComponent(
                         table, value, false, false, row, column);
 
-                // Solid black so the LAF's grey header bar never shows through
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
                 label.setForeground(ED_ORANGE);
                 label.setFont(label.getFont().deriveFont(Font.BOLD));
-                label.setBorder(null);
+                label.setHorizontalAlignment(LEFT);
+                label.setBorder(new EmptyBorder(0, 4, 0, 4));
 
                 return label;
             }
@@ -123,167 +112,123 @@ public class SystemTabPanel extends JPanel {
                                                            boolean hasFocus,
                                                            int row,
                                                            int column) {
-                super.getTableCellRendererComponent(table, value, false, false, row, column);
-                return this;
+                Component c = super.getTableCellRendererComponent(
+                        table, value, isSelected, hasFocus, row, column);
+                c.setForeground(ED_ORANGE);
+                if (isSelected) {
+                    c.setForeground(Color.BLACK);
+                }
+                return c;
             }
         };
         table.setDefaultRenderer(Object.class, cellRenderer);
 
-        TableColumnModel cols = table.getColumnModel();
-        if (cols.getColumnCount() >= 7) {
-            cols.getColumn(0).setPreferredWidth(60);  // Body
-            cols.getColumn(1).setPreferredWidth(55);  // g
-            cols.getColumn(2).setPreferredWidth(140); // Atmosphere / Type
-            cols.getColumn(3).setPreferredWidth(70);  // Bio
-            cols.getColumn(4).setPreferredWidth(60);  // Value
-            cols.getColumn(5).setPreferredWidth(55);  // Landable
-            cols.getColumn(6).setPreferredWidth(80);  // Dist
-        }
-
         JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
-        scrollPane.setBorder(new EmptyBorder(4, 4, 4, 4));
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getViewport().setOpaque(false);
-        
-     // This is the piece painting the white bar:
         JViewport headerViewport = scrollPane.getColumnHeader();
         if (headerViewport != null) {
             headerViewport.setOpaque(false);
             headerViewport.setBackground(new Color(0, 0, 0, 0));
         }
-        
-        // Hide scrollbar (mouse wheel still works)
-        JScrollBar vBar = scrollPane.getVerticalScrollBar();
-        if (vBar != null) {
-            vBar.setPreferredSize(new Dimension(0, 0));
-        }
 
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+
+        setBorder(new EmptyBorder(4, 4, 4, 4));
+        add(headerLabel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
-        // On startup, try to reconstruct the current system using:
-        //  1) local cache (previous session)
-        //  2) recent journal events
-        //  3) EDSM lookup
-        preloadSystem();
+        // Column widths
+        TableColumnModel columns = table.getColumnModel();
+        columns.getColumn(0).setPreferredWidth(40);   // Body
+        columns.getColumn(1).setPreferredWidth(60);   // g
+        columns.getColumn(2).setPreferredWidth(220);  // Atmosphere / Type
+        columns.getColumn(3).setPreferredWidth(140);  // Bio
+        columns.getColumn(4).setPreferredWidth(100);  // Value
+        columns.getColumn(5).setPreferredWidth(60);   // Land
+        columns.getColumn(6).setPreferredWidth(80);   // Dist (Ls)
+
+        tracker = new SystemTracker();
+
+        // On startup, try to preload the current system from cache using Status.json
+        refreshFromCache();
     }
 
     /**
-     * Call this from your live log-tail code whenever a new event arrives
-     * so the System tab can stay up to date while the game runs.
+     * Called by EliteOverlayTabbedPane's LiveJournalMonitor wiring.
      */
     public void handleLogEvent(EliteLogEvent event) {
-        if (event == null) {
-            return;
+        if (event != null) {
+            tracker.handleEvent(event);
         }
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> handleLogEvent(event));
-            return;
-        }
-        tracker.handleEvent(event);
-        cacheCurrentSystem();
     }
 
-    private void preloadSystem() {
-        EliteJournalReader reader;
-            reader = new EliteJournalReader();
-
-        String systemName = null;
-        long systemAddress = 0L;
-
+    /**
+     * On startup (or when explicitly invoked), try to infer the *current* system
+     * from Status.json and load that system's bodies from SystemCache.
+     *
+     * If the system is in the cache (from your rescan tool or live caching),
+     * the System tab will immediately show those bodies even before any new
+     * journal events arrive.
+     */
+    public void refreshFromCache() {
         try {
+            // Look at the last journal file and figure out where we are now
+            EliteJournalReader reader = new EliteJournalReader();
             List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
-            // Walk backwards to find the last Location/FSD Jump
-            for (int i = events.size() - 1; i >= 0; i--) {
-                EliteLogEvent e = events.get(i);
-                if (e instanceof LocationEvent) {
-                    LocationEvent le = (LocationEvent) e;
-                    systemName = le.getStarSystem();
-                    systemAddress = le.getSystemAddress();
-                    break;
-                } else if (e instanceof FsdJumpEvent) {
-                    FsdJumpEvent fe = (FsdJumpEvent) e;
-                    systemName = fe.getStarSystem();
-                    systemAddress = fe.getSystemAddress();
-                    break;
+
+            String systemName = null;
+            long systemAddress = 0L;
+
+            for (EliteLogEvent event : events) {
+                if (event instanceof LocationEvent) {
+                    LocationEvent e = (LocationEvent) event;
+                    systemName = e.getStarSystem();
+                    systemAddress = e.getSystemAddress();
+                } else if (event instanceof FsdJumpEvent) {
+                    FsdJumpEvent e = (FsdJumpEvent) event;
+                    systemName = e.getStarSystem();
+                    systemAddress = e.getSystemAddress();
+                } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
+                    EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
+                    if (systemName == null) {
+                        systemName = e.getSystemName();
+                    }
+                    if (systemAddress == 0L) {
+                        systemAddress = e.getSystemAddress();
+                    }
                 }
             }
-        } catch (IOException ex) {
-            headerLabel.setText("Could not read latest journal.");
-            return;
-        }
 
-        if (systemName == null && systemAddress == 0L) {
-            headerLabel.setText("Current system unknown.");
-            return;
-        }
-
-        tracker.setCurrentSystem(systemName, systemAddress);
-
-        // 1) Try cache
-        SystemCache.CachedSystem cached = cache.get(systemAddress, systemName);
-        if (cached != null && cached.bodies != null && !cached.bodies.isEmpty()) {
-            tracker.loadFromCache(cached);
-            return;
-        }
-
-        // 2) Try to reconstruct from local journal events (best-effort)
-        boolean builtFromJournal = buildFromJournalHistory(reader, systemName, systemAddress);
-        if (builtFromJournal) {
-            cacheCurrentSystem();
-            return;
-        }
-
-        // 3) Fallback to EDSM lookup
-        loadFromEdsm(systemName);
-    }
-
-    private boolean buildFromJournalHistory(EliteJournalReader reader, String systemName, long systemAddress) {
-        try {
-            // For now we only use the latest journal file; if you want to
-            // be more aggressive you can add a "readEventsFromLastNJournalFiles"
-            // method to EliteJournalReader and iterate over more history.
-            List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
-            for (EliteLogEvent event : events) {
-                tracker.handleEvent(event);
-            }
-            // If we saw any bodies, consider it a success.
-            return tracker.getBodyCount() > 0;
-        } catch (IOException ex) {
-            return false;
-        }
-    }
-
-    private void loadFromEdsm(String systemName) {
-        if (systemName == null || systemName.isEmpty()) {
-            return;
-        }
-
-        new Thread(() -> {
-            List<EdsmClient.EdsmBody> bodies = edsmClient.fetchSystemBodies(systemName);
-            if (bodies == null || bodies.isEmpty()) {
+            // If we couldn't find *any* system info, just bail quietly
+            if (systemName == null && systemAddress == 0L) {
                 return;
             }
 
-            SwingUtilities.invokeLater(() -> {
-                tracker.loadFromEdsm(systemName, bodies);
-                cacheCurrentSystem();
-            });
-        }, "EDSM-SystemLookup").start();
-    }
+            // Use the cache to get the full body list for that system
+            SystemCache cache = SystemCache.getInstance();
+            SystemCache.CachedSystem cs = cache.get(systemAddress, systemName);
 
-    private void cacheCurrentSystem() {
-        if (tracker.systemName == null && tracker.systemAddress == 0L) {
-            return;
+            if (cs != null) {
+                // Populate from cache (this fills bodies + header)
+                tracker.loadFromCache(cs);
+            } else {
+                // At least update the header with the current system
+                tracker.setCurrentSystem(systemName, systemAddress);
+            }
+        } catch (Exception e) {
+            // Best-effort only; failure here should not break the overlay
+            e.printStackTrace();
         }
-        List<SystemCache.CachedBody> cachedBodies = tracker.toCachedBodies();
-        cache.put(tracker.systemAddress, tracker.systemName, cachedBodies);
     }
 
-    /* ---------- Tracking + table model ---------- */
+    // ---------------------------------------------------------------------
+    //  Internal model
+    // ---------------------------------------------------------------------
 
-    private static final class BodyInfo {
+    class BodyInfo {
         String name;
         String shortName;
         int bodyId = -1;
@@ -294,12 +239,29 @@ public class SystemTabPanel extends JPanel {
         boolean hasGeo = false;
         boolean highValue = false;
         String atmoOrType = "";
+
+        // Additional fields for exobiology prediction / detail rows
+        // These are only populated for main body rows (detailRow == false)
+        String planetClass;
+        String atmosphere;
+        Double surfaceTempK;
+        boolean hasVolcanism;
+        String volcanismType;
+
+        // If true, this is a synthetic "detail" row (e.g. a BioCandidate)
+        boolean detailRow = false;
+        int parentBodyId = -1;
+        String bioDetailText;
+        String bioDetailValueText;
+
+        List<ExobiologyData.BioCandidate> bioCandidates;
     }
 
     final class SystemTracker {
 
         String systemName = null;
         long systemAddress = 0L;
+
         Integer totalBodies = null;
         Integer nonBodyCount = null;
         Double fssProgress = null;
@@ -345,6 +307,8 @@ public class SystemTabPanel extends JPanel {
                 info.distanceLs = e.getDistanceFromArrivalLs();
                 info.landable = e.isLandable();
                 info.gravityMS = e.getSurfaceGravity();
+                info.planetClass = e.getPlanetClass();
+                info.atmosphere = e.getAtmosphere();
                 info.atmoOrType = chooseAtmoOrType(e);
                 info.highValue = isHighValue(e);
             } else if (event instanceof SaasignalsFoundEvent) {
@@ -373,12 +337,23 @@ public class SystemTabPanel extends JPanel {
                 return;
             }
 
+            // New system – clear everything
             systemName = name;
             systemAddress = addr;
             totalBodies = null;
             nonBodyCount = null;
             fssProgress = null;
             bodies.clear();
+        }
+
+        private boolean isBeltOrRing(String bodyName) {
+            if (bodyName == null) {
+                return false;
+            }
+            String n = bodyName.toLowerCase(Locale.ROOT);
+            return n.contains("belt cluster")
+                    || n.contains("ring")
+                    || n.contains("belt ");
         }
 
         private void handleSignals(int bodyId, List<SaasignalsFoundEvent.Signal> signals) {
@@ -397,61 +372,7 @@ public class SystemTabPanel extends JPanel {
             }
         }
 
-        private String chooseAtmoOrType(EliteLogEvent.ScanEvent e) {
-            String atmo = e.getAtmosphere();
-            if (atmo != null && !atmo.isEmpty()) {
-                return atmo;
-            }
-            String pc = e.getPlanetClass();
-            if (pc != null && !pc.isEmpty()) {
-                return pc;
-            }
-            String star = e.getStarType();
-            return star != null ? star : "";
-        }
-
-        private boolean isHighValue(EliteLogEvent.ScanEvent e) {
-            String pc = toLower(e.getPlanetClass());
-            String tf = toLower(e.getTerraformState());
-            if (pc.contains("earth-like")) {
-                return true;
-            }
-            if (pc.contains("water world")) {
-                return true;
-            }
-            if (pc.contains("ammonia world")) {
-                return true;
-            }
-            return tf.contains("terraformable");
-        }
-
-        /**
-         * Strip the system name prefix from the body name.
-         * Main star becomes "*".
-         */
-        private String computeShortName(String bodyName) {
-            if (bodyName == null || bodyName.isEmpty()) {
-                return "";
-            }
-            if (systemName != null && bodyName.startsWith(systemName)) {
-                String remainder = bodyName.substring(systemName.length()).trim();
-                if (remainder.isEmpty()) {
-                    return "*"; // primary star
-                }
-                return remainder;
-            }
-            return bodyName;
-        }
-
-        private boolean isBeltOrRing(String bodyName) {
-            if (bodyName == null) {
-                return false;
-            }
-            String lower = bodyName.toLowerCase(Locale.ROOT);
-            return lower.contains("belt") || lower.contains("ring");
-        }
-
-        private void refreshTable() {
+        void refreshTable() {
             StringBuilder sb = new StringBuilder();
             if (systemName != null && !systemName.isEmpty()) {
                 sb.append(systemName);
@@ -477,15 +398,97 @@ public class SystemTabPanel extends JPanel {
 
             headerLabel.setText(sb.toString());
 
-            List<BodyInfo> rows = new ArrayList<>(bodies.values());
-            rows.sort(Comparator.comparingDouble(b -> {
+            // Build flattened view: each real body row plus optional Bio detail rows
+            List<BodyInfo> sortedBodies = new ArrayList<>(bodies.values());
+            sortedBodies.sort(Comparator.comparingDouble(b -> {
                 if (Double.isNaN(b.distanceLs)) {
                     return Double.MAX_VALUE;
                 }
                 return b.distanceLs;
             }));
 
+            List<BodyInfo> rows = new ArrayList<>();
+
+            for (BodyInfo b : sortedBodies) {
+                // Main body row
+                b.detailRow = false;
+                b.parentBodyId = -1;
+                rows.add(b);
+
+                if (!b.hasBio) {
+                    continue;
+                }
+
+                // Ensure we have prediction candidates if possible
+                if (b.bioCandidates == null) {
+                    ExobiologyData.BodyAttributes attrs = buildBodyAttributes(b);
+                    if (attrs != null) {
+                        List<ExobiologyData.BioCandidate> preds = ExobiologyData.predictGenera(attrs);
+                        if (preds != null && !preds.isEmpty()) {
+                            b.bioCandidates = preds;
+                        } else {
+                            b.bioCandidates = new ArrayList<>();
+                        }
+                    } else {
+                        b.bioCandidates = new ArrayList<>();
+                    }
+                }
+
+                if (b.bioCandidates != null && !b.bioCandidates.isEmpty()) {
+                    for (ExobiologyData.BioCandidate cand : b.bioCandidates) {
+                        BodyInfo detail = new BodyInfo();
+                        detail.detailRow = true;
+                        detail.parentBodyId = b.bodyId;
+                        detail.bioDetailText = cand.getDisplayName();
+                        long baseVal = cand.getBaseValue();
+                        detail.bioDetailValueText = String.format(Locale.US, "%,d Cr", baseVal);
+                        rows.add(detail);
+                    }
+                } else {
+                    BodyInfo detail = new BodyInfo();
+                    detail.detailRow = true;
+                    detail.parentBodyId = b.bodyId;
+                    detail.bioDetailText = "Biological signals detected";
+                    detail.bioDetailValueText = "";
+                    rows.add(detail);
+                }
+            }
+
             tableModel.setBodies(rows);
+            
+            if (systemName != null && systemAddress != 0L && !bodies.isEmpty()) {
+                try {
+                    List<SystemCache.CachedBody> cachedBodies = toCachedBodies();
+                    SystemCache.getInstance().put(systemAddress, systemName, cachedBodies);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
+
+        private ExobiologyData.BodyAttributes buildBodyAttributes(BodyInfo b) {
+            String planetClass = b.planetClass;
+            String atmosphere = b.atmosphere;
+            double gravityG = Double.NaN;
+            if (b.gravityMS != null && !Double.isNaN(b.gravityMS)) {
+                gravityG = b.gravityMS / 9.80665;
+            }
+
+            if ((planetClass == null || planetClass.isEmpty()) &&
+                (atmosphere == null || atmosphere.isEmpty()) &&
+                Double.isNaN(gravityG)) {
+                return null;
+            }
+
+            // Temperature / volcanism left as defaults for now.
+            return new ExobiologyData.BodyAttributes(
+                    planetClass,
+                    gravityG,
+                    atmosphere,
+                    Double.NaN,
+                    false,
+                    null
+            );
         }
 
         private String toLower(String s) {
@@ -516,36 +519,8 @@ public class SystemTabPanel extends JPanel {
                 info.hasGeo = cb.hasGeo;
                 info.highValue = cb.highValue;
                 info.atmoOrType = cb.atmoOrType;
-                bodies.put(info.bodyId, info);
-            }
-            refreshTable();
-        }
-
-        void loadFromEdsm(String systemNameFromEdsm, List<EdsmClient.EdsmBody> edsmBodies) {
-            if (edsmBodies == null) {
-                return;
-            }
-            if (systemNameFromEdsm != null && !systemNameFromEdsm.isEmpty()) {
-                this.systemName = systemNameFromEdsm;
-            }
-
-            bodies.clear();
-            for (EdsmClient.EdsmBody eb : edsmBodies) {
-                BodyInfo info = new BodyInfo();
-                info.name = eb.name;
-                info.shortName = computeShortName(eb.name);
-                info.bodyId = eb.bodyId;
-                info.distanceLs = eb.distanceToArrival;
-                info.gravityMS = eb.gravity;
-                info.landable = eb.landable;
-                info.hasBio = eb.hasBio;
-                info.hasGeo = eb.hasGeo;
-                info.highValue = eb.highValue;
-                if (eb.atmosphereType != null && !eb.atmosphereType.isEmpty()) {
-                    info.atmoOrType = eb.atmosphereType;
-                } else {
-                    info.atmoOrType = eb.subType != null ? eb.subType : "";
-                }
+                info.planetClass = cb.planetClass;
+                info.atmosphere = cb.atmosphere;
                 bodies.put(info.bodyId, info);
             }
             refreshTable();
@@ -564,13 +539,61 @@ public class SystemTabPanel extends JPanel {
                 cb.hasGeo = b.hasGeo;
                 cb.highValue = b.highValue;
                 cb.atmoOrType = b.atmoOrType;
+                cb.planetClass = b.planetClass;
+                cb.atmosphere = b.atmosphere;
                 list.add(cb);
             }
             return list;
         }
+
+        private String computeShortName(String name) {
+            if (name == null) {
+                return "";
+            }
+            int idx = name.lastIndexOf(' ');
+            if (idx >= 0 && idx + 1 < name.length()) {
+                return name.substring(idx + 1);
+            }
+            return name;
+        }
+
+        private String chooseAtmoOrType(EliteLogEvent.ScanEvent e) {
+            String atmo = e.getAtmosphere();
+            if (atmo != null && !atmo.isEmpty()) {
+                return atmo;
+            }
+            String pc = e.getPlanetClass();
+            if (pc != null && !pc.isEmpty()) {
+                return pc;
+            }
+            String star = e.getStarType();
+            return star != null ? star : "";
+        }
+
+        private boolean isHighValue(EliteLogEvent.ScanEvent e) {
+            String pc = toLower(e.getPlanetClass());
+            String tf = toLower(e.getTerraformState());
+            if (pc.contains("earth-like")) {
+                return true;
+            }
+            if (pc.contains("water world")) {
+                return true;
+            }
+            if (pc.contains("ammonia world")) {
+                return true;
+            }
+            if (tf.contains("terraformable")) {
+                return true;
+            }
+            return false;
+        }
     }
 
-    private static final class SystemBodiesTableModel extends AbstractTableModel {
+    // ---------------------------------------------------------------------
+    //  Table model
+    // ---------------------------------------------------------------------
+
+    class SystemBodiesTableModel extends AbstractTableModel {
 
         private final String[] columns = {
                 "Body",
@@ -610,6 +633,20 @@ public class SystemTabPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             BodyInfo b = bodies.get(rowIndex);
+
+            // Detail rows: only Bio + Value columns are populated
+            if (b.detailRow) {
+                switch (columnIndex) {
+                    case 3:
+                        return b.bioDetailText != null ? b.bioDetailText : "";
+                    case 4:
+                        return b.bioDetailValueText != null ? b.bioDetailValueText : "";
+                    default:
+                        return "";
+                }
+            }
+
+            // Normal body rows
             switch (columnIndex) {
                 case 0:
                     return b.shortName != null ? b.shortName : "";

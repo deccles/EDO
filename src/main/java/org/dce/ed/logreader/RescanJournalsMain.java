@@ -77,6 +77,7 @@ public class RescanJournalsMain {
      */
     private static final class BodyInfo {
         String name;
+        String shortName;
         int bodyId = -1;
         double distanceLs = Double.NaN;
         Double gravityMS = null;
@@ -85,7 +86,14 @@ public class RescanJournalsMain {
         boolean hasGeo = false;
         boolean highValue = false;
         String atmoOrType = "";
+
+        // New: “detail row” support (used for BIO lines inserted under the body row)
+        boolean detailRow = false;      // true = this row is a child/info row, not the main body
+        int parentBodyId = -1;          // owning bodyId when detailRow == true
+        String bioDetailText;           // text that goes in the Bio column
+        String bioDetailValueText;      // text that goes in the Value column
     }
+
 
     /**
      * Accumulates data for one system across all events.
