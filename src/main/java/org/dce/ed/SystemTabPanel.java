@@ -330,7 +330,6 @@ public class SystemTabPanel extends JPanel {
             boolean sameAddr = (addr != 0L && addr == systemAddress);
 
             if (sameName || sameAddr) {
-                // Same system – keep existing body info, just update address/name
                 if (name != null) {
                     systemName = name;
                 }
@@ -340,7 +339,16 @@ public class SystemTabPanel extends JPanel {
                 return;
             }
 
-            // New system – clear everything
+            // Try to load this system from cache first
+            SystemCache cache = SystemCache.getInstance();
+            SystemCache.CachedSystem cs = cache.get(addr, name);
+            if (cs != null) {
+                // This will set systemName/systemAddress, repopulate bodies, and refresh the table
+                loadFromCache(cs);
+                return;
+            }
+
+            // No cache entry – start fresh
             systemName = name;
             systemAddress = addr;
             totalBodies = null;
