@@ -208,7 +208,6 @@ public class SystemTabPanel extends JPanel {
             // 2) If we still don't have any system info, look back through
             //    the last few journal files (including the latest one).
             if (systemName == null && systemAddress == 0L) {
-                // Adjust N if you want to look further back in history
                 final int N = 10;
                 events = reader.readEventsFromLastNJournalFiles(N);
 
@@ -238,7 +237,7 @@ public class SystemTabPanel extends JPanel {
                 return;
             }
 
-            // Use the cache to get the full body list for that system
+            // 3) Try to load from cache first
             SystemCache cache = SystemCache.getInstance();
             SystemCache.CachedSystem cs = cache.get(systemAddress, systemName);
 
@@ -246,8 +245,18 @@ public class SystemTabPanel extends JPanel {
                 // Populate from cache (this fills bodies + header)
                 tracker.loadFromCache(cs);
             } else {
-                // At least update the header with the current system
+                // Fallback: build a basic body list from the journal events themselves
                 tracker.setCurrentSystem(systemName, systemAddress);
+
+                // Reuse the same events we already read – feed them through the normal pipeline
+                for (EliteLogEvent event : events) {
+                    if (event instanceof EliteLogEvent.ScanEvent
+                            || event instanceof EliteLogEvent.FssDiscoveryScanEvent
+                            || event instanceof EliteLogEvent.SaasignalsFoundEvent) {
+                        // This is the same path used during live updates
+                        handleLogEvent(event);
+                    }
+                }
             }
         } catch (Exception e) {
             // Best-effort only; failure here should not break the overlay
@@ -589,7 +598,7 @@ public class SystemTabPanel extends JPanel {
                 //
                 ExobiologyData.BodyAttributes attrs = buildBodyAttributes(b);
                 if (attrs != null && (b.bioCandidates == null || b.bioCandidates.isEmpty())) {
-                    List<ExobiologyData.BioCandidate> preds = ExobiologyData.predictGenera(attrs);
+                    List<ExobiologyData.BioCandidate> preds = ExobiologyData.predict(attrs);
                     if (preds != null && !preds.isEmpty()) {
                         b.bioCandidates = new ArrayList<>(preds);
                     } else {
@@ -685,11 +694,20 @@ public class SystemTabPanel extends JPanel {
                 return null;
             }
 
+            ExobiologyData.PlanetType planetTypeEnum =
+                    ExobiologyData.parsePlanetType(planetClass);
+            ExobiologyData.AtmosphereType atmoTypeEnum =
+                    ExobiologyData.parseAtmosphere(atmosphere);
+
+            double tempMinK = tempK;
+            double tempMaxK = tempK;
+
             return new ExobiologyData.BodyAttributes(
-                    planetClass,
+                    planetTypeEnum,
                     gravityG,
-                    atmosphere,
-                    tempK,
+                    atmoTypeEnum,
+                    tempMinK,
+                    tempMaxK,
                     hasVolcanism,
                     volcanism
             );
