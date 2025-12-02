@@ -1,32 +1,59 @@
 package org.dce.ed.edsm;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.ImageIcon;
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JTabbedPane;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.JScrollPane;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Image;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.prefs.Preferences;
+import java.util.stream.Collectors;
+
+import javax.swing.ActionMap;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
+import javax.swing.InputMap;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.KeyStroke;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
+import javax.swing.Timer;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 public class EdsmQueryTool extends JFrame {
-
+	private String autoCompleteOriginalText;
+	
     private static final String PREF_KEY_EDSM_API = "edsmApiKey";
     private static final String PREF_KEY_EDSM_CMDR = "edsmCommanderName";
 
@@ -40,6 +67,27 @@ public class EdsmQueryTool extends JFrame {
 
     private final JTextArea outputArea;
     private final JLabel commanderStatusLabel;
+
+    // Shared "system name" fields across tabs
+    private final List<JTextField> systemNameFields = new ArrayList<>();
+    private JTextField systemTabSystemField;
+    private JTextField bodiesTabSystemField;
+    private JTextField trafficTabSystemField;
+
+    // Sphere search XYZ fields (System tab)
+    private JTextField sphereXField;
+    private JTextField sphereYField;
+    private JTextField sphereZField;
+
+
+    private String currentSystemName;
+
+    // Autocomplete UI
+    private Timer autoCompleteTimer;
+    private JPopupMenu autoCompletePopup;
+    private JList<String> autoCompleteList;
+    private JTextField autoCompleteTargetField;
+    private String pendingAutoCompletePrefix;
 
     public EdsmQueryTool() {
         super("EDSM Query Tool");
@@ -89,6 +137,9 @@ public class EdsmQueryTool extends JFrame {
 
         pack();
         setLocationRelativeTo(null);
+
+        // Look up commander position at startup and populate all system fields
+        initCommanderSystemAtStartup();
     }
 
     private static ImageIcon loadLocateIcon() {
@@ -116,7 +167,9 @@ public class EdsmQueryTool extends JFrame {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        JTextField systemNameField = new JTextField(30);
+        systemTabSystemField = new JTextField(30);
+        registerSystemNameField(systemTabSystemField);
+
         JTextField systemsField = new JTextField(30);
 
         JTextField xField = new JTextField(6);
@@ -124,6 +177,10 @@ public class EdsmQueryTool extends JFrame {
         JTextField zField = new JTextField(6);
         JTextField radiusField = new JTextField(6);
 
+        sphereXField = xField;
+        sphereYField = yField;
+        sphereZField = zField;
+        
         JButton getSystemButton = new JButton("Get System");
         JButton getSystemsButton = new JButton("Get Systems");
         JButton showSystemButton = new JButton("Show System (info + primary star)");
@@ -134,7 +191,7 @@ public class EdsmQueryTool extends JFrame {
         singleSystemPanel.setLayout(new BoxLayout(singleSystemPanel, BoxLayout.Y_AXIS));
         singleSystemPanel.setBorder(BorderFactory.createTitledBorder("Single system by name"));
 
-        singleSystemPanel.add(makeLabeledWithLocate(systemNameField, "System name:"));
+        singleSystemPanel.add(makeLabeledWithLocate(systemTabSystemField, "System name:"));
         singleSystemPanel.add(Box.createVerticalStrut(6));
 
         JPanel singleButtons = new JPanel();
@@ -187,26 +244,33 @@ public class EdsmQueryTool extends JFrame {
 
         // ----- Actions -----
         getSystemButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = systemTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+            setGlobalSystemName(name);
             runQueryAsync("getSystem(" + name + ")", () -> {
                 SystemResponse resp = client.getSystem(name);
-                return toJsonOrMessage(resp);
+                String json = toJsonOrMessage(resp);
+                // Copy coords into the sphere search fields on the EDT
+                SwingUtilities.invokeLater(() -> updateSphereCoordsFromJson(json));
+                return json;
             });
         });
 
         showSystemButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = systemTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+            setGlobalSystemName(name);
             runQueryAsync("showSystem(" + name + ")", () -> {
                 ShowSystemResponse resp = client.showSystem(name);
-                return toJsonOrMessage(resp);
+                String json = toJsonOrMessage(resp);
+                SwingUtilities.invokeLater(() -> updateSphereCoordsFromJson(json));
+                return json;
             });
         });
 
@@ -217,38 +281,97 @@ public class EdsmQueryTool extends JFrame {
                 return;
             }
             runQueryAsync("getSystems(" + names + ")", () -> {
-                SystemResponse[] resp = client.getSystems(names);
+                // Split on comma and trim each name
+                String[] parts = Arrays.stream(names.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toArray(String[]::new);
+                if (parts.length == 0) {
+                    return "(no valid system names provided)";
+                }
+                SystemResponse[] resp = client.getSystems(parts);
                 return toJsonOrMessage(resp);
             });
         });
 
         sphereSystemsButton.addActionListener(e -> {
-            String xText = xField.getText().trim();
-            String yText = yField.getText().trim();
-            String zText = zField.getText().trim();
             String rText = radiusField.getText().trim();
+            if (rText.isEmpty()) {
+                appendOutput("Please enter a radius.\n");
+                return;
+            }
 
-            if (xText.isEmpty() || yText.isEmpty() || zText.isEmpty() || rText.isEmpty()) {
-                appendOutput("Please enter X, Y, Z and radius.\n");
+            String centerName = systemTabSystemField.getText().trim();
+            if (centerName.isEmpty()) {
+                appendOutput("Please enter a system name (or use Locate) for the sphere center.\n");
                 return;
             }
 
             try {
-                double x = Double.parseDouble(xText);
-                double y = Double.parseDouble(yText);
-                double z = Double.parseDouble(zText);
                 int radius = Integer.parseInt(rText);
 
-                runQueryAsync("sphereSystems(" + x + "," + y + "," + z + "," + radius + ")", () -> {
-                    SphereSystemsResponse[] resp = client.sphereSystems(x, y, z, radius);
+                runQueryAsync("sphereSystemsLocal(" + centerName + "," + radius + ")", () -> {
+                    SphereSystemsResponse[] resp = client.sphereSystemsLocal(centerName, radius);
                     return toJsonOrMessage(resp);
                 });
             } catch (NumberFormatException ex) {
-                appendOutput("Invalid number format for coordinates or radius.\n");
+                appendOutput("Invalid number format for radius.\n");
             }
         });
-
         return panel;
+    }
+    /**
+     * Parse EDSM system JSON and, if it has coords.x/y/z, copy them into the sphere search fields.
+     */
+    private void updateSphereCoordsFromJson(String json) {
+        if (json == null) {
+            return;
+        }
+        json = json.trim();
+        if (json.isEmpty()) {
+            return;
+        }
+
+        // Only try to parse if it looks like JSON, avoid "(no result / empty response)" etc.
+        char c = json.charAt(0);
+        if (c != '{' && c != '[') {
+            return;
+        }
+
+        try {
+            JsonElement root = JsonParser.parseString(json);
+            JsonObject obj = null;
+
+            if (root.isJsonObject()) {
+                obj = root.getAsJsonObject();
+            } else if (root.isJsonArray() && root.getAsJsonArray().size() > 0) {
+                JsonElement first = root.getAsJsonArray().get(0);
+                if (first.isJsonObject()) {
+                    obj = first.getAsJsonObject();
+                }
+            }
+
+            if (obj == null) {
+                return;
+            }
+
+            JsonObject coords = obj.getAsJsonObject("coords");
+            if (coords == null) {
+                return;
+            }
+
+            if (sphereXField != null && coords.has("x")) {
+                sphereXField.setText(coords.get("x").getAsString());
+            }
+            if (sphereYField != null && coords.has("y")) {
+                sphereYField.setText(coords.get("y").getAsString());
+            }
+            if (sphereZField != null && coords.has("z")) {
+                sphereZField.setText(coords.get("z").getAsString());
+            }
+        } catch (Exception ignored) {
+            // If JSON isn't what we expect, just don't update the sphere fields.
+        }
     }
 
     private JPanel createBodiesTab() {
@@ -256,7 +379,9 @@ public class EdsmQueryTool extends JFrame {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        JTextField systemNameField = new JTextField(30);
+        bodiesTabSystemField = new JTextField(30);
+        registerSystemNameField(bodiesTabSystemField);
+
         JTextField systemIdField = new JTextField(20);
 
         JButton showBodiesByNameButton = new JButton("Show Bodies");
@@ -267,7 +392,7 @@ public class EdsmQueryTool extends JFrame {
         byNamePanel.setLayout(new BoxLayout(byNamePanel, BoxLayout.Y_AXIS));
         byNamePanel.setBorder(BorderFactory.createTitledBorder("Bodies by system name"));
 
-        byNamePanel.add(makeLabeledWithLocate(systemNameField, "System name:"));
+        byNamePanel.add(makeLabeledWithLocate(bodiesTabSystemField, "System name:"));
         byNamePanel.add(Box.createVerticalStrut(6));
         byNamePanel.add(showBodiesByNameButton);
 
@@ -287,11 +412,12 @@ public class EdsmQueryTool extends JFrame {
 
         // Actions
         showBodiesByNameButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = bodiesTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+            setGlobalSystemName(name);
             runQueryAsync("showBodies(systemName=" + name + ")", () -> {
                 BodiesResponse resp = client.showBodies(name);
                 return toJsonOrMessage(resp);
@@ -323,7 +449,9 @@ public class EdsmQueryTool extends JFrame {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        JTextField systemNameField = new JTextField(30);
+        trafficTabSystemField = new JTextField(30);
+        registerSystemNameField(trafficTabSystemField);
+
         JButton trafficButton = new JButton("System Traffic");
         JButton deathsButton = new JButton("System Deaths");
         JButton stationsButton = new JButton("System Stations");
@@ -334,7 +462,7 @@ public class EdsmQueryTool extends JFrame {
         activityPanel.setLayout(new BoxLayout(activityPanel, BoxLayout.Y_AXIS));
         activityPanel.setBorder(BorderFactory.createTitledBorder("System activity"));
 
-        activityPanel.add(makeLabeledWithLocate(systemNameField, "System name:"));
+        activityPanel.add(makeLabeledWithLocate(trafficTabSystemField, "System name:"));
         activityPanel.add(Box.createVerticalStrut(6));
 
         JPanel buttonRow1 = new JPanel();
@@ -359,11 +487,12 @@ public class EdsmQueryTool extends JFrame {
 
         // Actions
         trafficButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+            setGlobalSystemName(name);
             runQueryAsync("showTraffic(" + name + ")", () -> {
                 TrafficResponse resp = client.showTraffic(name);
                 return toJsonOrMessage(resp);
@@ -371,11 +500,12 @@ public class EdsmQueryTool extends JFrame {
         });
 
         deathsButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+            setGlobalSystemName(name);
             runQueryAsync("showDeaths(" + name + ")", () -> {
                 DeathsResponse resp = client.showDeaths(name);
                 return toJsonOrMessage(resp);
@@ -383,11 +513,12 @@ public class EdsmQueryTool extends JFrame {
         });
 
         stationsButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+            setGlobalSystemName(name);
             runQueryAsync("getSystemStations(" + name + ")", () -> {
                 SystemStationsResponse resp = client.getSystemStations(name);
                 return toJsonOrMessage(resp);
@@ -395,7 +526,7 @@ public class EdsmQueryTool extends JFrame {
         });
 
         logsButton.addActionListener(e -> {
-            String name = systemNameField.getText().trim();
+            String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
@@ -410,6 +541,7 @@ public class EdsmQueryTool extends JFrame {
             String apiKey = creds[0];
             String commanderName = creds[1];
 
+            setGlobalSystemName(name);
             runQueryAsync("systemLogs(" + name + ")", () -> {
                 LogsResponse resp = client.systemLogs(apiKey, commanderName, name);
                 return toJsonOrMessage(resp);
@@ -428,6 +560,7 @@ public class EdsmQueryTool extends JFrame {
         JButton cmdrLogsButton = new JButton("Get Commander Logs");
         JButton cmdrLastPosButton = new JButton("Get Commander Last Position");
         JButton cmdrRanksButton = new JButton("Get Commander Ranks/Stats");
+        JButton cmdrCreditsButton = new JButton("Get Commander Credits");
 
         // ----- Section: Credentials -----
         JPanel credsPanel = new JPanel();
@@ -456,6 +589,8 @@ public class EdsmQueryTool extends JFrame {
         JPanel row2 = new JPanel();
         row2.setLayout(new BoxLayout(row2, BoxLayout.X_AXIS));
         row2.add(cmdrRanksButton);
+        row2.add(Box.createHorizontalStrut(8));
+        row2.add(cmdrCreditsButton);
         row2.add(Box.createHorizontalGlue());
 
         queriesPanel.add(row1);
@@ -495,6 +630,11 @@ public class EdsmQueryTool extends JFrame {
 
             runQueryAsync("getCmdrLastPosition()", () -> {
                 CmdrLastPositionResponse resp = client.getCmdrLastPosition(apiKey, commanderName);
+                if (resp != null && resp.getSystem() != null && !resp.getSystem().isEmpty()) {
+                    String sys = resp.getSystem();
+                    // Update all tabs when manually requested
+                    SwingUtilities.invokeLater(() -> setGlobalSystemName(sys));
+                }
                 return toJsonOrMessage(resp);
             });
         });
@@ -514,7 +654,65 @@ public class EdsmQueryTool extends JFrame {
             });
         });
 
+        cmdrCreditsButton.addActionListener(e -> {
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set.\n");
+                return;
+            }
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
+
+            runQueryAsync("getCmdrCredits()", () -> {
+                CmdrCreditsResponse resp = client.getCmdrCredits(apiKey, commanderName);
+                return toJsonOrMessage(resp);
+            });
+        });
+
         return panel;
+    }
+
+    // ============================================================
+    // STARTUP COMMANDER SYSTEM
+    // ============================================================
+
+    private void initCommanderSystemAtStartup() {
+        SwingUtilities.invokeLater(() -> {
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set; cannot auto-populate system at startup.\n");
+                return;
+            }
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
+
+            new SwingWorker<String, Void>() {
+                @Override
+                protected String doInBackground() {
+                    try {
+                        CmdrLastPositionResponse resp = client.getCmdrLastPosition(apiKey, commanderName);
+                        if (resp != null) {
+                            return resp.getSystem();
+                        }
+                    } catch (IOException | InterruptedException ex) {
+                        return null;
+                    }
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    try {
+                        String system = get();
+                        if (system != null && !system.isEmpty()) {
+                            appendOutput("Startup: commander last known system is " + system + "\n");
+                            setGlobalSystemName(system);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }.execute();
+        });
     }
 
     // ============================================================
@@ -669,7 +867,8 @@ public class EdsmQueryTool extends JFrame {
                 }
                 String system = resp.getSystem();
                 if (system != null && !system.isEmpty()) {
-                    SwingUtilities.invokeLater(() -> field.setText(system));
+                    // Update all tabs when locate is pressed
+                    SwingUtilities.invokeLater(() -> setGlobalSystemName(system));
                     return "Located commander in system: " + system;
                 } else {
                     return "(getCmdrLastPosition returned no system)";
@@ -683,6 +882,375 @@ public class EdsmQueryTool extends JFrame {
         p.add(locateButton);
 
         return p;
+    }
+
+    /**
+     * Register a system-name field so:
+     * - it participates in global updates
+     * - Enter updates all tabs
+     * - typing drives autocomplete (non-intrusively)
+     */
+    private void registerSystemNameField(JTextField field) {
+        systemNameFields.add(field);
+
+        // Single-line height
+        Dimension pref = field.getPreferredSize();
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
+
+        // When user hits Enter in any system field, propagate to all tabs
+        field.addActionListener(e -> {
+            String text = field.getText().trim();
+            if (!text.isEmpty()) {
+                setGlobalSystemName(text);
+            }
+        });
+
+        // Typing -> schedule autocomplete
+        field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                handleSystemNameTyping(field);
+            }
+
+            @Override
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                handleSystemNameTyping(field);
+            }
+
+            @Override
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                handleSystemNameTyping(field);
+            }
+        });
+
+        // ESC hides autocomplete popup
+        InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
+        ActionMap am = field.getActionMap();
+        im.put(KeyStroke.getKeyStroke("ESCAPE"), "autoCompleteHide");
+        am.put("autoCompleteHide", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                hideAutoComplete();
+            }
+        });
+
+        // DOWN arrow -> move focus into the suggestion list (if visible)
+        im.put(KeyStroke.getKeyStroke("DOWN"), "autoCompleteDown");
+        am.put("autoCompleteDown", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (autoCompletePopup == null) {
+                    return;
+                }
+                if (!autoCompletePopup.isVisible()) {
+                    return;
+                }
+                if (autoCompleteList == null) {
+                    return;
+                }
+                if (autoCompleteList.getModel().getSize() == 0) {
+                    return;
+                }
+
+                // Remember which field we came from and its text
+                autoCompleteTargetField = field;
+                autoCompleteOriginalText = field.getText();
+
+                autoCompleteList.setSelectedIndex(0);
+                autoCompleteList.ensureIndexIsVisible(0);
+                autoCompleteList.requestFocusInWindow();
+            }
+        });
+    }
+
+    private void handleSystemNameTyping(JTextField field) {
+        String text = field.getText().trim();
+        if (text.length() < 3) {
+            pendingAutoCompletePrefix = null;
+            hideAutoComplete();
+            return;
+        }
+
+        autoCompleteTargetField = field;
+        pendingAutoCompletePrefix = text;
+
+        if (autoCompleteTimer == null) {
+            autoCompleteTimer = new Timer(250, e -> runAutoComplete());
+            autoCompleteTimer.setRepeats(false);
+        }
+        autoCompleteTimer.restart();
+    }
+
+    private void runAutoComplete() {
+        final JTextField targetField = autoCompleteTargetField;
+        final String prefix = pendingAutoCompletePrefix;
+
+        if (targetField == null || prefix == null || prefix.length() < 3) {
+            return;
+        }
+
+        new SwingWorker<List<String>, Void>() {
+            @Override
+            protected List<String> doInBackground() {
+                try {
+                    return fetchSystemNameSuggestions(prefix);
+                } catch (Exception e) {
+                    return Collections.emptyList();
+                }
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    List<String> suggestions = get();
+                    // If user kept typing and prefix changed, drop stale results
+                    if (prefix.equals(pendingAutoCompletePrefix)) {
+                        // Optional debug:
+                        // appendOutput("Autocomplete \"" + prefix + "\" -> " + suggestions.size() + " suggestions\n");
+                        showAutoCompleteSuggestions(targetField, suggestions);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }.execute();
+    }
+    
+ // Used only for autocomplete JSON parsing
+    private static class AutoCompleteSystem {
+        String name;
+    }
+
+    private List<String> fetchSystemNameSuggestions(String prefix) throws Exception {
+        // EDSM API: /api-v1/systems?systemName=prefix (prefix can be "start of a name")
+        String encoded = URLEncoder.encode(prefix, StandardCharsets.UTF_8.name());
+        String urlStr = "https://www.edsm.net/api-v1/systems?systemName=" + encoded;
+
+        HttpURLConnection conn = null;
+        InputStream is = null;
+        try {
+            URL url = new URL(urlStr);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+
+            int status = conn.getResponseCode();
+            if (status >= 200 && status < 300) {
+                is = conn.getInputStream();
+            } else {
+                is = conn.getErrorStream();
+            }
+
+            if (is == null) {
+                return Collections.emptyList();
+            }
+
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+            }
+
+            String body = sb.toString().trim();
+            if (body.isEmpty() || body.equals("[]")) {
+                return Collections.emptyList();
+            }
+
+            AutoCompleteSystem[] systems = gson.fromJson(body, AutoCompleteSystem[].class);
+            if (systems == null || systems.length == 0) {
+                return Collections.emptyList();
+            }
+
+            List<String> names = new ArrayList<>();
+            for (AutoCompleteSystem s : systems) {
+                if (s == null || s.name == null || s.name.isEmpty()) {
+                    continue;
+                }
+                names.add(s.name);
+            }
+
+            // Deduplicate & cap how many we show
+            return names.stream()
+                    .distinct()
+                    .limit(20)
+                    .collect(Collectors.toList());
+        } finally {
+            if (is != null) {
+                try {
+                    is.close();
+                } catch (Exception ignored) {
+                }
+            }
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private void showAutoCompleteSuggestions(JTextField field, List<String> suggestions) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            hideAutoComplete();
+            return;
+        }
+
+        if (autoCompletePopup == null) {
+            autoCompletePopup = new JPopupMenu();
+            autoCompletePopup.setFocusable(false); // popup itself doesn't need focus
+
+            autoCompleteList = new JList<>();
+            autoCompleteList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            autoCompleteList.setFocusable(true);   // must be focusable for arrow keys
+
+            autoCompleteList.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 1 && SwingUtilities.isLeftMouseButton(e)) {
+                        applyAutoCompleteSelection();
+                    }
+                }
+            });
+
+            JScrollPane sp = new JScrollPane(autoCompleteList);
+            sp.setBorder(null);
+            sp.setFocusable(false);
+            autoCompletePopup.add(sp);
+
+            // Keyboard navigation when the list DOES have focus
+            InputMap lim = autoCompleteList.getInputMap(JComponent.WHEN_FOCUSED);
+            ActionMap lam = autoCompleteList.getActionMap();
+
+            // ENTER -> accept selection
+            lim.put(KeyStroke.getKeyStroke("ENTER"), "autoCompleteAccept");
+            lam.put("autoCompleteAccept", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    applyAutoCompleteSelection();
+                }
+            });
+
+            // ESC -> hide popup, return focus to field
+            lim.put(KeyStroke.getKeyStroke("ESCAPE"), "autoCompleteEscape");
+            lam.put("autoCompleteEscape", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    hideAutoComplete();
+                    if (autoCompleteTargetField != null) {
+                        autoCompleteTargetField.requestFocusInWindow();
+                        autoCompleteTargetField.setCaretPosition(
+                                autoCompleteTargetField.getText().length()
+                        );
+                    }
+                }
+            });
+
+            // UP -> move up; if already at first item, go back to field and restore original text
+            lim.put(KeyStroke.getKeyStroke("UP"), "autoCompleteUp");
+            lam.put("autoCompleteUp", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    int idx = autoCompleteList.getSelectedIndex();
+                    if (idx > 0) {
+                        int newIdx = idx - 1;
+                        autoCompleteList.setSelectedIndex(newIdx);
+                        autoCompleteList.ensureIndexIsVisible(newIdx);
+                    } else {
+                        // At first item: return to text field
+                        if (autoCompleteTargetField != null) {
+                            String restore = autoCompleteOriginalText;
+                            if (restore == null) {
+                                restore = autoCompleteTargetField.getText();
+                            }
+                            autoCompleteTargetField.setText(restore);
+                            autoCompleteTargetField.requestFocusInWindow();
+                            autoCompleteTargetField.setCaretPosition(restore.length());
+                        }
+                        autoCompleteOriginalText = null;
+                        hideAutoComplete();
+                    }
+                }
+            });
+
+            // DOWN (when list already has focus) -> move down within the list
+            lim.put(KeyStroke.getKeyStroke("DOWN"), "autoCompleteDownInList");
+            lam.put("autoCompleteDownInList", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    int size = autoCompleteList.getModel().getSize();
+                    if (size == 0) {
+                        return;
+                    }
+                    int idx = autoCompleteList.getSelectedIndex();
+                    if (idx < 0) {
+                        idx = 0;
+                    }
+                    if (idx < size - 1) {
+                        int newIdx = idx + 1;
+                        autoCompleteList.setSelectedIndex(newIdx);
+                        autoCompleteList.ensureIndexIsVisible(newIdx);
+                    }
+                    // If already at last item, do nothing (no wrap)
+                }
+            });
+        }
+
+        autoCompleteList.setListData(suggestions.toArray(new String[0]));
+        autoCompleteList.setVisibleRowCount(Math.min(8, suggestions.size()));
+
+        int width = Math.max(field.getWidth(), 200);
+        int listHeight = autoCompleteList.getPreferredScrollableViewportSize().height;
+        if (listHeight <= 0) {
+            listHeight = autoCompleteList.getPreferredSize().height;
+        }
+        if (listHeight <= 0) {
+            listHeight = 120; // fallback
+        }
+
+        autoCompletePopup.setPopupSize(width, listHeight + 4);
+
+        // Show popup just under the field
+        autoCompletePopup.show(field, 0, field.getHeight());
+
+        // Default: keep typing in the field until user hits Down
+        field.requestFocusInWindow();
+        field.setCaretPosition(field.getText().length());
+    }
+
+    private void applyAutoCompleteSelection() {
+        if (autoCompleteTargetField == null || autoCompleteList == null) {
+            return;
+        }
+        String selected = autoCompleteList.getSelectedValue();
+        if (selected == null || selected.isEmpty()) {
+            return;
+        }
+        autoCompleteTargetField.setText(selected);
+        setGlobalSystemName(selected);
+        hideAutoComplete();
+    }
+
+    private void hideAutoComplete() {
+        if (autoCompletePopup != null && autoCompletePopup.isVisible()) {
+            autoCompletePopup.setVisible(false);
+        }
+    }
+
+    private void setGlobalSystemName(String name) {
+        if (name == null) {
+            return;
+        }
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+        currentSystemName = trimmed;
+        for (JTextField f : systemNameFields) {
+            if (f != null) {
+                f.setText(trimmed);
+            }
+        }
     }
 
     // ============================================================
