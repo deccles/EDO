@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 public class EdsmClient {
 
     private static final String BASE_URL = "https://www.edsm.net";
+
     private final HttpClient client;
     private final Gson gson;
 
@@ -60,10 +61,18 @@ public class EdsmClient {
         return get(url, SystemResponse[].class);
     }
 
-    public ShowSystemResponse showSystem(String name) throws IOException, InterruptedException {
-        String url = BASE_URL + "/api-v1/show-system"
-                + "?systemName=" + encode(name)
-                + "&showInformation=1&showStations=1";
+    /**
+     * Richer single-system view (info + primary star, still no stations).
+     */
+    public ShowSystemResponse showSystem(String systemName) throws IOException, InterruptedException {
+        String url = BASE_URL + "/api-v1/system"
+                + "?systemName=" + encode(systemName)
+                + "&showId=1"
+                + "&showCoordinates=1"
+                + "&showPermit=1"
+                + "&showInformation=1"
+                + "&showPrimaryStar=1";
+
         return get(url, ShowSystemResponse.class);
     }
 
@@ -79,7 +88,7 @@ public class EdsmClient {
         return get(url, SphereSystemsResponse[].class);
     }
 
-    // ----------------- Body-level -----------------
+    // ----------------- Bodies -----------------
 
     public BodiesResponse showBodies(String systemName) throws IOException, InterruptedException {
         String url = BASE_URL + "/api-system-v1/bodies?systemName=" + encode(systemName);
@@ -89,6 +98,20 @@ public class EdsmClient {
     public BodiesResponse showBodies(long systemId) throws IOException, InterruptedException {
         String url = BASE_URL + "/api-system-v1/bodies?systemId=" + systemId;
         return get(url, BodiesResponse.class);
+    }
+
+    // ----------------- Stations (new) -----------------
+
+    /**
+     * Get information about stations in a system (not including fleet carriers).
+     * https://www.edsm.net/api-system-v1/stations
+     */
+    public SystemStationsResponse getSystemStations(String systemName)
+            throws IOException, InterruptedException {
+
+        String url = BASE_URL + "/api-system-v1/stations"
+                + "?systemName=" + encode(systemName);
+        return get(url, SystemStationsResponse.class);
     }
 
     // ----------------- Traffic / deaths -----------------
@@ -106,13 +129,17 @@ public class EdsmClient {
     // ----------------- Logs (system-level & commander-level) -----------------
 
     /**
-     * System logs: you have been calling this by system name only.
-     * EDSM's docs say commanderName/apiKey are required, but in practice
-     * systemName-only works and returns a LogsResponse, which you already saw.
+     * System logs by system name (public, no API key).
      */
-    public LogsResponse systemLogs(String systemName) throws IOException, InterruptedException {
+    public LogsResponse systemLogs(String apiKey, String commanderName, String systemName)
+            throws IOException, InterruptedException {
+
         String url = BASE_URL + "/api-logs-v1/get-logs"
-                + "?systemName=" + encode(systemName);
+                + "?commanderName=" + encode(commanderName)
+                + "&apiKey=" + encode(apiKey)
+                + "&systemName=" + encode(systemName)
+                + "&showId=1";
+
         return get(url, LogsResponse.class);
     }
 
@@ -130,7 +157,7 @@ public class EdsmClient {
     }
 
     /**
-     * Commander last position: documented get-position endpoint.
+     * Commander last position.
      */
     public CmdrLastPositionResponse getCmdrLastPosition(String apiKey, String commanderName)
             throws IOException, InterruptedException {
@@ -142,12 +169,8 @@ public class EdsmClient {
         return get(url, CmdrLastPositionResponse.class);
     }
 
-    // ----------------- Commander-specific (ranks, etc.) -----------------
+    // ----------------- Commander-specific (ranks, credits) -----------------
 
-    /**
-     * Commander ranks/statistics: documented get-ranks endpoint.
-     * https://www.edsm.net/en/api-commander-v1#get-ranks
-     */
     public CmdrRanksResponse getCmdrRanks(String apiKey, String commanderName)
             throws IOException, InterruptedException {
 
@@ -157,10 +180,6 @@ public class EdsmClient {
         return get(url, CmdrRanksResponse.class);
     }
 
-    /**
-     * Optional: commander credits history (if you want it later).
-     * Kept here for completeness; your GUI doesn't have to call it yet.
-     */
     public CmdrCreditsResponse getCmdrCredits(String apiKey, String commanderName)
             throws IOException, InterruptedException {
 

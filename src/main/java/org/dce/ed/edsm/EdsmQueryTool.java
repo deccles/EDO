@@ -6,10 +6,12 @@ import com.google.gson.GsonBuilder;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
@@ -26,14 +28,14 @@ public class EdsmQueryTool extends JFrame {
     private static final String PREF_KEY_EDSM_API = "edsmApiKey";
     private static final String PREF_KEY_EDSM_CMDR = "edsmCommanderName";
 
+    // Put your PNG at: src/main/resources/org/dce/ed/edsm/icon_locate.png
+    private static final String LOCATE_ICON_PATH = "/org/dce/ed/edsm/locate_icon.png";
+    private static final ImageIcon LOCATE_ICON = loadLocateIcon();
+
     private final EdsmClient client;
     private final Gson gson;
 
     private final JTextArea outputArea;
-
-    // Commander tab fields
-    private JTextField apiKeyField;
-    private JTextField commanderNameField;
 
     public EdsmQueryTool() {
         super("EDSM Query Tool");
@@ -65,6 +67,18 @@ public class EdsmQueryTool extends JFrame {
         setLocationRelativeTo(null);
     }
 
+    private static ImageIcon loadLocateIcon() {
+        java.net.URL url = EdsmQueryTool.class.getResource(LOCATE_ICON_PATH);
+        if (url != null) {
+            return new ImageIcon(url);
+        }
+        return null;
+    }
+
+    // ============================================================
+    // TABS
+    // ============================================================
+
     private JPanel createSystemTab() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
@@ -80,16 +94,18 @@ public class EdsmQueryTool extends JFrame {
 
         JButton getSystemButton = new JButton("Get System");
         JButton getSystemsButton = new JButton("Get Systems (comma-separated)");
-        JButton showSystemButton = new JButton("Show System (info + stations)");
+        JButton showSystemButton = new JButton("Show System (info + primary star)");
         JButton sphereSystemsButton = new JButton("Sphere Systems");
 
-        panel.add(makeLabeled(systemNameField, "System name:"));
+        // Single-system name with Locate icon button
+        panel.add(makeLabeledWithLocate(systemNameField, "System name:"));
         panel.add(Box.createVerticalStrut(4));
         panel.add(getSystemButton);
         panel.add(Box.createVerticalStrut(4));
         panel.add(showSystemButton);
         panel.add(Box.createVerticalStrut(8));
 
+        // Multi-systems (no locate)
         panel.add(makeLabeled(systemsField, "Multiple system names (comma-separated):"));
         panel.add(Box.createVerticalStrut(4));
         panel.add(getSystemsButton);
@@ -193,7 +209,7 @@ public class EdsmQueryTool extends JFrame {
         JButton showBodiesByNameButton = new JButton("Show Bodies (by system name)");
         JButton showBodiesByIdButton = new JButton("Show Bodies (by system ID)");
 
-        panel.add(makeLabeled(systemNameField, "System name:"));
+        panel.add(makeLabeledWithLocate(systemNameField, "System name:"));
         panel.add(Box.createVerticalStrut(4));
         panel.add(showBodiesByNameButton);
         panel.add(Box.createVerticalStrut(8));
@@ -242,13 +258,16 @@ public class EdsmQueryTool extends JFrame {
         JTextField systemNameField = new JTextField(30);
         JButton trafficButton = new JButton("System Traffic");
         JButton deathsButton = new JButton("System Deaths");
+        JButton stationsButton = new JButton("System Stations");
         JButton logsButton = new JButton("System Logs");
 
-        panel.add(makeLabeled(systemNameField, "System name:"));
+        panel.add(makeLabeledWithLocate(systemNameField, "System name:"));
         panel.add(Box.createVerticalStrut(4));
         panel.add(trafficButton);
         panel.add(Box.createVerticalStrut(4));
         panel.add(deathsButton);
+        panel.add(Box.createVerticalStrut(4));
+        panel.add(stationsButton);
         panel.add(Box.createVerticalStrut(4));
         panel.add(logsButton);
 
@@ -276,14 +295,36 @@ public class EdsmQueryTool extends JFrame {
             });
         });
 
+        stationsButton.addActionListener(e -> {
+            String name = systemNameField.getText().trim();
+            if (name.isEmpty()) {
+                appendOutput("Please enter a system name.\n");
+                return;
+            }
+            runQueryAsync("getSystemStations(" + name + ")", () -> {
+                SystemStationsResponse resp = client.getSystemStations(name);
+                return toJsonOrMessage(resp);
+            });
+        });
+
         logsButton.addActionListener(e -> {
             String name = systemNameField.getText().trim();
             if (name.isEmpty()) {
                 appendOutput("Please enter a system name.\n");
                 return;
             }
+
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set; cannot query system logs.\n");
+                return;
+            }
+
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
+
             runQueryAsync("systemLogs(" + name + ")", () -> {
-                LogsResponse resp = client.systemLogs(name);
+                LogsResponse resp = client.systemLogs(apiKey, commanderName, name);
                 return toJsonOrMessage(resp);
             });
         });
@@ -296,38 +337,29 @@ public class EdsmQueryTool extends JFrame {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        apiKeyField = new JTextField(40);
-        commanderNameField = new JTextField(40);
-        loadCommanderPrefs();
-
+        JButton prefsButton = new JButton("Preferences…");
         JButton cmdrLogsButton = new JButton("Get Cmdr Logs");
         JButton cmdrLastPosButton = new JButton("Get Cmdr Last Position");
         JButton cmdrRanksButton = new JButton("Get Cmdr Ranks/Stats");
 
-        panel.add(makeLabeled(apiKeyField, "EDSM API Key:"));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(makeLabeled(commanderNameField, "Commander Name:"));
-        panel.add(Box.createVerticalStrut(4));
+        panel.add(prefsButton);
+        panel.add(Box.createVerticalStrut(8));
         panel.add(cmdrLogsButton);
         panel.add(Box.createVerticalStrut(4));
         panel.add(cmdrLastPosButton);
         panel.add(Box.createVerticalStrut(4));
         panel.add(cmdrRanksButton);
 
+        prefsButton.addActionListener(e -> showCommanderPreferencesDialog());
+
         cmdrLogsButton.addActionListener(e -> {
-            String apiKey = apiKeyField.getText().trim();
-            String commanderName = commanderNameField.getText().trim();
-
-            if (apiKey.isEmpty()) {
-                appendOutput("Please enter your EDSM API key.\n");
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set.\n");
                 return;
             }
-            if (commanderName.isEmpty()) {
-                appendOutput("Please enter your commander name (as on EDSM).\n");
-                return;
-            }
-
-            saveCommanderPrefs(apiKey, commanderName);
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
 
             runQueryAsync("getCmdrLogs()", () -> {
                 LogsResponse resp = client.getCmdrLogs(apiKey, commanderName);
@@ -336,19 +368,13 @@ public class EdsmQueryTool extends JFrame {
         });
 
         cmdrLastPosButton.addActionListener(e -> {
-            String apiKey = apiKeyField.getText().trim();
-            String commanderName = commanderNameField.getText().trim();
-
-            if (apiKey.isEmpty()) {
-                appendOutput("Please enter your EDSM API key.\n");
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set.\n");
                 return;
             }
-            if (commanderName.isEmpty()) {
-                appendOutput("Please enter your commander name (as on EDSM).\n");
-                return;
-            }
-
-            saveCommanderPrefs(apiKey, commanderName);
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
 
             runQueryAsync("getCmdrLastPosition()", () -> {
                 CmdrLastPositionResponse resp = client.getCmdrLastPosition(apiKey, commanderName);
@@ -357,19 +383,13 @@ public class EdsmQueryTool extends JFrame {
         });
 
         cmdrRanksButton.addActionListener(e -> {
-            String apiKey = apiKeyField.getText().trim();
-            String commanderName = commanderNameField.getText().trim();
-
-            if (apiKey.isEmpty()) {
-                appendOutput("Please enter your EDSM API key.\n");
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set.\n");
                 return;
             }
-            if (commanderName.isEmpty()) {
-                appendOutput("Please enter your commander name (as on EDSM).\n");
-                return;
-            }
-
-            saveCommanderPrefs(apiKey, commanderName);
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
 
             runQueryAsync("getCmdrRanks()", () -> {
                 CmdrRanksResponse resp = client.getCmdrRanks(apiKey, commanderName);
@@ -380,25 +400,73 @@ public class EdsmQueryTool extends JFrame {
         return panel;
     }
 
-    private void loadCommanderPrefs() {
+    // ============================================================
+    // PREFERENCES (API key + commander name)
+    // ============================================================
+
+    private String[] loadCommanderPrefs() {
         Preferences prefs = Preferences.userNodeForPackage(EdsmQueryTool.class);
-        String savedKey = prefs.get(PREF_KEY_EDSM_API, "");
-        String savedCmdr = prefs.get(PREF_KEY_EDSM_CMDR, "");
-        if (savedKey != null && !savedKey.isEmpty()) {
-            apiKeyField.setText(savedKey);
-        }
-        if (savedCmdr != null && !savedCmdr.isEmpty()) {
-            commanderNameField.setText(savedCmdr);
-        }
+        String apiKey = prefs.get(PREF_KEY_EDSM_API, "").trim();
+        String commanderName = prefs.get(PREF_KEY_EDSM_CMDR, "").trim();
+        return new String[]{apiKey, commanderName};
     }
 
     private void saveCommanderPrefs(String apiKey, String commanderName) {
         Preferences prefs = Preferences.userNodeForPackage(EdsmQueryTool.class);
-        prefs.put(PREF_KEY_EDSM_API, apiKey);
+        if (apiKey != null) {
+            prefs.put(PREF_KEY_EDSM_API, apiKey.trim());
+        }
         if (commanderName != null) {
-            prefs.put(PREF_KEY_EDSM_CMDR, commanderName);
+            prefs.put(PREF_KEY_EDSM_CMDR, commanderName.trim());
         }
     }
+
+    private boolean ensureCommanderPrefs() {
+        String[] creds = loadCommanderPrefs();
+        String apiKey = creds[0];
+        String commanderName = creds[1];
+
+        if (apiKey.isEmpty() || commanderName.isEmpty()) {
+            showCommanderPreferencesDialog();
+            creds = loadCommanderPrefs();
+            apiKey = creds[0];
+            commanderName = creds[1];
+        }
+
+        return !apiKey.isEmpty() && !commanderName.isEmpty();
+    }
+
+    private void showCommanderPreferencesDialog() {
+        String[] creds = loadCommanderPrefs();
+        String currentKey = creds[0];
+        String currentCmdr = creds[1];
+
+        JTextField apiField = new JTextField(currentKey, 30);
+        JTextField cmdrField = new JTextField(currentCmdr, 30);
+
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        panel.add(makeLabeled(apiField, "EDSM API Key:"));
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(makeLabeled(cmdrField, "Commander Name:"));
+
+        int result = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "EDSM Preferences",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+
+        if (result == JOptionPane.OK_OPTION) {
+            saveCommanderPrefs(apiField.getText(), cmdrField.getText());
+        }
+    }
+
+    // ============================================================
+    // UI HELPERS
+    // ============================================================
 
     private JComponent makeLabeled(JTextField field, String labelText) {
         JPanel p = new JPanel();
@@ -409,6 +477,66 @@ public class EdsmQueryTool extends JFrame {
         p.add(field);
         return p;
     }
+
+    /**
+     * Label + text field + icon "locate" button.
+     * If the icon can't be loaded, falls back to text "Locate".
+     */
+    private JComponent makeLabeledWithLocate(JTextField field, String labelText) {
+        JPanel p = new JPanel();
+        p.setLayout(new BoxLayout(p, BoxLayout.X_AXIS));
+
+        JLabel label = new JLabel(labelText);
+        label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4));
+
+        JButton locateButton;
+        if (LOCATE_ICON != null) {
+            locateButton = new JButton(LOCATE_ICON);
+            locateButton.setBorderPainted(false);
+            locateButton.setContentAreaFilled(false);
+            locateButton.setFocusPainted(false);
+        } else {
+            locateButton = new JButton("Locate");
+        }
+
+        locateButton.setToolTipText("Fill with current commander system from EDSM");
+
+        locateButton.addActionListener(e -> {
+            if (!ensureCommanderPrefs()) {
+                appendOutput("Commander preferences not set; cannot locate current system.\n");
+                return;
+            }
+
+            String[] creds = loadCommanderPrefs();
+            String apiKey = creds[0];
+            String commanderName = creds[1];
+
+            runQueryAsync("getCmdrLastPosition() for locate", () -> {
+                CmdrLastPositionResponse resp = client.getCmdrLastPosition(apiKey, commanderName);
+                if (resp == null) {
+                    return "(no result from getCmdrLastPosition)";
+                }
+                String system = resp.getSystem();
+                if (system != null && !system.isEmpty()) {
+                    SwingUtilities.invokeLater(() -> field.setText(system));
+                    return "Located commander in system: " + system;
+                } else {
+                    return "(getCmdrLastPosition returned no system)";
+                }
+            });
+        });
+
+        p.add(label);
+        p.add(field);
+        p.add(Box.createHorizontalStrut(4));
+        p.add(locateButton);
+
+        return p;
+    }
+
+    // ============================================================
+    // ASYNC + OUTPUT
+    // ============================================================
 
     private void runQueryAsync(String label, QuerySupplier supplier) {
         appendOutput("=== " + label + " ===\n");
@@ -452,6 +580,10 @@ public class EdsmQueryTool extends JFrame {
     private interface QuerySupplier {
         String get() throws Exception;
     }
+
+    // ============================================================
+    // MAIN
+    // ============================================================
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
