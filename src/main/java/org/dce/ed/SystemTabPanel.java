@@ -380,14 +380,27 @@ public class SystemTabPanel extends JPanel {
                 BodyInfo info = bodies.computeIfAbsent(e.getBodyId(), id -> new BodyInfo());
                 info.bodyId = e.getBodyId();
 
-                if (info.name == null || info.name.isEmpty()) {
-                    info.name = e.getBodyName();
-                    info.shortName = computeShortName(e.getBodyName());
+                // Only set name if we actually have one (ScanOrganic usually doesn't)
+                String bodyName = e.getBodyName();
+                if ((info.name == null || info.name.isEmpty()) && bodyName != null && !bodyName.isEmpty()) {
+                    info.name = bodyName;
+                    info.shortName = computeShortName(bodyName);
                 }
 
-                // We now know there is confirmed bio on this body
+                // Confirmed bio on this body
                 info.hasBio = true;
 
+                // Also record the genus so prediction list can be narrowed
+                String genusName = toLower(e.getGenusLocalised());
+                if (genusName == null || genusName.isEmpty()) {
+                    genusName = toLower(e.getGenus());
+                }
+                if (genusName != null && !genusName.isEmpty()) {
+                    if (info.observedGenusPrefixes == null) {
+                        info.observedGenusPrefixes = new java.util.HashSet<>();
+                    }
+                    info.observedGenusPrefixes.add(genusName);
+                }
             } else if (event instanceof EliteLogEvent.ScanEvent) {
                 EliteLogEvent.ScanEvent e = (EliteLogEvent.ScanEvent) event;
 
@@ -510,7 +523,12 @@ public class SystemTabPanel extends JPanel {
                 info.observedGenusPrefixes = new java.util.HashSet<>();
             }
             for (SaasignalsFoundEvent.Genus g : genuses) {
-                String genusName = toLower(g.getGenus());
+                // Prefer the localised genus (e.g. "Bacterium", "Fonticulua", etc.)
+                String genusName = toLower(g.getGenusLocalised());
+                if (genusName.isEmpty()) {
+                    // Fallback to the raw codex name if localised is missing
+                    genusName = toLower(g.getGenus());
+                }
                 if (!genusName.isEmpty()) {
                     info.observedGenusPrefixes.add(genusName);
                 }
@@ -564,19 +582,22 @@ public class SystemTabPanel extends JPanel {
                     continue;
                 }
 
-                // Ensure we have prediction candidates if possible
-                if (b.bioCandidates == null) {
-                    ExobiologyData.BodyAttributes attrs = buildBodyAttributes(b);
-                    if (attrs != null) {
-                        List<ExobiologyData.BioCandidate> preds = ExobiologyData.predictGenera(attrs);
-                        if (preds != null && !preds.isEmpty()) {
-                            b.bioCandidates = preds;
-                        } else {
-                            b.bioCandidates = new ArrayList<>();
-                        }
+                //
+                // Ensure we (re)compute prediction candidates once we actually
+                // have enough scan data. This fixes the case where FSS signals
+                // arrive before the first detailed Scan.
+                //
+                ExobiologyData.BodyAttributes attrs = buildBodyAttributes(b);
+                if (attrs != null && (b.bioCandidates == null || b.bioCandidates.isEmpty())) {
+                    List<ExobiologyData.BioCandidate> preds = ExobiologyData.predictGenera(attrs);
+                    if (preds != null && !preds.isEmpty()) {
+                        b.bioCandidates = new ArrayList<>(preds);
                     } else {
                         b.bioCandidates = new ArrayList<>();
                     }
+                } else if (b.bioCandidates == null) {
+                    // no attrs yet and nothing computed – keep an empty list
+                    b.bioCandidates = new ArrayList<>();
                 }
 
                 if (!b.bioCandidates.isEmpty()) {
@@ -615,9 +636,7 @@ public class SystemTabPanel extends JPanel {
                         detail.detailRow = true;
                         detail.parentBodyId = b.bodyId;
                         detail.bioDetailText = cand.getDisplayName();
-
-                        long base = cand.getBaseValue();
-                        long potential = base * 5L; // assume first-log bonus (like your screenshot)
+                        long potential = cand.getEstimatedPayout(true); // or getFirstLoggedTotal()
                         detail.bioDetailValueText =
                                 String.format(Locale.US, "%,d Cr", potential);
 

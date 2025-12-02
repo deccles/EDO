@@ -79,6 +79,24 @@ public final class ExobiologyData {
                     + " (" + String.format(Locale.US, "%,d Cr", baseValue)
                     + ", score=" + score + ")";
         }
+
+        /**
+         * Estimated payout for this bio candidate.
+         *
+         * For now we assume first-log bonus is 5× base total (base + bonus),
+         * matching the previous hard-coded behavior in SystemTabPanel.
+         * You can later refine this to use real first-discovery bonus data.
+         */
+        public long getEstimatedPayout(boolean assumeFirstLogged) {
+            long base = getBaseValue();
+            if (assumeFirstLogged) {
+                // Placeholder: previously SystemTabPanel did base * 5L.
+                return base * 5L;
+            } else {
+                return base;
+            }
+        }
+
     }
 
     /**
@@ -93,7 +111,7 @@ public final class ExobiologyData {
         /** Surface gravity in g (not m/s^2). NaN if unknown. */
         public final double gravityG;
 
-        /** e.g. "None", "CO2", "Ammonia", "Water", "Neon rich", etc. */
+        /** e.g. "None", "Carbon dioxide-rich atmosphere", "Ammonia", etc. */
         public final String atmosphere;
 
         /** Mean surface temperature in Kelvin (NaN if unknown). */
@@ -137,49 +155,67 @@ public final class ExobiologyData {
         m.put("Recepta Conditivus",    14_313_700L);
         m.put("Recepta Umbrux",        12_934_900L);
 
-        // Cactoida
-        m.put("Cactoida Cortexum",     3_667_600L);
-        m.put("Cactoida Lapis",        2_483_600L);
-        m.put("Cactoida Peperatis",    2_483_600L);
-        m.put("Cactoida Pullulanta",   3_667_600L);
-        m.put("Cactoida Vermis",      16_202_800L);
+        // Electricae  (thin He/Ne/Ar atmospheres, icy, g < 0.27)
+        m.put("Electricae Pluma",      6_284_600L);
+        m.put("Electricae Radialem",   6_284_600L);
 
-        // Stratum
-        m.put("Stratum Paleas",        1_362_000L);
-        m.put("Stratum Tectonicas",   19_010_800L);
-        m.put("Stratum Cucumisis",    16_202_800L);
-
-        // Frutexa
-        m.put("Frutexa Acus",          7_774_700L);
-        m.put("Frutexa Fera",          1_632_500L);
-        m.put("Frutexa Flabellum",     1_808_900L);
-        m.put("Frutexa Sponsae",       5_988_000L);
-
-        // Tubus
-        m.put("Tubus Compagibus",      7_774_700L);
-        m.put("Tubus Cavas",          11_873_200L);
-        m.put("Tubus Rosarium",        2_637_500L);
-        m.put("Tubus Conifer",         2_415_500L);
-
-        // Tussock
-        m.put("Tussock Ventusa",       3_277_700L);
-        m.put("Tussock Ignis",         1_849_000L);
-        m.put("Tussock Virgam",       14_313_700L);
-        m.put("Tussock Stigmasis",    19_010_800L);
-        m.put("Tussock Pennatis",      1_000_000L);
-        m.put("Tussock Propagito",     1_000_000L);
+        // Fonticulua  (Icy / rocky-ice with noble/light gases)
+        m.put("Fonticulua Campestris",  1_000_000L);
+        m.put("Fonticulua Digitos",     1_804_100L);
+        m.put("Fonticulua Fluctus",    20_000_000L);
+        m.put("Fonticulua Lapida",      3_111_000L);
+        m.put("Fonticulua Segmentatus",19_010_800L);
+        m.put("Fonticulua Upupam",      5_727_600L);
 
         // Bacterium
-        m.put("Bacterium Tela",        1_949_000L);
-        m.put("Bacterium Aurasus",     1_000_000L);
+        m.put("Bacterium Tela",         1_949_000L);
+        m.put("Bacterium Aurasus",      1_000_000L);
+        m.put("Bacterium Vesicula",     1_000_000L); // value placeholder – adjust if desired
+
+        // Cactoida
+        m.put("Cactoida Cortexum",      3_667_600L);
+        m.put("Cactoida Lapis",         2_483_600L);
+        m.put("Cactoida Peperatis",     2_483_600L);
+        m.put("Cactoida Pullulanta",    3_667_600L);
+        m.put("Cactoida Vermis",       16_202_800L);
+
+        // Stratum
+        m.put("Stratum Paleas",         1_362_000L);
+        m.put("Stratum Tectonicas",    19_010_800L);
+        m.put("Stratum Cucumisis",     16_202_800L);
+
+        // Frutexa
+        m.put("Frutexa Acus",           7_774_700L);
+        m.put("Frutexa Fera",           1_632_500L);
+        m.put("Frutexa Flabellum",      1_808_900L);
+        m.put("Frutexa Sponsae",        5_988_000L);
+
+        // Tubus
+        m.put("Tubus Compagibus",       7_774_700L);
+        m.put("Tubus Cavas",           11_873_200L);
+        m.put("Tubus Rosarium",         2_637_500L);
+        m.put("Tubus Conifer",          2_415_500L);
+
+        // Tussock
+        m.put("Tussock Ventusa",        3_277_700L);
+        m.put("Tussock Ignis",          1_849_000L);
+        m.put("Tussock Virgam",        14_313_700L);
+        m.put("Tussock Stigmasis",     19_010_800L);
+        m.put("Tussock Pennatis",       1_000_000L); // placeholder
+        m.put("Tussock Propagito",      1_000_000L); // placeholder
 
         // Concha
-        m.put("Concha Renibus",        4_572_400L);
-        m.put("Concha Labiata",        2_352_400L);
+        m.put("Concha Renibus",         4_572_400L);
+        m.put("Concha Labiata",         2_352_400L);
 
         // Fungoida
-        m.put("Fungoida Gelata",       3_330_300L);
-        m.put("Fungoida Stabitis",     2_680_300L);
+        m.put("Fungoida Gelata",        3_330_300L);
+        m.put("Fungoida Stabitis",      2_680_300L);
+
+        // Bark / Tubers (single-species handled via addSingleSpecies)
+        m.put("Bark Mounds",                1_000_000L); // placeholder
+        m.put("Roseum Sinuous Tubers",      6_000_000L); // placeholder
+        m.put("Prasinum Sinuous Tubers",    6_000_000L); // placeholder
 
         SPECIES_BASE_VALUES = Collections.unmodifiableMap(m);
     }
@@ -215,11 +251,12 @@ public final class ExobiologyData {
                 planet.contains("metal") ||
                 planet.contains("high metal");
 
-            boolean icyLike =
+        boolean icyLike =
                 planet.contains("icy");
 
+        // Atmosphere classification – tuned to ED strings
         boolean co2Like =
-                atmo.contains("co2");
+                atmo.contains("carbon dioxide") || atmo.contains("co2");
 
         boolean ammoniaLike =
                 atmo.contains("ammonia");
@@ -228,7 +265,7 @@ public final class ExobiologyData {
                 atmo.contains("water");
 
         boolean sulphurDioxide =
-                atmo.contains("sulphur");
+                atmo.contains("sulphur dioxide") || atmo.contains("sulfur dioxide");
 
         boolean neonLike =
                 atmo.contains("neon");
@@ -245,10 +282,20 @@ public final class ExobiologyData {
         boolean oxygenLike =
                 atmo.contains("oxygen");
 
+        boolean thinAtmo =
+                atmo.contains("thin");
+
+        boolean thickAtmo =
+                atmo.contains("thick");
+
         boolean hasVolcanism = body.hasVolcanism;
         String volc = safe(body.volcanismType).toLowerCase(Locale.ROOT);
         boolean silicateVolc = hasVolcanism && volc.contains("silicate");
         boolean waterVolc    = hasVolcanism && volc.contains("water");
+
+        // -----------------------------------------------------------------
+        // Genus rules
+        // -----------------------------------------------------------------
 
         // Recepta: SO2 atmosphere, low gravity, rocky/HMC or icy
         if (sulphurDioxide && (rockyLike || icyLike) && g > 0 && g < 0.28) {
@@ -257,12 +304,38 @@ public final class ExobiologyData {
                     "SO2 atmosphere + low gravity on rocky/icy world");
         }
 
-        // Stratum: CO2 atmosphere on rocky/HMC with moderate gravity and temperature
+        // Stratum: CO2 atmosphere on rocky/HMC with moderate temperature
         if (co2Like && rockyLike && hasTemp && t > 150 && t < 250) {
             double score = silicateVolc ? 0.95 : 0.8;
             String reason = "CO2 atmosphere on rocky/HMC world"
                     + (silicateVolc ? " with silicate volcanism" : "");
             addAllSpeciesForGenus(result, "Stratum", score, reason);
+        }
+
+        // Bark Mounds: CO2 atmosphere, fairly broad cool-moderate temperature band
+        if (co2Like && hasTemp && t >= 150 && t <= 450) {
+            addSingleSpecies(result,
+                    "Bark Mounds",
+                    0.7,
+                    "CO2 atmosphere with temperature suitable for Bark Mounds");
+        }
+
+        // Roseum / Prasinum Sinuous Tubers:
+        // thick CO2 / N2 / O2 atmospheres, non-icy, 200–500 K.
+        if (thickAtmo
+                && (co2Like || nitrogenLike || oxygenLike)
+                && !icyLike
+                && hasTemp && t >= 200 && t <= 500) {
+
+            addSingleSpecies(result,
+                    "Roseum Sinuous Tubers",
+                    0.65,
+                    "Thick temperate atmosphere (CO2/N2/O2) – Roseum Tubers habitat");
+
+            addSingleSpecies(result,
+                    "Prasinum Sinuous Tubers",
+                    0.65,
+                    "Thick temperate atmosphere (CO2/N2/O2) – Prasinum Tubers habitat");
         }
 
         // Cactoida: CO2-rich rocky/HMC worlds in the 180–200 K band, low–moderate gravity
@@ -342,14 +415,16 @@ public final class ExobiologyData {
                     "Cool rocky world with CO2/water matching Aleoida conditions");
         }
 
-        // Generic Bacterium hint for any non-vacuum atmosphere
-        if (!atmo.isEmpty() && !atmo.equals("none")) {
+        // Bacterium: restrict to reasonable gas mixtures (no true vacuum / exotic only)
+        if (co2Like || sulphurDioxide || waterLike || ammoniaLike
+                || argonLike || neonLike || methaneLike || nitrogenLike || oxygenLike) {
+
             addAllSpeciesForGenus(result, "Bacterium",
                     0.4,
-                    "Non-vacuum atmosphere supports various Bacterium species");
+                    "Atmosphere supports various Bacterium species");
         }
 
-        // Electricae: icy, low-g worlds with noble-gas atmospheres
+        // Electricae: icy, low-g worlds with noble-gas atmospheres (Ar/Ne)
         if (icyLike && (neonLike || argonLike) && g > 0 && g < 0.3) {
             addAllSpeciesForGenus(result, "Electricae",
                     0.5,
@@ -376,5 +451,31 @@ public final class ExobiologyData {
                 out.add(new BioCandidate(genus, species, e.getValue(), score, reason));
             }
         }
+    }
+
+    /**
+     * Add a single species by full name ("Genus Species").
+     */
+    private static void addSingleSpecies(List<BioCandidate> out,
+                                         String fullName,
+                                         double score,
+                                         String reason) {
+
+        Long value = SPECIES_BASE_VALUES.get(fullName);
+        if (value == null) {
+            return; // not in table – silently skip
+        }
+        String genus;
+        String species;
+        int idx = fullName.indexOf(' ');
+        if (idx > 0) {
+            genus = fullName.substring(0, idx);
+            species = fullName.substring(idx + 1);
+        } else {
+            genus = fullName;
+            species = "";
+        }
+
+        out.add(new BioCandidate(genus, species, value, score, reason));
     }
 }

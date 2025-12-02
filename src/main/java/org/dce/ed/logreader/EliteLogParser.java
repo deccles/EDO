@@ -256,28 +256,37 @@ public class EliteLogParser {
         );
     }
     private EliteLogEvent.ScanOrganicEvent parseScanOrganic(Instant ts, JsonObject json) {
-    long systemAddress = json.get("SystemAddress").getAsLong();
-    String bodyName = getString(json, "Body");
-    int bodyId = Integer.parseInt(getString(json, "BodyID"));
-    String scanType = getString(json, "ScanType");
-    String genus = getString(json, "Genus");
-    String genusLocalised = getString(json, "Genus_Localised");
-    String species = getString(json, "Species");
-    String speciesLocalised = getString(json, "Species_Localised");
+        long systemAddress = json.has("SystemAddress")
+                ? json.get("SystemAddress").getAsLong()
+                : 0L;
 
-    return new EliteLogEvent.ScanOrganicEvent(
-        ts,
-        json,
-        systemAddress,
-        bodyName,
-        bodyId,
-        scanType,
-        genus,
-        genusLocalised,
-        species,
-        speciesLocalised
-    );
+        // In ScanOrganic, "Body" is the body index (BodyID), not a name.
+        int bodyId = json.has("Body") ? json.get("Body").getAsInt() : -1;
+
+        String scanType = getString(json, "ScanType");
+        String genus = getString(json, "Genus");
+        String genusLocalised = getString(json, "Genus_Localised");
+        String species = getString(json, "Species");
+        String speciesLocalised = getString(json, "Species_Localised");
+
+        // There is no body name in ScanOrganic. We pass null here; the
+        // SystemTabPanel will already have the name from the Scan/FSS data.
+        String bodyName = null;
+
+        return new EliteLogEvent.ScanOrganicEvent(
+                ts,
+                json,
+                systemAddress,
+                bodyName,
+                bodyId,
+                scanType,
+                genus,
+                genusLocalised,
+                species,
+                speciesLocalised
+        );
     }
+
     private EliteLogEvent.ScanEvent parseScan(Instant ts, JsonObject obj) {
         String bodyName = getString(obj, "BodyName");
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;

@@ -229,6 +229,7 @@ public class EliteJournalReader {
                     sink.add(event);
                 } catch (Exception ex) {
                     System.err.println("Failed to parse journal line in " + file + ": " + ex.getMessage());
+                    ex.printStackTrace();
                 }
             }
         }
