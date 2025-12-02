@@ -21,6 +21,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Image;
 import java.util.prefs.Preferences;
 
 public class EdsmQueryTool extends JFrame {
@@ -28,14 +30,16 @@ public class EdsmQueryTool extends JFrame {
     private static final String PREF_KEY_EDSM_API = "edsmApiKey";
     private static final String PREF_KEY_EDSM_CMDR = "edsmCommanderName";
 
-    // Put your PNG at: src/main/resources/org/dce/ed/edsm/icon_locate.png
+    // Put your PNG at: src/main/resources/org/dce/ed/edsm/locate_icon.png
     private static final String LOCATE_ICON_PATH = "/org/dce/ed/edsm/locate_icon.png";
+    private static final int LOCATE_ICON_SIZE = 16; // keep icon around text height
     private static final ImageIcon LOCATE_ICON = loadLocateIcon();
 
     private final EdsmClient client;
     private final Gson gson;
 
     private final JTextArea outputArea;
+    private final JLabel commanderStatusLabel;
 
     public EdsmQueryTool() {
         super("EDSM Query Tool");
@@ -46,21 +50,41 @@ public class EdsmQueryTool extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
+        // ----- Header (title + commander status) -----
+        JLabel titleLabel = new JLabel("Elite Dangerous Star Map (EDSM) Query Tool");
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 16f));
+
+        commanderStatusLabel = new JLabel();
+        updateCommanderStatusLabel();
+
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 4, 8));
+        headerPanel.add(titleLabel, BorderLayout.WEST);
+        headerPanel.add(commanderStatusLabel, BorderLayout.EAST);
+
+        // ----- Tabs -----
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("System", createSystemTab());
         tabs.addTab("Bodies", createBodiesTab());
         tabs.addTab("Traffic / Logs", createTrafficTab());
         tabs.addTab("Commander", createCommanderTab());
 
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.add(headerPanel, BorderLayout.NORTH);
+        topPanel.add(tabs, BorderLayout.CENTER);
+
+        // ----- Output area -----
         outputArea = new JTextArea();
         outputArea.setEditable(false);
         outputArea.setLineWrap(true);
         outputArea.setWrapStyleWord(true);
+        outputArea.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        outputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 
         JScrollPane scroll = new JScrollPane(outputArea);
         scroll.setPreferredSize(new Dimension(800, 400));
 
-        add(tabs, BorderLayout.NORTH);
+        add(topPanel, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
 
         pack();
@@ -70,7 +94,15 @@ public class EdsmQueryTool extends JFrame {
     private static ImageIcon loadLocateIcon() {
         java.net.URL url = EdsmQueryTool.class.getResource(LOCATE_ICON_PATH);
         if (url != null) {
-            return new ImageIcon(url);
+            ImageIcon raw = new ImageIcon(url);
+            int w = raw.getIconWidth();
+            int h = raw.getIconHeight();
+            if (w > 0 && h > 0) {
+                int size = LOCATE_ICON_SIZE;
+                Image scaled = raw.getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);
+                return new ImageIcon(scaled);
+            }
+            return raw;
         }
         return null;
     }
@@ -93,23 +125,40 @@ public class EdsmQueryTool extends JFrame {
         JTextField radiusField = new JTextField(6);
 
         JButton getSystemButton = new JButton("Get System");
-        JButton getSystemsButton = new JButton("Get Systems (comma-separated)");
+        JButton getSystemsButton = new JButton("Get Systems");
         JButton showSystemButton = new JButton("Show System (info + primary star)");
-        JButton sphereSystemsButton = new JButton("Sphere Systems");
+        JButton sphereSystemsButton = new JButton("Search Sphere");
 
-        // Single-system name with Locate icon button
-        panel.add(makeLabeledWithLocate(systemNameField, "System name:"));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(getSystemButton);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(showSystemButton);
-        panel.add(Box.createVerticalStrut(8));
+        // ----- Section: Single system -----
+        JPanel singleSystemPanel = new JPanel();
+        singleSystemPanel.setLayout(new BoxLayout(singleSystemPanel, BoxLayout.Y_AXIS));
+        singleSystemPanel.setBorder(BorderFactory.createTitledBorder("Single system by name"));
 
-        // Multi-systems (no locate)
-        panel.add(makeLabeled(systemsField, "Multiple system names (comma-separated):"));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(getSystemsButton);
-        panel.add(Box.createVerticalStrut(8));
+        singleSystemPanel.add(makeLabeledWithLocate(systemNameField, "System name:"));
+        singleSystemPanel.add(Box.createVerticalStrut(6));
+
+        JPanel singleButtons = new JPanel();
+        singleButtons.setLayout(new BoxLayout(singleButtons, BoxLayout.X_AXIS));
+        singleButtons.add(getSystemButton);
+        singleButtons.add(Box.createHorizontalStrut(8));
+        singleButtons.add(showSystemButton);
+        singleButtons.add(Box.createHorizontalGlue());
+
+        singleSystemPanel.add(singleButtons);
+
+        // ----- Section: Multiple systems -----
+        JPanel multiSystemPanel = new JPanel();
+        multiSystemPanel.setLayout(new BoxLayout(multiSystemPanel, BoxLayout.Y_AXIS));
+        multiSystemPanel.setBorder(BorderFactory.createTitledBorder("Multiple systems"));
+
+        multiSystemPanel.add(makeLabeled(systemsField, "System names (comma-separated):"));
+        multiSystemPanel.add(Box.createVerticalStrut(6));
+        multiSystemPanel.add(getSystemsButton);
+
+        // ----- Section: Sphere search -----
+        JPanel spherePanel = new JPanel();
+        spherePanel.setLayout(new BoxLayout(spherePanel, BoxLayout.Y_AXIS));
+        spherePanel.setBorder(BorderFactory.createTitledBorder("Sphere search (around point)"));
 
         JPanel coordsPanel = new JPanel();
         coordsPanel.setLayout(new BoxLayout(coordsPanel, BoxLayout.X_AXIS));
@@ -121,14 +170,22 @@ public class EdsmQueryTool extends JFrame {
         coordsPanel.add(Box.createHorizontalStrut(4));
         coordsPanel.add(new JLabel("Z:"));
         coordsPanel.add(zField);
-        coordsPanel.add(Box.createHorizontalStrut(4));
+        coordsPanel.add(Box.createHorizontalStrut(8));
         coordsPanel.add(new JLabel("Radius (ly):"));
         coordsPanel.add(radiusField);
 
-        panel.add(coordsPanel);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(sphereSystemsButton);
+        spherePanel.add(coordsPanel);
+        spherePanel.add(Box.createVerticalStrut(6));
+        spherePanel.add(sphereSystemsButton);
 
+        // ----- Assemble tab -----
+        panel.add(singleSystemPanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(multiSystemPanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(spherePanel);
+
+        // ----- Actions -----
         getSystemButton.addActionListener(e -> {
             String name = systemNameField.getText().trim();
             if (name.isEmpty()) {
@@ -160,11 +217,7 @@ public class EdsmQueryTool extends JFrame {
                 return;
             }
             runQueryAsync("getSystems(" + names + ")", () -> {
-                String[] split = names.split(",");
-                for (int i = 0; i < split.length; i++) {
-                    split[i] = split[i].trim();
-                }
-                SystemResponse[] resp = client.getSystems(split);
+                SystemResponse[] resp = client.getSystems(names);
                 return toJsonOrMessage(resp);
             });
         });
@@ -176,7 +229,7 @@ public class EdsmQueryTool extends JFrame {
             String rText = radiusField.getText().trim();
 
             if (xText.isEmpty() || yText.isEmpty() || zText.isEmpty() || rText.isEmpty()) {
-                appendOutput("Please enter x, y, z and radius.\n");
+                appendOutput("Please enter X, Y, Z and radius.\n");
                 return;
             }
 
@@ -206,18 +259,33 @@ public class EdsmQueryTool extends JFrame {
         JTextField systemNameField = new JTextField(30);
         JTextField systemIdField = new JTextField(20);
 
-        JButton showBodiesByNameButton = new JButton("Show Bodies (by system name)");
-        JButton showBodiesByIdButton = new JButton("Show Bodies (by system ID)");
+        JButton showBodiesByNameButton = new JButton("Show Bodies");
+        JButton showBodiesByIdButton = new JButton("Show Bodies (by ID)");
 
-        panel.add(makeLabeledWithLocate(systemNameField, "System name:"));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(showBodiesByNameButton);
+        // ----- Section: By system name -----
+        JPanel byNamePanel = new JPanel();
+        byNamePanel.setLayout(new BoxLayout(byNamePanel, BoxLayout.Y_AXIS));
+        byNamePanel.setBorder(BorderFactory.createTitledBorder("Bodies by system name"));
+
+        byNamePanel.add(makeLabeledWithLocate(systemNameField, "System name:"));
+        byNamePanel.add(Box.createVerticalStrut(6));
+        byNamePanel.add(showBodiesByNameButton);
+
+        // ----- Section: By system ID -----
+        JPanel byIdPanel = new JPanel();
+        byIdPanel.setLayout(new BoxLayout(byIdPanel, BoxLayout.Y_AXIS));
+        byIdPanel.setBorder(BorderFactory.createTitledBorder("Bodies by system ID"));
+
+        byIdPanel.add(makeLabeled(systemIdField, "System ID:"));
+        byIdPanel.add(Box.createVerticalStrut(6));
+        byIdPanel.add(showBodiesByIdButton);
+
+        // Assemble
+        panel.add(byNamePanel);
         panel.add(Box.createVerticalStrut(8));
+        panel.add(byIdPanel);
 
-        panel.add(makeLabeled(systemIdField, "System ID:"));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(showBodiesByIdButton);
-
+        // Actions
         showBodiesByNameButton.addActionListener(e -> {
             String name = systemNameField.getText().trim();
             if (name.isEmpty()) {
@@ -261,16 +329,35 @@ public class EdsmQueryTool extends JFrame {
         JButton stationsButton = new JButton("System Stations");
         JButton logsButton = new JButton("System Logs");
 
-        panel.add(makeLabeledWithLocate(systemNameField, "System name:"));
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(trafficButton);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(deathsButton);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(stationsButton);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(logsButton);
+        // ----- Section: System activity -----
+        JPanel activityPanel = new JPanel();
+        activityPanel.setLayout(new BoxLayout(activityPanel, BoxLayout.Y_AXIS));
+        activityPanel.setBorder(BorderFactory.createTitledBorder("System activity"));
 
+        activityPanel.add(makeLabeledWithLocate(systemNameField, "System name:"));
+        activityPanel.add(Box.createVerticalStrut(6));
+
+        JPanel buttonRow1 = new JPanel();
+        buttonRow1.setLayout(new BoxLayout(buttonRow1, BoxLayout.X_AXIS));
+        buttonRow1.add(trafficButton);
+        buttonRow1.add(Box.createHorizontalStrut(8));
+        buttonRow1.add(deathsButton);
+        buttonRow1.add(Box.createHorizontalGlue());
+
+        JPanel buttonRow2 = new JPanel();
+        buttonRow2.setLayout(new BoxLayout(buttonRow2, BoxLayout.X_AXIS));
+        buttonRow2.add(stationsButton);
+        buttonRow2.add(Box.createHorizontalStrut(8));
+        buttonRow2.add(logsButton);
+        buttonRow2.add(Box.createHorizontalGlue());
+
+        activityPanel.add(buttonRow1);
+        activityPanel.add(Box.createVerticalStrut(4));
+        activityPanel.add(buttonRow2);
+
+        panel.add(activityPanel);
+
+        // Actions
         trafficButton.addActionListener(e -> {
             String name = systemNameField.getText().trim();
             if (name.isEmpty()) {
@@ -337,19 +424,49 @@ public class EdsmQueryTool extends JFrame {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        JButton prefsButton = new JButton("Preferences…");
-        JButton cmdrLogsButton = new JButton("Get Cmdr Logs");
-        JButton cmdrLastPosButton = new JButton("Get Cmdr Last Position");
-        JButton cmdrRanksButton = new JButton("Get Cmdr Ranks/Stats");
+        JButton prefsButton = new JButton("EDSM Preferences…");
+        JButton cmdrLogsButton = new JButton("Get Commander Logs");
+        JButton cmdrLastPosButton = new JButton("Get Commander Last Position");
+        JButton cmdrRanksButton = new JButton("Get Commander Ranks/Stats");
 
-        panel.add(prefsButton);
+        // ----- Section: Credentials -----
+        JPanel credsPanel = new JPanel();
+        credsPanel.setLayout(new BoxLayout(credsPanel, BoxLayout.Y_AXIS));
+        credsPanel.setBorder(BorderFactory.createTitledBorder("Credentials"));
+
+        JLabel hintLabel = new JLabel("Set your EDSM API key and commander name used for all commander lookups.");
+        hintLabel.setFont(hintLabel.getFont().deriveFont(Font.ITALIC, 11f));
+
+        credsPanel.add(hintLabel);
+        credsPanel.add(Box.createVerticalStrut(4));
+        credsPanel.add(prefsButton);
+
+        // ----- Section: Commander queries -----
+        JPanel queriesPanel = new JPanel();
+        queriesPanel.setLayout(new BoxLayout(queriesPanel, BoxLayout.Y_AXIS));
+        queriesPanel.setBorder(BorderFactory.createTitledBorder("Commander queries"));
+
+        JPanel row1 = new JPanel();
+        row1.setLayout(new BoxLayout(row1, BoxLayout.X_AXIS));
+        row1.add(cmdrLogsButton);
+        row1.add(Box.createHorizontalStrut(8));
+        row1.add(cmdrLastPosButton);
+        row1.add(Box.createHorizontalGlue());
+
+        JPanel row2 = new JPanel();
+        row2.setLayout(new BoxLayout(row2, BoxLayout.X_AXIS));
+        row2.add(cmdrRanksButton);
+        row2.add(Box.createHorizontalGlue());
+
+        queriesPanel.add(row1);
+        queriesPanel.add(Box.createVerticalStrut(4));
+        queriesPanel.add(row2);
+
+        panel.add(credsPanel);
         panel.add(Box.createVerticalStrut(8));
-        panel.add(cmdrLogsButton);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(cmdrLastPosButton);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(cmdrRanksButton);
+        panel.add(queriesPanel);
 
+        // Actions
         prefsButton.addActionListener(e -> showCommanderPreferencesDialog());
 
         cmdrLogsButton.addActionListener(e -> {
@@ -404,6 +521,21 @@ public class EdsmQueryTool extends JFrame {
     // PREFERENCES (API key + commander name)
     // ============================================================
 
+    private boolean ensureCommanderPrefs() {
+        String[] creds = loadCommanderPrefs();
+        String apiKey = creds[0];
+        String commanderName = creds[1];
+
+        if (apiKey.isEmpty() || commanderName.isEmpty()) {
+            showCommanderPreferencesDialog();
+            creds = loadCommanderPrefs();
+            apiKey = creds[0];
+            commanderName = creds[1];
+        }
+
+        return !apiKey.isEmpty() && !commanderName.isEmpty();
+    }
+
     private String[] loadCommanderPrefs() {
         Preferences prefs = Preferences.userNodeForPackage(EdsmQueryTool.class);
         String apiKey = prefs.get(PREF_KEY_EDSM_API, "").trim();
@@ -421,19 +553,23 @@ public class EdsmQueryTool extends JFrame {
         }
     }
 
-    private boolean ensureCommanderPrefs() {
+    private void updateCommanderStatusLabel() {
         String[] creds = loadCommanderPrefs();
         String apiKey = creds[0];
         String commanderName = creds[1];
 
-        if (apiKey.isEmpty() || commanderName.isEmpty()) {
-            showCommanderPreferencesDialog();
-            creds = loadCommanderPrefs();
-            apiKey = creds[0];
-            commanderName = creds[1];
+        String statusText;
+        if (commanderName.isEmpty() && apiKey.isEmpty()) {
+            statusText = "Commander: not configured";
+        } else if (commanderName.isEmpty()) {
+            statusText = "Commander: (name missing)";
+        } else if (apiKey.isEmpty()) {
+            statusText = "Commander: " + commanderName + " (API key missing)";
+        } else {
+            statusText = "Commander: " + commanderName;
         }
 
-        return !apiKey.isEmpty() && !commanderName.isEmpty();
+        commanderStatusLabel.setText(statusText);
     }
 
     private void showCommanderPreferencesDialog() {
@@ -461,6 +597,7 @@ public class EdsmQueryTool extends JFrame {
 
         if (result == JOptionPane.OK_OPTION) {
             saveCommanderPrefs(apiField.getText(), cmdrField.getText());
+            updateCommanderStatusLabel();
         }
     }
 
@@ -474,6 +611,11 @@ public class EdsmQueryTool extends JFrame {
         JLabel label = new JLabel(labelText);
         label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4));
         p.add(label);
+
+        // Keep this a single-line height row
+        Dimension pref = field.getPreferredSize();
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
+
         p.add(field);
         return p;
     }
@@ -495,11 +637,20 @@ public class EdsmQueryTool extends JFrame {
             locateButton.setBorderPainted(false);
             locateButton.setContentAreaFilled(false);
             locateButton.setFocusPainted(false);
+
+            Dimension iconSize = new Dimension(LOCATE_ICON_SIZE + 4, LOCATE_ICON_SIZE + 4);
+            locateButton.setPreferredSize(iconSize);
+            locateButton.setMaximumSize(iconSize);
+            locateButton.setMinimumSize(iconSize);
         } else {
             locateButton = new JButton("Locate");
         }
 
         locateButton.setToolTipText("Fill with current commander system from EDSM");
+
+        // Keep text field a single-line height row
+        Dimension pref = field.getPreferredSize();
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
 
         locateButton.addActionListener(e -> {
             if (!ensureCommanderPrefs()) {
