@@ -210,7 +210,10 @@ public class EdsmQueryTool extends JFrame {
 
         multiSystemPanel.add(makeLabeled(systemsField, "System names (comma-separated):"));
         multiSystemPanel.add(Box.createVerticalStrut(6));
-        multiSystemPanel.add(getSystemsButton);
+
+        JPanel multiButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+        multiButtons.add(getSystemsButton);
+        multiSystemPanel.add(multiButtons);
 
         // ----- Section: Sphere search -----
         JPanel spherePanel = new JPanel();
@@ -233,7 +236,10 @@ public class EdsmQueryTool extends JFrame {
 
         spherePanel.add(coordsPanel);
         spherePanel.add(Box.createVerticalStrut(6));
-        spherePanel.add(sphereSystemsButton);
+
+        JPanel sphereButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+        sphereButtons.add(sphereSystemsButton);
+        spherePanel.add(sphereButtons);
 
         // ----- Assemble tab -----
         panel.add(singleSystemPanel);
@@ -394,7 +400,11 @@ public class EdsmQueryTool extends JFrame {
 
         byNamePanel.add(makeLabeledWithLocate(bodiesTabSystemField, "System name:"));
         byNamePanel.add(Box.createVerticalStrut(6));
-        byNamePanel.add(showBodiesByNameButton);
+
+        JPanel bodiesByNameButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+        bodiesByNameButtons.add(showBodiesByNameButton);
+        byNamePanel.add(bodiesByNameButtons);
+
 
         // ----- Section: By system ID -----
         JPanel byIdPanel = new JPanel();
@@ -403,7 +413,10 @@ public class EdsmQueryTool extends JFrame {
 
         byIdPanel.add(makeLabeled(systemIdField, "System ID:"));
         byIdPanel.add(Box.createVerticalStrut(6));
-        byIdPanel.add(showBodiesByIdButton);
+
+        JPanel bodiesByIdButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+        bodiesByIdButtons.add(showBodiesByIdButton);
+        byIdPanel.add(bodiesByIdButtons);
 
         // Assemble
         panel.add(byNamePanel);
@@ -465,23 +478,21 @@ public class EdsmQueryTool extends JFrame {
         activityPanel.add(makeLabeledWithLocate(trafficTabSystemField, "System name:"));
         activityPanel.add(Box.createVerticalStrut(6));
 
-        JPanel buttonRow1 = new JPanel();
-        buttonRow1.setLayout(new BoxLayout(buttonRow1, BoxLayout.X_AXIS));
-        buttonRow1.add(trafficButton);
-        buttonRow1.add(Box.createHorizontalStrut(8));
-        buttonRow1.add(deathsButton);
-        buttonRow1.add(Box.createHorizontalGlue());
+        JPanel buttonRow = new JPanel();
+        buttonRow.setLayout(new BoxLayout(buttonRow, BoxLayout.X_AXIS));
 
-        JPanel buttonRow2 = new JPanel();
-        buttonRow2.setLayout(new BoxLayout(buttonRow2, BoxLayout.X_AXIS));
-        buttonRow2.add(stationsButton);
-        buttonRow2.add(Box.createHorizontalStrut(8));
-        buttonRow2.add(logsButton);
-        buttonRow2.add(Box.createHorizontalGlue());
+        buttonRow.add(trafficButton);
+        buttonRow.add(Box.createHorizontalStrut(8));
+        buttonRow.add(deathsButton);
+        buttonRow.add(Box.createHorizontalStrut(16));
+        buttonRow.add(stationsButton);
+        buttonRow.add(Box.createHorizontalStrut(8));
+        buttonRow.add(logsButton);
+        buttonRow.add(Box.createHorizontalGlue());
 
-        activityPanel.add(buttonRow1);
+        activityPanel.add(buttonRow);
+
         activityPanel.add(Box.createVerticalStrut(4));
-        activityPanel.add(buttonRow2);
 
         panel.add(activityPanel);
 
@@ -579,23 +590,19 @@ public class EdsmQueryTool extends JFrame {
         queriesPanel.setLayout(new BoxLayout(queriesPanel, BoxLayout.Y_AXIS));
         queriesPanel.setBorder(BorderFactory.createTitledBorder("Commander queries"));
 
-        JPanel row1 = new JPanel();
-        row1.setLayout(new BoxLayout(row1, BoxLayout.X_AXIS));
-        row1.add(cmdrLogsButton);
-        row1.add(Box.createHorizontalStrut(8));
-        row1.add(cmdrLastPosButton);
-        row1.add(Box.createHorizontalGlue());
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
 
-        JPanel row2 = new JPanel();
-        row2.setLayout(new BoxLayout(row2, BoxLayout.X_AXIS));
-        row2.add(cmdrRanksButton);
-        row2.add(Box.createHorizontalStrut(8));
-        row2.add(cmdrCreditsButton);
-        row2.add(Box.createHorizontalGlue());
+        row.add(cmdrLogsButton);
+        row.add(Box.createHorizontalStrut(8));
+        row.add(cmdrLastPosButton);
+        row.add(Box.createHorizontalStrut(16));
+        row.add(cmdrRanksButton);
+        row.add(Box.createHorizontalStrut(8));
+        row.add(cmdrCreditsButton);
+        row.add(Box.createHorizontalGlue());
 
-        queriesPanel.add(row1);
-        queriesPanel.add(Box.createVerticalStrut(4));
-        queriesPanel.add(row2);
+        queriesPanel.add(row);
 
         panel.add(credsPanel);
         panel.add(Box.createVerticalStrut(8));
