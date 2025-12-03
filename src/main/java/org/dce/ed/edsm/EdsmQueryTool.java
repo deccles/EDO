@@ -2,6 +2,7 @@ package org.dce.ed.edsm;
 
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Image;
@@ -40,10 +41,13 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -130,10 +134,13 @@ public class EdsmQueryTool extends JFrame {
 
         add(topPanel, BorderLayout.CENTER);
 
+        setPreferredSize(new Dimension(1100, 900));
+        
         pack();
         setLocationRelativeTo(null);
 
         initCommanderSystemAtStartup();
+        
     }
 
     private static ImageIcon loadLocateIcon() {
@@ -235,6 +242,13 @@ public class EdsmQueryTool extends JFrame {
         sphereButtons.add(sphereSystemsButton);
         spherePanel.add(sphereButtons);
 
+        spherePanel.add(sphereButtons);
+
+        // lock spherePanel so it doesn't grow vertically
+        Dimension spherePref = spherePanel.getPreferredSize();
+        spherePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, spherePref.height));
+
+     
         panel.add(singleSystemPanel);
         panel.add(Box.createVerticalStrut(8));
         panel.add(multiSystemPanel);
@@ -1295,6 +1309,7 @@ public class EdsmQueryTool extends JFrame {
             tableModel = new DefaultTableModel();
             table = new JTable(tableModel);
             table.setFillsViewportHeight(true);
+            table.setAutoCreateRowSorter(true);
 
             cardLayout = new CardLayout();
             cardPanel = new JPanel(cardLayout);
@@ -1394,6 +1409,7 @@ public class EdsmQueryTool extends JFrame {
                 // Not JSON, or parse error: just show raw text
                 setSimpleTable("Value", Collections.singletonList(new Object[]{text}));
             }
+            
         }
 
         /**
@@ -1695,8 +1711,51 @@ public class EdsmQueryTool extends JFrame {
             for (Object[] row : rows) {
                 tableModel.addRow(row);
             }
+            
+            // Apply numeric renderer to numeric columns
+            DecimalAlignRenderer numericRenderer = new DecimalAlignRenderer();
+
+            for (int col = 0; col < table.getColumnCount(); col++) {
+                if (isNumericColumn(col)) {
+                    table.getColumnModel().getColumn(col).setCellRenderer(numericRenderer);
+
+                    // Sort using numeric comparator
+                    TableRowSorter<?> sorter = (TableRowSorter<?>) table.getRowSorter();
+                    sorter.setComparator(col, (a, b) -> {
+                        try {
+                            double da = Double.parseDouble(a.toString());
+                            double db = Double.parseDouble(b.toString());
+                            return Double.compare(da, db);
+                        } catch (Exception ex) {
+                            return a.toString().compareTo(b.toString());
+                        }
+                    });
+                }
+            }
 
             SwingUtilities.invokeLater(() -> UtilTable.autoSizeTableColumns(table));
+        }
+        private boolean isNumericColumn(int col) {
+            // Look at first non-empty value in this column
+            for (int row = 0; row < tableModel.getRowCount(); row++) {
+                Object v = tableModel.getValueAt(row, col);
+                if (v == null) {
+                    continue;
+                }
+                String s = v.toString().trim();
+                if (s.isEmpty()) {
+                    continue;
+                }
+
+                // Numeric? integer or decimal
+                if (s.matches("[-+]?[0-9]*\\.?[0-9]+")) {
+                    return true;
+                }
+
+                // Non-numeric means column is not numeric
+                return false;
+            }
+            return false;
         }
 
         private String safeJsonPrimitiveToString(JsonElement el) {
@@ -1718,6 +1777,42 @@ public class EdsmQueryTool extends JFrame {
             String z = coords.has("z") ? safeJsonPrimitiveToString(coords.get("z")) : "";
             return x + ", " + y + ", " + z;
         }
+        
+        /**
+         * Renderer that right-aligns numbers and aligns decimals using monospaced font.
+         */
+        private class DecimalAlignRenderer extends DefaultTableCellRenderer {
+            private final Font monoFont = new Font(Font.MONOSPACED, Font.PLAIN, 12);
+
+            @Override
+            public Component getTableCellRendererComponent(
+                    JTable table, Object value, boolean isSelected,
+                    boolean hasFocus, int row, int column) {
+
+                Component c = super.getTableCellRendererComponent(
+                        table, value, isSelected, hasFocus, row, column);
+
+                if (value == null) {
+                    setHorizontalAlignment(SwingConstants.RIGHT);
+                    setFont(monoFont);
+                    setText("");
+                    return c;
+                }
+
+                String text = value.toString().trim();
+
+                // Detect numbers (integer or decimal)
+                if (text.matches("[-+]?[0-9]*\\.?[0-9]+")) {
+                    setHorizontalAlignment(SwingConstants.RIGHT);
+                    setFont(monoFont);
+                } else {
+                    setHorizontalAlignment(SwingConstants.LEFT);
+                }
+
+                return c;
+            }
+        }
+
     }
 
     // ============================================================
@@ -1779,6 +1874,25 @@ public class EdsmQueryTool extends JFrame {
      *  - terraforming state: map to simple forms, hide "Not terraformable"
      *  - generic negatives: "false", "0", and "No ..." become blank
      */
+    /**
+     * Normalize body values:
+     *  - distanceToArrival: show integer if value is effectively whole
+     *  - gravity: round to 2 decimal places
+     *  - earthMasses: round to 3 decimal places
+     *  - subType: strip trailing " body"
+     *  - terraforming state: map to simple forms, hide "Not terraformable"
+     *  - generic negatives: "false", "0", and "No ..." become blank
+     */
+    /**
+     * Normalize body values:
+     *  - distanceToArrival: integer if whole
+     *  - gravity: round to 2 decimals
+     *  - earthMasses: round to 3 decimals
+     *  - radius: round to nearest integer
+     *  - subType: strip trailing " body"
+     *  - terraforming: simplify (Candidate / Terraforming / Terraformed)
+     *  - negatives: false, 0, "No X" → blank
+     */
     private String normalizeBodyValue(String col, String value) {
         if (value == null) {
             return "";
@@ -1793,7 +1907,6 @@ public class EdsmQueryTool extends JFrame {
         // --- Terraforming state simplification ---
         if ("terraformingState".equals(col) || "terraforming".equals(col)) {
             if ("not terraformable".equals(lower)) {
-                // hide this entirely
                 return "";
             }
             if ("candidate for terraforming".equals(lower)) {
@@ -1805,25 +1918,59 @@ public class EdsmQueryTool extends JFrame {
             if ("terraformed".equals(lower)) {
                 return "Terraformed";
             }
-            // Any other unexpected value, just return as-is
             return v;
         }
 
-        // --- distanceToArrival: integer if no real fraction ---
+        // --- distanceToArrival: integer if no fractional part ---
         if ("distanceToArrival".equals(col)) {
             try {
                 double d = Double.parseDouble(v);
                 long rounded = Math.round(d);
                 if (Math.abs(d - rounded) < 1e-6) {
-                    // close enough to whole number → show as integer
                     return Long.toString(rounded);
                 }
-            } catch (NumberFormatException ignore) {
-                // fall through and return original text
-            }
+            } catch (Exception ignore) {}
             return v;
         }
 
+        // --- gravity: round to 2 decimals ---
+        if ("gravity".equals(col)) {
+            try {
+                double d = Double.parseDouble(v);
+                return String.format(Locale.ROOT, "%.2f", d);
+            } catch (Exception ignore) {}
+            return v;
+        }
+
+        // --- earthMasses: round to 3 decimals ---
+        if ("earthMasses".equals(col)) {
+            try {
+                double d = Double.parseDouble(v);
+                return String.format(Locale.ROOT, "%.3f", d);
+            } catch (Exception ignore) {}
+            return v;
+        }
+
+        // ⭐ --- radius: round to nearest integer ---
+        if ("radius".equals(col)) {
+            try {
+                double d = Double.parseDouble(v);
+                long rounded = Math.round(d);
+                return Long.toString(rounded);
+            } catch (Exception ignore) {}
+            return v;
+        }
+
+        // ⭐ --- radius: round to nearest integer ---
+        if ("surfaceTemp".equals(col)) {
+            try {
+                double d = Double.parseDouble(v);
+                long rounded = Math.round(d);
+                return Long.toString(rounded);
+            } catch (Exception ignore) {}
+            return v;
+        }
+        
         // --- subType: strip trailing " body" ---
         if ("subType".equals(col)) {
             if (lower.endsWith(" body")) {
@@ -1832,20 +1979,21 @@ public class EdsmQueryTool extends JFrame {
             return v;
         }
 
-        // --- Generic negatives / uninteresting flags ---
+        // --- Generic negatives (No X / false / 0) ---
         if ("false".equals(lower) || "0".equals(lower)) {
             return "";
         }
         if (lower.startsWith("no ")) {
-            // e.g. "No volcanism"
             return "";
         }
 
         return v;
     }
+
     // Columns we never want to show in the bodies table (too star-techy / noisy)
     private static final Set<String> BODIES_SKIP_COLUMNS = new LinkedHashSet<>(
             Arrays.asList(
+            		"id",
                     "id64",
                     "isMainStar",
                     "isScoopable",
