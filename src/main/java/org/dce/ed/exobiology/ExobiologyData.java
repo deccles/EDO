@@ -274,11 +274,19 @@ public class ExobiologyData {
                 }),
                 ANY_SOLID);
 
+        add("Bacterium", "Bullaris", 1152500L,
+                0.00, 0.12, 60, 180,
+                false,
+                A.apply(new AtmosphereType[]{
+                        AtmosphereType.METHANE, AtmosphereType.NITROGEN,
+                        AtmosphereType.CO2, AtmosphereType.ARGON
+                }),
+                ANY_SOLID);
+
         add("Bacterium", "Vesicula", 1000000L,
                 0.00, 0.20, 30, 200,
                 false,
                 A.apply(new AtmosphereType[]{
-                        AtmosphereType.METHANE, AtmosphereType.NITROGEN,
                         AtmosphereType.ARGON
                 }),
                 ANY_SOLID);
