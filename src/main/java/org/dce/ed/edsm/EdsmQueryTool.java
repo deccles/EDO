@@ -58,6 +58,8 @@ import com.google.gson.JsonParser;
 
 public class EdsmQueryTool extends JFrame {
 
+    private boolean suppressAutoCompleteEvents = false;
+	
     private static final String PREF_KEY_EDSM_API = "edsmApiKey";
     private static final String PREF_KEY_EDSM_CMDR = "edsmCommanderName";
 
@@ -896,6 +898,10 @@ public class EdsmQueryTool extends JFrame {
     }
 
     private void handleSystemNameTyping(JTextField field) {
+        if (suppressAutoCompleteEvents) {
+            return;
+        }
+
         String text = field.getText().trim();
         if (text.length() < 3) {
             pendingAutoCompletePrefix = null;
@@ -1138,9 +1144,16 @@ public class EdsmQueryTool extends JFrame {
         if (selected == null || selected.isEmpty()) {
             return;
         }
-        autoCompleteTargetField.setText(selected);
-        setGlobalSystemName(selected);
+
+        // Stop any pending autocomplete run and hide popup
+        if (autoCompleteTimer != null) {
+            autoCompleteTimer.stop();
+        }
+        pendingAutoCompletePrefix = null;
         hideAutoComplete();
+
+        // This will update all system fields, but with events suppressed
+        setGlobalSystemName(selected);
     }
 
     private void hideAutoComplete() {
@@ -1157,11 +1170,18 @@ public class EdsmQueryTool extends JFrame {
         if (trimmed.isEmpty()) {
             return;
         }
+
         currentSystemName = trimmed;
-        for (JTextField f : systemNameFields) {
-            if (f != null) {
-                f.setText(trimmed);
+
+        suppressAutoCompleteEvents = true;
+        try {
+            for (JTextField f : systemNameFields) {
+                if (f != null) {
+                    f.setText(trimmed);
+                }
             }
+        } finally {
+            suppressAutoCompleteEvents = false;
         }
     }
 
