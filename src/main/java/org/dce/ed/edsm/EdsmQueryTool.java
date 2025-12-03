@@ -1,23 +1,21 @@
 package org.dce.ed.edsm;
 
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Image;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 
@@ -37,6 +35,7 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
@@ -44,28 +43,27 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
+import javax.swing.table.DefaultTableModel;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 public class EdsmQueryTool extends JFrame {
-	private String autoCompleteOriginalText;
-	
+
     private static final String PREF_KEY_EDSM_API = "edsmApiKey";
     private static final String PREF_KEY_EDSM_CMDR = "edsmCommanderName";
 
-    // Put your PNG at: src/main/resources/org/dce/ed/edsm/locate_icon.png
     private static final String LOCATE_ICON_PATH = "/org/dce/ed/edsm/locate_icon.png";
-    private static final int LOCATE_ICON_SIZE = 16; // keep icon around text height
+    private static final int LOCATE_ICON_SIZE = 16;
     private static final ImageIcon LOCATE_ICON = loadLocateIcon();
 
     private final EdsmClient client;
     private final Gson gson;
 
-    private final JTextArea outputArea;
     private final JLabel commanderStatusLabel;
 
     // Shared "system name" fields across tabs
@@ -74,13 +72,12 @@ public class EdsmQueryTool extends JFrame {
     private JTextField bodiesTabSystemField;
     private JTextField trafficTabSystemField;
 
-    // Sphere search XYZ fields (System tab)
+    private String currentSystemName;
+
+    // Sphere XYZ fields (for convenience)
     private JTextField sphereXField;
     private JTextField sphereYField;
     private JTextField sphereZField;
-
-
-    private String currentSystemName;
 
     // Autocomplete UI
     private Timer autoCompleteTimer;
@@ -88,6 +85,13 @@ public class EdsmQueryTool extends JFrame {
     private JList<String> autoCompleteList;
     private JTextField autoCompleteTargetField;
     private String pendingAutoCompletePrefix;
+    private String autoCompleteOriginalText;
+
+    // Per-tab output panels
+    private TabOutputPanel systemOutputPanel;
+    private TabOutputPanel bodiesOutputPanel;
+    private TabOutputPanel trafficOutputPanel;
+    private TabOutputPanel commanderOutputPanel;
 
     public EdsmQueryTool() {
         super("EDSM Query Tool");
@@ -95,10 +99,14 @@ public class EdsmQueryTool extends JFrame {
         this.client = new EdsmClient();
         this.gson = new GsonBuilder().setPrettyPrinting().create();
 
+        systemOutputPanel = new TabOutputPanel();
+        bodiesOutputPanel = new TabOutputPanel();
+        trafficOutputPanel = new TabOutputPanel();
+        commanderOutputPanel = new TabOutputPanel();
+
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        // ----- Header (title + commander status) -----
         JLabel titleLabel = new JLabel("Elite Dangerous Star Map (EDSM) Query Tool");
         titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 16f));
 
@@ -110,7 +118,6 @@ public class EdsmQueryTool extends JFrame {
         headerPanel.add(titleLabel, BorderLayout.WEST);
         headerPanel.add(commanderStatusLabel, BorderLayout.EAST);
 
-        // ----- Tabs -----
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("System", createSystemTab());
         tabs.addTab("Bodies", createBodiesTab());
@@ -121,24 +128,11 @@ public class EdsmQueryTool extends JFrame {
         topPanel.add(headerPanel, BorderLayout.NORTH);
         topPanel.add(tabs, BorderLayout.CENTER);
 
-        // ----- Output area -----
-        outputArea = new JTextArea();
-        outputArea.setEditable(false);
-        outputArea.setLineWrap(true);
-        outputArea.setWrapStyleWord(true);
-        outputArea.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        outputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-
-        JScrollPane scroll = new JScrollPane(outputArea);
-        scroll.setPreferredSize(new Dimension(800, 400));
-
-        add(topPanel, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        add(topPanel, BorderLayout.CENTER);
 
         pack();
         setLocationRelativeTo(null);
 
-        // Look up commander position at startup and populate all system fields
         initCommanderSystemAtStartup();
     }
 
@@ -180,13 +174,13 @@ public class EdsmQueryTool extends JFrame {
         sphereXField = xField;
         sphereYField = yField;
         sphereZField = zField;
-        
+
         JButton getSystemButton = new JButton("Get System");
         JButton getSystemsButton = new JButton("Get Systems");
         JButton showSystemButton = new JButton("Show System (info + primary star)");
         JButton sphereSystemsButton = new JButton("Search Sphere");
 
-        // ----- Section: Single system -----
+        // ----- Single system -----
         JPanel singleSystemPanel = new JPanel();
         singleSystemPanel.setLayout(new BoxLayout(singleSystemPanel, BoxLayout.Y_AXIS));
         singleSystemPanel.setBorder(BorderFactory.createTitledBorder("Single system by name"));
@@ -203,7 +197,7 @@ public class EdsmQueryTool extends JFrame {
 
         singleSystemPanel.add(singleButtons);
 
-        // ----- Section: Multiple systems -----
+        // ----- Multiple systems -----
         JPanel multiSystemPanel = new JPanel();
         multiSystemPanel.setLayout(new BoxLayout(multiSystemPanel, BoxLayout.Y_AXIS));
         multiSystemPanel.setBorder(BorderFactory.createTitledBorder("Multiple systems"));
@@ -215,10 +209,10 @@ public class EdsmQueryTool extends JFrame {
         multiButtons.add(getSystemsButton);
         multiSystemPanel.add(multiButtons);
 
-        // ----- Section: Sphere search -----
+        // ----- Sphere search -----
         JPanel spherePanel = new JPanel();
         spherePanel.setLayout(new BoxLayout(spherePanel, BoxLayout.Y_AXIS));
-        spherePanel.setBorder(BorderFactory.createTitledBorder("Sphere search (around point)"));
+        spherePanel.setBorder(BorderFactory.createTitledBorder("Sphere search (around system)"));
 
         JPanel coordsPanel = new JPanel();
         coordsPanel.setLayout(new BoxLayout(coordsPanel, BoxLayout.X_AXIS));
@@ -241,25 +235,25 @@ public class EdsmQueryTool extends JFrame {
         sphereButtons.add(sphereSystemsButton);
         spherePanel.add(sphereButtons);
 
-        // ----- Assemble tab -----
         panel.add(singleSystemPanel);
         panel.add(Box.createVerticalStrut(8));
         panel.add(multiSystemPanel);
         panel.add(Box.createVerticalStrut(8));
         panel.add(spherePanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(systemOutputPanel);
 
         // ----- Actions -----
         getSystemButton.addActionListener(e -> {
             String name = systemTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(systemOutputPanel, "Please enter a system name.\n");
                 return;
             }
             setGlobalSystemName(name);
-            runQueryAsync("getSystem(" + name + ")", () -> {
+            runQueryAsync(systemOutputPanel, "getSystem(" + name + ")", () -> {
                 SystemResponse resp = client.getSystem(name);
                 String json = toJsonOrMessage(resp);
-                // Copy coords into the sphere search fields on the EDT
                 SwingUtilities.invokeLater(() -> updateSphereCoordsFromJson(json));
                 return json;
             });
@@ -268,11 +262,11 @@ public class EdsmQueryTool extends JFrame {
         showSystemButton.addActionListener(e -> {
             String name = systemTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(systemOutputPanel, "Please enter a system name.\n");
                 return;
             }
             setGlobalSystemName(name);
-            runQueryAsync("showSystem(" + name + ")", () -> {
+            runQueryAsync(systemOutputPanel, "showSystem(" + name + ")", () -> {
                 ShowSystemResponse resp = client.showSystem(name);
                 String json = toJsonOrMessage(resp);
                 SwingUtilities.invokeLater(() -> updateSphereCoordsFromJson(json));
@@ -283,11 +277,10 @@ public class EdsmQueryTool extends JFrame {
         getSystemsButton.addActionListener(e -> {
             String names = systemsField.getText().trim();
             if (names.isEmpty()) {
-                appendOutput("Please enter one or more system names.\n");
+                appendOutput(systemOutputPanel, "Please enter one or more system names.\n");
                 return;
             }
-            runQueryAsync("getSystems(" + names + ")", () -> {
-                // Split on comma and trim each name
+            runQueryAsync(systemOutputPanel, "getSystems(" + names + ")", () -> {
                 String[] parts = Arrays.stream(names.split(","))
                         .map(String::trim)
                         .filter(s -> !s.isEmpty())
@@ -303,81 +296,29 @@ public class EdsmQueryTool extends JFrame {
         sphereSystemsButton.addActionListener(e -> {
             String rText = radiusField.getText().trim();
             if (rText.isEmpty()) {
-                appendOutput("Please enter a radius.\n");
+                appendOutput(systemOutputPanel, "Please enter a radius.\n");
                 return;
             }
 
             String centerName = systemTabSystemField.getText().trim();
             if (centerName.isEmpty()) {
-                appendOutput("Please enter a system name (or use Locate) for the sphere center.\n");
+                appendOutput(systemOutputPanel, "Please enter a system name (or use Locate) for the sphere center.\n");
                 return;
             }
 
             try {
                 int radius = Integer.parseInt(rText);
 
-                runQueryAsync("sphereSystemsLocal(" + centerName + "," + radius + ")", () -> {
+                runQueryAsync(systemOutputPanel, "sphereSystemsLocal(" + centerName + "," + radius + ")", () -> {
                     SphereSystemsResponse[] resp = client.sphereSystemsLocal(centerName, radius);
                     return toJsonOrMessage(resp);
                 });
             } catch (NumberFormatException ex) {
-                appendOutput("Invalid number format for radius.\n");
+                appendOutput(systemOutputPanel, "Invalid number format for radius.\n");
             }
         });
+
         return panel;
-    }
-    /**
-     * Parse EDSM system JSON and, if it has coords.x/y/z, copy them into the sphere search fields.
-     */
-    private void updateSphereCoordsFromJson(String json) {
-        if (json == null) {
-            return;
-        }
-        json = json.trim();
-        if (json.isEmpty()) {
-            return;
-        }
-
-        // Only try to parse if it looks like JSON, avoid "(no result / empty response)" etc.
-        char c = json.charAt(0);
-        if (c != '{' && c != '[') {
-            return;
-        }
-
-        try {
-            JsonElement root = JsonParser.parseString(json);
-            JsonObject obj = null;
-
-            if (root.isJsonObject()) {
-                obj = root.getAsJsonObject();
-            } else if (root.isJsonArray() && root.getAsJsonArray().size() > 0) {
-                JsonElement first = root.getAsJsonArray().get(0);
-                if (first.isJsonObject()) {
-                    obj = first.getAsJsonObject();
-                }
-            }
-
-            if (obj == null) {
-                return;
-            }
-
-            JsonObject coords = obj.getAsJsonObject("coords");
-            if (coords == null) {
-                return;
-            }
-
-            if (sphereXField != null && coords.has("x")) {
-                sphereXField.setText(coords.get("x").getAsString());
-            }
-            if (sphereYField != null && coords.has("y")) {
-                sphereYField.setText(coords.get("y").getAsString());
-            }
-            if (sphereZField != null && coords.has("z")) {
-                sphereZField.setText(coords.get("z").getAsString());
-            }
-        } catch (Exception ignored) {
-            // If JSON isn't what we expect, just don't update the sphere fields.
-        }
     }
 
     private JPanel createBodiesTab() {
@@ -393,45 +334,40 @@ public class EdsmQueryTool extends JFrame {
         JButton showBodiesByNameButton = new JButton("Show Bodies");
         JButton showBodiesByIdButton = new JButton("Show Bodies (by ID)");
 
-        // ----- Section: By system name -----
         JPanel byNamePanel = new JPanel();
         byNamePanel.setLayout(new BoxLayout(byNamePanel, BoxLayout.Y_AXIS));
         byNamePanel.setBorder(BorderFactory.createTitledBorder("Bodies by system name"));
 
         byNamePanel.add(makeLabeledWithLocate(bodiesTabSystemField, "System name:"));
         byNamePanel.add(Box.createVerticalStrut(6));
-
         JPanel bodiesByNameButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
         bodiesByNameButtons.add(showBodiesByNameButton);
         byNamePanel.add(bodiesByNameButtons);
 
-
-        // ----- Section: By system ID -----
         JPanel byIdPanel = new JPanel();
         byIdPanel.setLayout(new BoxLayout(byIdPanel, BoxLayout.Y_AXIS));
         byIdPanel.setBorder(BorderFactory.createTitledBorder("Bodies by system ID"));
 
         byIdPanel.add(makeLabeled(systemIdField, "System ID:"));
         byIdPanel.add(Box.createVerticalStrut(6));
-
         JPanel bodiesByIdButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
         bodiesByIdButtons.add(showBodiesByIdButton);
         byIdPanel.add(bodiesByIdButtons);
 
-        // Assemble
         panel.add(byNamePanel);
         panel.add(Box.createVerticalStrut(8));
         panel.add(byIdPanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(bodiesOutputPanel);
 
-        // Actions
         showBodiesByNameButton.addActionListener(e -> {
             String name = bodiesTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(bodiesOutputPanel, "Please enter a system name.\n");
                 return;
             }
             setGlobalSystemName(name);
-            runQueryAsync("showBodies(systemName=" + name + ")", () -> {
+            runQueryAsync(bodiesOutputPanel, "showBodies(systemName=" + name + ")", () -> {
                 BodiesResponse resp = client.showBodies(name);
                 return toJsonOrMessage(resp);
             });
@@ -440,17 +376,17 @@ public class EdsmQueryTool extends JFrame {
         showBodiesByIdButton.addActionListener(e -> {
             String idText = systemIdField.getText().trim();
             if (idText.isEmpty()) {
-                appendOutput("Please enter a system ID.\n");
+                appendOutput(bodiesOutputPanel, "Please enter a system ID.\n");
                 return;
             }
             try {
                 long id = Long.parseLong(idText);
-                runQueryAsync("showBodies(systemId=" + id + ")", () -> {
+                runQueryAsync(bodiesOutputPanel, "showBodies(systemId=" + id + ")", () -> {
                     BodiesResponse resp = client.showBodies(id);
                     return toJsonOrMessage(resp);
                 });
             } catch (NumberFormatException ex) {
-                appendOutput("Invalid system ID (must be a number).\n");
+                appendOutput(bodiesOutputPanel, "Invalid system ID (must be a number).\n");
             }
         });
 
@@ -470,7 +406,6 @@ public class EdsmQueryTool extends JFrame {
         JButton stationsButton = new JButton("System Stations");
         JButton logsButton = new JButton("System Logs");
 
-        // ----- Section: System activity -----
         JPanel activityPanel = new JPanel();
         activityPanel.setLayout(new BoxLayout(activityPanel, BoxLayout.Y_AXIS));
         activityPanel.setBorder(BorderFactory.createTitledBorder("System activity"));
@@ -480,7 +415,6 @@ public class EdsmQueryTool extends JFrame {
 
         JPanel buttonRow = new JPanel();
         buttonRow.setLayout(new BoxLayout(buttonRow, BoxLayout.X_AXIS));
-
         buttonRow.add(trafficButton);
         buttonRow.add(Box.createHorizontalStrut(8));
         buttonRow.add(deathsButton);
@@ -492,19 +426,18 @@ public class EdsmQueryTool extends JFrame {
 
         activityPanel.add(buttonRow);
 
-        activityPanel.add(Box.createVerticalStrut(4));
-
         panel.add(activityPanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(trafficOutputPanel);
 
-        // Actions
         trafficButton.addActionListener(e -> {
             String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(trafficOutputPanel, "Please enter a system name.\n");
                 return;
             }
             setGlobalSystemName(name);
-            runQueryAsync("showTraffic(" + name + ")", () -> {
+            runQueryAsync(trafficOutputPanel, "showTraffic(" + name + ")", () -> {
                 TrafficResponse resp = client.showTraffic(name);
                 return toJsonOrMessage(resp);
             });
@@ -513,11 +446,11 @@ public class EdsmQueryTool extends JFrame {
         deathsButton.addActionListener(e -> {
             String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(trafficOutputPanel, "Please enter a system name.\n");
                 return;
             }
             setGlobalSystemName(name);
-            runQueryAsync("showDeaths(" + name + ")", () -> {
+            runQueryAsync(trafficOutputPanel, "showDeaths(" + name + ")", () -> {
                 DeathsResponse resp = client.showDeaths(name);
                 return toJsonOrMessage(resp);
             });
@@ -526,11 +459,11 @@ public class EdsmQueryTool extends JFrame {
         stationsButton.addActionListener(e -> {
             String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(trafficOutputPanel, "Please enter a system name.\n");
                 return;
             }
             setGlobalSystemName(name);
-            runQueryAsync("getSystemStations(" + name + ")", () -> {
+            runQueryAsync(trafficOutputPanel, "getSystemStations(" + name + ")", () -> {
                 SystemStationsResponse resp = client.getSystemStations(name);
                 return toJsonOrMessage(resp);
             });
@@ -539,12 +472,12 @@ public class EdsmQueryTool extends JFrame {
         logsButton.addActionListener(e -> {
             String name = trafficTabSystemField.getText().trim();
             if (name.isEmpty()) {
-                appendOutput("Please enter a system name.\n");
+                appendOutput(trafficOutputPanel, "Please enter a system name.\n");
                 return;
             }
 
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set; cannot query system logs.\n");
+                appendOutput(trafficOutputPanel, "Commander preferences not set; cannot query system logs.\n");
                 return;
             }
 
@@ -553,7 +486,7 @@ public class EdsmQueryTool extends JFrame {
             String commanderName = creds[1];
 
             setGlobalSystemName(name);
-            runQueryAsync("systemLogs(" + name + ")", () -> {
+            runQueryAsync(trafficOutputPanel, "systemLogs(" + name + ")", () -> {
                 LogsResponse resp = client.systemLogs(apiKey, commanderName, name);
                 return toJsonOrMessage(resp);
             });
@@ -573,7 +506,6 @@ public class EdsmQueryTool extends JFrame {
         JButton cmdrRanksButton = new JButton("Get Commander Ranks/Stats");
         JButton cmdrCreditsButton = new JButton("Get Commander Credits");
 
-        // ----- Section: Credentials -----
         JPanel credsPanel = new JPanel();
         credsPanel.setLayout(new BoxLayout(credsPanel, BoxLayout.Y_AXIS));
         credsPanel.setBorder(BorderFactory.createTitledBorder("Credentials"));
@@ -585,14 +517,12 @@ public class EdsmQueryTool extends JFrame {
         credsPanel.add(Box.createVerticalStrut(4));
         credsPanel.add(prefsButton);
 
-        // ----- Section: Commander queries -----
         JPanel queriesPanel = new JPanel();
         queriesPanel.setLayout(new BoxLayout(queriesPanel, BoxLayout.Y_AXIS));
         queriesPanel.setBorder(BorderFactory.createTitledBorder("Commander queries"));
 
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
-
         row.add(cmdrLogsButton);
         row.add(Box.createHorizontalStrut(8));
         row.add(cmdrLastPosButton);
@@ -607,20 +537,21 @@ public class EdsmQueryTool extends JFrame {
         panel.add(credsPanel);
         panel.add(Box.createVerticalStrut(8));
         panel.add(queriesPanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(commanderOutputPanel);
 
-        // Actions
         prefsButton.addActionListener(e -> showCommanderPreferencesDialog());
 
         cmdrLogsButton.addActionListener(e -> {
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set.\n");
+                appendOutput(commanderOutputPanel, "Commander preferences not set.\n");
                 return;
             }
             String[] creds = loadCommanderPrefs();
             String apiKey = creds[0];
             String commanderName = creds[1];
 
-            runQueryAsync("getCmdrLogs()", () -> {
+            runQueryAsync(commanderOutputPanel, "getCmdrLogs()", () -> {
                 LogsResponse resp = client.getCmdrLogs(apiKey, commanderName);
                 return toJsonOrMessage(resp);
             });
@@ -628,18 +559,17 @@ public class EdsmQueryTool extends JFrame {
 
         cmdrLastPosButton.addActionListener(e -> {
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set.\n");
+                appendOutput(commanderOutputPanel, "Commander preferences not set.\n");
                 return;
             }
             String[] creds = loadCommanderPrefs();
             String apiKey = creds[0];
             String commanderName = creds[1];
 
-            runQueryAsync("getCmdrLastPosition()", () -> {
+            runQueryAsync(commanderOutputPanel, "getCmdrLastPosition()", () -> {
                 CmdrLastPositionResponse resp = client.getCmdrLastPosition(apiKey, commanderName);
                 if (resp != null && resp.getSystem() != null && !resp.getSystem().isEmpty()) {
                     String sys = resp.getSystem();
-                    // Update all tabs when manually requested
                     SwingUtilities.invokeLater(() -> setGlobalSystemName(sys));
                 }
                 return toJsonOrMessage(resp);
@@ -648,14 +578,14 @@ public class EdsmQueryTool extends JFrame {
 
         cmdrRanksButton.addActionListener(e -> {
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set.\n");
+                appendOutput(commanderOutputPanel, "Commander preferences not set.\n");
                 return;
             }
             String[] creds = loadCommanderPrefs();
             String apiKey = creds[0];
             String commanderName = creds[1];
 
-            runQueryAsync("getCmdrRanks()", () -> {
+            runQueryAsync(commanderOutputPanel, "getCmdrRanks()", () -> {
                 CmdrRanksResponse resp = client.getCmdrRanks(apiKey, commanderName);
                 return toJsonOrMessage(resp);
             });
@@ -663,14 +593,14 @@ public class EdsmQueryTool extends JFrame {
 
         cmdrCreditsButton.addActionListener(e -> {
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set.\n");
+                appendOutput(commanderOutputPanel, "Commander preferences not set.\n");
                 return;
             }
             String[] creds = loadCommanderPrefs();
             String apiKey = creds[0];
             String commanderName = creds[1];
 
-            runQueryAsync("getCmdrCredits()", () -> {
+            runQueryAsync(commanderOutputPanel, "getCmdrCredits()", () -> {
                 CmdrCreditsResponse resp = client.getCmdrCredits(apiKey, commanderName);
                 return toJsonOrMessage(resp);
             });
@@ -686,7 +616,7 @@ public class EdsmQueryTool extends JFrame {
     private void initCommanderSystemAtStartup() {
         SwingUtilities.invokeLater(() -> {
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set; cannot auto-populate system at startup.\n");
+                appendOutput(systemOutputPanel, "Commander preferences not set; cannot auto-populate system at startup.\n");
                 return;
             }
             String[] creds = loadCommanderPrefs();
@@ -712,7 +642,7 @@ public class EdsmQueryTool extends JFrame {
                     try {
                         String system = get();
                         if (system != null && !system.isEmpty()) {
-                            appendOutput("Startup: commander last known system is " + system + "\n");
+                            appendOutput(systemOutputPanel, "Startup: commander last known system is " + system + "\n");
                             setGlobalSystemName(system);
                         }
                     } catch (Exception ignored) {
@@ -723,7 +653,7 @@ public class EdsmQueryTool extends JFrame {
     }
 
     // ============================================================
-    // PREFERENCES (API key + commander name)
+    // PREFERENCES
     // ============================================================
 
     private boolean ensureCommanderPrefs() {
@@ -817,7 +747,6 @@ public class EdsmQueryTool extends JFrame {
         label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4));
         p.add(label);
 
-        // Keep this a single-line height row
         Dimension pref = field.getPreferredSize();
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
 
@@ -825,10 +754,6 @@ public class EdsmQueryTool extends JFrame {
         return p;
     }
 
-    /**
-     * Label + text field + icon "locate" button.
-     * If the icon can't be loaded, falls back to text "Locate".
-     */
     private JComponent makeLabeledWithLocate(JTextField field, String labelText) {
         JPanel p = new JPanel();
         p.setLayout(new BoxLayout(p, BoxLayout.X_AXIS));
@@ -853,13 +778,12 @@ public class EdsmQueryTool extends JFrame {
 
         locateButton.setToolTipText("Fill with current commander system from EDSM");
 
-        // Keep text field a single-line height row
         Dimension pref = field.getPreferredSize();
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
 
         locateButton.addActionListener(e -> {
             if (!ensureCommanderPrefs()) {
-                appendOutput("Commander preferences not set; cannot locate current system.\n");
+                appendOutput(systemOutputPanel, "Commander preferences not set; cannot locate current system.\n");
                 return;
             }
 
@@ -867,14 +791,13 @@ public class EdsmQueryTool extends JFrame {
             String apiKey = creds[0];
             String commanderName = creds[1];
 
-            runQueryAsync("getCmdrLastPosition() for locate", () -> {
+            runQueryAsync(systemOutputPanel, "getCmdrLastPosition() for locate", () -> {
                 CmdrLastPositionResponse resp = client.getCmdrLastPosition(apiKey, commanderName);
                 if (resp == null) {
                     return "(no result from getCmdrLastPosition)";
                 }
                 String system = resp.getSystem();
                 if (system != null && !system.isEmpty()) {
-                    // Update all tabs when locate is pressed
                     SwingUtilities.invokeLater(() -> setGlobalSystemName(system));
                     return "Located commander in system: " + system;
                 } else {
@@ -891,20 +814,12 @@ public class EdsmQueryTool extends JFrame {
         return p;
     }
 
-    /**
-     * Register a system-name field so:
-     * - it participates in global updates
-     * - Enter updates all tabs
-     * - typing drives autocomplete (non-intrusively)
-     */
     private void registerSystemNameField(JTextField field) {
         systemNameFields.add(field);
 
-        // Single-line height
         Dimension pref = field.getPreferredSize();
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
 
-        // When user hits Enter in any system field, propagate to all tabs
         field.addActionListener(e -> {
             String text = field.getText().trim();
             if (!text.isEmpty()) {
@@ -912,7 +827,6 @@ public class EdsmQueryTool extends JFrame {
             }
         });
 
-        // Typing -> schedule autocomplete
         field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             @Override
             public void insertUpdate(javax.swing.event.DocumentEvent e) {
@@ -930,7 +844,6 @@ public class EdsmQueryTool extends JFrame {
             }
         });
 
-        // ESC hides autocomplete popup
         InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
         ActionMap am = field.getActionMap();
         im.put(KeyStroke.getKeyStroke("ESCAPE"), "autoCompleteHide");
@@ -941,7 +854,6 @@ public class EdsmQueryTool extends JFrame {
             }
         });
 
-        // DOWN arrow -> move focus into the suggestion list (if visible)
         im.put(KeyStroke.getKeyStroke("DOWN"), "autoCompleteDown");
         am.put("autoCompleteDown", new javax.swing.AbstractAction() {
             @Override
@@ -959,7 +871,6 @@ public class EdsmQueryTool extends JFrame {
                     return;
                 }
 
-                // Remember which field we came from and its text
                 autoCompleteTargetField = field;
                 autoCompleteOriginalText = field.getText();
 
@@ -1010,10 +921,7 @@ public class EdsmQueryTool extends JFrame {
             protected void done() {
                 try {
                     List<String> suggestions = get();
-                    // If user kept typing and prefix changed, drop stale results
                     if (prefix.equals(pendingAutoCompletePrefix)) {
-                        // Optional debug:
-                        // appendOutput("Autocomplete \"" + prefix + "\" -> " + suggestions.size() + " suggestions\n");
                         showAutoCompleteSuggestions(targetField, suggestions);
                     }
                 } catch (Exception ignored) {
@@ -1021,22 +929,16 @@ public class EdsmQueryTool extends JFrame {
             }
         }.execute();
     }
-    
- // Used only for autocomplete JSON parsing
-    private static class AutoCompleteSystem {
-        String name;
-    }
 
     private List<String> fetchSystemNameSuggestions(String prefix) throws Exception {
-        // EDSM API: /api-v1/systems?systemName=prefix (prefix can be "start of a name")
-        String encoded = URLEncoder.encode(prefix, StandardCharsets.UTF_8.name());
+        String encoded = java.net.URLEncoder.encode(prefix, StandardCharsets.UTF_8.name());
         String urlStr = "https://www.edsm.net/api-v1/systems?systemName=" + encoded;
 
-        HttpURLConnection conn = null;
-        InputStream is = null;
+        java.net.HttpURLConnection conn = null;
+        java.io.InputStream is = null;
         try {
-            URL url = new URL(urlStr);
-            conn = (HttpURLConnection) url.openConnection();
+            java.net.URL url = new java.net.URL(urlStr);
+            conn = (java.net.HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
@@ -1053,8 +955,8 @@ public class EdsmQueryTool extends JFrame {
             }
 
             StringBuilder sb = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(is, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     sb.append(line);
@@ -1079,7 +981,6 @@ public class EdsmQueryTool extends JFrame {
                 names.add(s.name);
             }
 
-            // Deduplicate & cap how many we show
             return names.stream()
                     .distinct()
                     .limit(20)
@@ -1105,11 +1006,11 @@ public class EdsmQueryTool extends JFrame {
 
         if (autoCompletePopup == null) {
             autoCompletePopup = new JPopupMenu();
-            autoCompletePopup.setFocusable(false); // popup itself doesn't need focus
+            autoCompletePopup.setFocusable(false);
 
             autoCompleteList = new JList<>();
             autoCompleteList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-            autoCompleteList.setFocusable(true);   // must be focusable for arrow keys
+            autoCompleteList.setFocusable(true);
 
             autoCompleteList.addMouseListener(new MouseAdapter() {
                 @Override
@@ -1125,11 +1026,9 @@ public class EdsmQueryTool extends JFrame {
             sp.setFocusable(false);
             autoCompletePopup.add(sp);
 
-            // Keyboard navigation when the list DOES have focus
             InputMap lim = autoCompleteList.getInputMap(JComponent.WHEN_FOCUSED);
             ActionMap lam = autoCompleteList.getActionMap();
 
-            // ENTER -> accept selection
             lim.put(KeyStroke.getKeyStroke("ENTER"), "autoCompleteAccept");
             lam.put("autoCompleteAccept", new javax.swing.AbstractAction() {
                 @Override
@@ -1138,7 +1037,6 @@ public class EdsmQueryTool extends JFrame {
                 }
             });
 
-            // ESC -> hide popup, return focus to field
             lim.put(KeyStroke.getKeyStroke("ESCAPE"), "autoCompleteEscape");
             lam.put("autoCompleteEscape", new javax.swing.AbstractAction() {
                 @Override
@@ -1153,7 +1051,6 @@ public class EdsmQueryTool extends JFrame {
                 }
             });
 
-            // UP -> move up; if already at first item, go back to field and restore original text
             lim.put(KeyStroke.getKeyStroke("UP"), "autoCompleteUp");
             lam.put("autoCompleteUp", new javax.swing.AbstractAction() {
                 @Override
@@ -1164,7 +1061,6 @@ public class EdsmQueryTool extends JFrame {
                         autoCompleteList.setSelectedIndex(newIdx);
                         autoCompleteList.ensureIndexIsVisible(newIdx);
                     } else {
-                        // At first item: return to text field
                         if (autoCompleteTargetField != null) {
                             String restore = autoCompleteOriginalText;
                             if (restore == null) {
@@ -1180,7 +1076,6 @@ public class EdsmQueryTool extends JFrame {
                 }
             });
 
-            // DOWN (when list already has focus) -> move down within the list
             lim.put(KeyStroke.getKeyStroke("DOWN"), "autoCompleteDownInList");
             lam.put("autoCompleteDownInList", new javax.swing.AbstractAction() {
                 @Override
@@ -1198,7 +1093,6 @@ public class EdsmQueryTool extends JFrame {
                         autoCompleteList.setSelectedIndex(newIdx);
                         autoCompleteList.ensureIndexIsVisible(newIdx);
                     }
-                    // If already at last item, do nothing (no wrap)
                 }
             });
         }
@@ -1212,15 +1106,12 @@ public class EdsmQueryTool extends JFrame {
             listHeight = autoCompleteList.getPreferredSize().height;
         }
         if (listHeight <= 0) {
-            listHeight = 120; // fallback
+            listHeight = 120;
         }
 
         autoCompletePopup.setPopupSize(width, listHeight + 4);
-
-        // Show popup just under the field
         autoCompletePopup.show(field, 0, field.getHeight());
 
-        // Default: keep typing in the field until user hits Down
         field.requestFocusInWindow();
         field.setCaretPosition(field.getText().length());
     }
@@ -1260,13 +1151,64 @@ public class EdsmQueryTool extends JFrame {
         }
     }
 
+    private void updateSphereCoordsFromJson(String json) {
+        if (json == null) {
+            return;
+        }
+        json = json.trim();
+        if (json.isEmpty()) {
+            return;
+        }
+
+        char c = json.charAt(0);
+        if (c != '{' && c != '[') {
+            return;
+        }
+
+        try {
+            JsonElement root = JsonParser.parseString(json);
+            JsonObject obj = null;
+
+            if (root.isJsonObject()) {
+                obj = root.getAsJsonObject();
+            } else if (root.isJsonArray() && root.getAsJsonArray().size() > 0) {
+                JsonElement first = root.getAsJsonArray().get(0);
+                if (first.isJsonObject()) {
+                    obj = first.getAsJsonObject();
+                }
+            }
+
+            if (obj == null) {
+                return;
+            }
+
+            JsonObject coords = obj.getAsJsonObject("coords");
+            if (coords == null) {
+                return;
+            }
+
+            if (sphereXField != null && coords.has("x")) {
+                sphereXField.setText(coords.get("x").getAsString());
+            }
+            if (sphereYField != null && coords.has("y")) {
+                sphereYField.setText(coords.get("y").getAsString());
+            }
+            if (sphereZField != null && coords.has("z")) {
+                sphereZField.setText(coords.get("z").getAsString());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     // ============================================================
     // ASYNC + OUTPUT
     // ============================================================
 
-    private void runQueryAsync(String label, QuerySupplier supplier) {
-        appendOutput("=== " + label + " ===\n");
-        appendOutput("Running query...\n");
+    private void runQueryAsync(TabOutputPanel output, String label, QuerySupplier supplier) {
+        output.clear();
+        output.showTable();
+        output.appendText("=== " + label + " ===\n");
+        output.appendText("Running query...\n");
 
         new SwingWorker<String, Void>() {
             @Override
@@ -1282,10 +1224,13 @@ public class EdsmQueryTool extends JFrame {
             protected void done() {
                 try {
                     String result = get();
-                    appendOutput(result);
-                    appendOutput("\n\n");
+                    if (result == null) {
+                        result = "(no result / empty response)";
+                    }
+                    output.appendText(result + "\n\n");
+                    output.updateTableFromText(result);
                 } catch (Exception ex) {
-                    appendOutput("ERROR retrieving result: " + ex.getMessage() + "\n");
+                    output.appendText("ERROR retrieving result: " + ex.getMessage() + "\n");
                 }
             }
         }.execute();
@@ -1298,13 +1243,481 @@ public class EdsmQueryTool extends JFrame {
         return gson.toJson(obj);
     }
 
-    private void appendOutput(String text) {
-        outputArea.append(text);
-        outputArea.setCaretPosition(outputArea.getDocument().getLength());
+    private void appendOutput(TabOutputPanel panel, String text) {
+        panel.appendText(text);
     }
 
     private interface QuerySupplier {
         String get() throws Exception;
+    }
+
+    // Used only for autocomplete parsing
+    private static class AutoCompleteSystem {
+        String name;
+    }
+
+    // ============================================================
+    // TAB OUTPUT PANEL (TABLE/TEXT TOGGLE)
+    // ============================================================
+
+    // ============================================================
+    // TAB OUTPUT PANEL (TABLE/TEXT TOGGLE + TYPE-AWARE TABLES)
+    // ============================================================
+
+    private class TabOutputPanel extends JPanel {
+
+        private final JTextArea textArea;
+        private final JTable table;
+        private final DefaultTableModel tableModel;
+        private final CardLayout cardLayout;
+        private final JPanel cardPanel;
+        private final JButton toggleButton;
+        private boolean showingTable = true;
+
+        TabOutputPanel() {
+            super(new BorderLayout());
+            setBorder(BorderFactory.createTitledBorder("Results"));
+
+            toggleButton = new JButton("Show Text");
+            toggleButton.addActionListener(e -> toggleView());
+
+            JPanel top = new JPanel();
+            top.setLayout(new BoxLayout(top, BoxLayout.X_AXIS));
+            top.add(toggleButton);
+            top.add(Box.createHorizontalGlue());
+
+            textArea = new JTextArea();
+            textArea.setEditable(false);
+            textArea.setLineWrap(true);
+            textArea.setWrapStyleWord(true);
+            textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+
+            tableModel = new DefaultTableModel();
+            table = new JTable(tableModel);
+            table.setFillsViewportHeight(true);
+
+            cardLayout = new CardLayout();
+            cardPanel = new JPanel(cardLayout);
+            cardPanel.add(new JScrollPane(table), "TABLE");
+            cardPanel.add(new JScrollPane(textArea), "TEXT");
+
+            add(top, BorderLayout.NORTH);
+            add(cardPanel, BorderLayout.CENTER);
+
+            cardLayout.show(cardPanel, "TABLE");
+            showingTable = true;
+        }
+
+        void toggleView() {
+            if (showingTable) {
+                cardLayout.show(cardPanel, "TEXT");
+                toggleButton.setText("Show Table");
+                showingTable = false;
+            } else {
+                cardLayout.show(cardPanel, "TABLE");
+                toggleButton.setText("Show Text");
+                showingTable = true;
+            }
+        }
+
+        void showTable() {
+            cardLayout.show(cardPanel, "TABLE");
+            toggleButton.setText("Show Text");
+            showingTable = true;
+        }
+
+        void clear() {
+            textArea.setText("");
+            tableModel.setRowCount(0);
+            tableModel.setColumnCount(0);
+        }
+
+        void appendText(String t) {
+            textArea.append(t);
+            textArea.setCaretPosition(textArea.getDocument().getLength());
+        }
+
+        /**
+         * Entry point from runQueryAsync: we get the raw JSON/text string
+         * and choose an appropriate table representation.
+         */
+        void updateTableFromText(String text) {
+            if (text == null) {
+                setSimpleTable("Value", Collections.singletonList(new Object[]{"(null)"}));
+                return;
+            }
+            String trimmed = text.trim();
+            if (trimmed.isEmpty()) {
+                setSimpleTable("Value", Collections.emptyList());
+                return;
+            }
+
+            try {
+                JsonElement root = JsonParser.parseString(trimmed);
+
+                if (root.isJsonArray()) {
+                    JsonArray arr = root.getAsJsonArray();
+                    updateTableFromArraySpecial(arr);
+                    return;
+                }
+
+                if (root.isJsonObject()) {
+                    JsonObject obj = root.getAsJsonObject();
+
+                    // Bodies: show only the "bodies" array, one body per row
+                    if (obj.has("bodies") && obj.get("bodies").isJsonArray()) {
+                        updateTableFromBodies(obj.getAsJsonArray("bodies"));
+                        return;
+                    }
+
+                    // Stations: show only the "stations" array, one station per row
+                    if (obj.has("stations") && obj.get("stations").isJsonArray()) {
+                        updateTableFromStations(obj.getAsJsonArray("stations"));
+                        return;
+                    }
+
+                    // Single system (getSystem / showSystem):
+                    // object with id, name, coords
+                    if (obj.has("id") && obj.has("name") && obj.has("coords")) {
+                        updateTableFromSingleSystem(obj);
+                        return;
+                    }
+
+                    // Fallback: generic "Field / Value" view
+                    updateTableFromObjectGeneric(obj);
+                    return;
+                }
+
+                // Scalar or something else: put whole thing in one column
+                setSimpleTable("Value", Collections.singletonList(new Object[]{root.toString()}));
+            } catch (Exception ex) {
+                // Not JSON, or parse error: just show raw text
+                setSimpleTable("Value", Collections.singletonList(new Object[]{text}));
+            }
+        }
+
+        /**
+         * Arrays: special handling for sphere search results (systems with coords),
+         * otherwise generic row-per-element.
+         */
+        private void updateTableFromArraySpecial(JsonArray arr) {
+            if (arr.size() == 0) {
+                setSimpleTable("Value", Collections.emptyList());
+                return;
+            }
+
+            JsonElement first = arr.get(0);
+            if (first.isJsonObject()) {
+                JsonObject firstObj = first.getAsJsonObject();
+
+                // Sphere search results: objects with coords (and often distance)
+                if (firstObj.has("coords")) {
+                    updateTableFromSphereSystems(arr);
+                    return;
+                }
+
+                // Generic array-of-objects
+                updateTableFromArrayOfObjectsGeneric(arr);
+                return;
+            }
+
+            // Non-object elements: generic single "Value" column
+            List<Object[]> rows = new ArrayList<>();
+            for (JsonElement el : arr) {
+                rows.add(new Object[]{el.toString()});
+            }
+            setSimpleTable("Value", rows);
+        }
+
+        /**
+         * Single system: show columns id, name, coords (coords as x,y,z tuple).
+         */
+        private void updateTableFromSingleSystem(JsonObject obj) {
+            String idVal = obj.has("id") ? safeJsonPrimitiveToString(obj.get("id")) : "";
+            String nameVal = obj.has("name") ? safeJsonPrimitiveToString(obj.get("name")) : "";
+            String coordsVal = formatCoordsTuple(obj.getAsJsonObject("coords"));
+
+            List<String> columns = Arrays.asList("id", "name", "coords");
+            List<Object[]> rows = Collections.singletonList(
+                    new Object[]{idVal, nameVal, coordsVal}
+            );
+
+            setTable(columns, rows);
+        }
+
+        /**
+         * Sphere search: one row per system, columns id, name, coords, distance.
+         */
+        private void updateTableFromSphereSystems(JsonArray arr) {
+            List<String> columns = new ArrayList<>();
+            columns.add("id");
+            columns.add("name");
+            columns.add("coords");
+            columns.add("distance");
+
+            List<Object[]> rows = new ArrayList<>();
+
+            for (JsonElement el : arr) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject obj = el.getAsJsonObject();
+
+                String idVal = obj.has("id") ? safeJsonPrimitiveToString(obj.get("id")) : "";
+                String nameVal = obj.has("name") ? safeJsonPrimitiveToString(obj.get("name")) : "";
+                String coordsVal = "";
+                if (obj.has("coords") && obj.get("coords").isJsonObject()) {
+                    coordsVal = formatCoordsTuple(obj.getAsJsonObject("coords"));
+                }
+                String distVal = obj.has("distance") ? safeJsonPrimitiveToString(obj.get("distance")) : "";
+
+                rows.add(new Object[]{idVal, nameVal, coordsVal, distVal});
+            }
+
+            setTable(columns, rows);
+        }
+
+        /**
+         * Bodies: array of body objects; columns are all keys except id64,
+         * including id and name.
+         */
+        /**
+         * Bodies: array of body objects; columns are all keys except
+         * noisy/star-centric ones. Includes id and name, but:
+         *  - name is shown without the system prefix (just "1", "1 a", etc.)
+         *  - negative values like "No volcanism" or "false" are blanked.
+         */
+        private void updateTableFromBodies(JsonArray bodies) {
+            if (bodies.size() == 0) {
+                setSimpleTable("Value", Collections.emptyList());
+                return;
+            }
+
+            // Collect columns, skipping noisy ones
+            Set<String> columnsSet = new LinkedHashSet<>();
+            for (JsonElement el : bodies) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject obj = el.getAsJsonObject();
+                for (String key : obj.keySet()) {
+                    if (BODIES_SKIP_COLUMNS.contains(key)) {
+                        continue;
+                    }
+                    columnsSet.add(key);
+                }
+            }
+            if (columnsSet.isEmpty()) {
+                columnsSet.add("Value");
+            }
+
+            // Order: id, name, type, subType, distanceToArrival, then the rest alphabetically
+            List<String> columns = orderBodyColumns(columnsSet);
+
+            List<Object[]> rows = new ArrayList<>();
+
+            for (JsonElement el : bodies) {
+                if (!el.isJsonObject()) {
+                    rows.add(new Object[]{el.toString()});
+                    continue;
+                }
+                JsonObject obj = el.getAsJsonObject();
+
+                // Grab type once per row so we can tell stars vs planets
+                String typeVal = "";
+                JsonElement typeEl = obj.get("type");
+                if (typeEl != null && typeEl.isJsonPrimitive()) {
+                    typeVal = typeEl.getAsString();
+                }
+
+                Object[] row = new Object[columns.size()];
+
+                for (int i = 0; i < columns.size(); i++) {
+                    String col = columns.get(i);
+                    JsonElement v = obj.get(col);
+
+                    String value;
+                    if (v == null || v.isJsonNull()) {
+                        value = "";
+                    } else if (v.isJsonPrimitive()) {
+                        value = v.getAsString();
+                    } else {
+                        value = v.toString();
+                    }
+
+                    // Strip system prefix from the "name" column
+                    if ("name".equals(col) && currentSystemName != null && !currentSystemName.isEmpty()) {
+                        String prefix = currentSystemName.trim();
+                        if (value.startsWith(prefix)) {
+                            value = value.substring(prefix.length()).trim();
+                        }
+
+                        // Star naming:
+                        // - Primary star: short name ends up empty -> show "*"
+                        // - Other stars keep their letter (A, B, C, ...)
+                        if ("Star".equalsIgnoreCase(typeVal)) {
+                            if (value.isEmpty()) {
+                                value = "*";
+                            }
+                        }
+                    }
+
+                    // Hide "negative" values like "No volcanism", "false", "0"
+                    value = normalizeBodyValue(col, value);
+
+                    row[i] = value;
+                }
+                rows.add(row);
+            }
+
+            setTable(columns, rows);
+        }
+
+        /**
+         * Stations: array of station objects; columns are all keys seen on stations.
+         */
+        private void updateTableFromStations(JsonArray stations) {
+            if (stations.size() == 0) {
+                setSimpleTable("Value", Collections.emptyList());
+                return;
+            }
+
+            Set<String> columnsSet = new LinkedHashSet<>();
+            for (JsonElement el : stations) {
+                if (el.isJsonObject()) {
+                    JsonObject obj = el.getAsJsonObject();
+                    for (String key : obj.keySet()) {
+                        columnsSet.add(key);
+                    }
+                }
+            }
+            if (columnsSet.isEmpty()) {
+                columnsSet.add("Value");
+            }
+
+            List<String> columns = new ArrayList<>(columnsSet);
+            List<Object[]> rows = new ArrayList<>();
+
+            for (JsonElement el : stations) {
+                if (!el.isJsonObject()) {
+                    rows.add(new Object[]{el.toString()});
+                    continue;
+                }
+                JsonObject obj = el.getAsJsonObject();
+                Object[] row = new Object[columns.size()];
+                for (int i = 0; i < columns.size(); i++) {
+                    String col = columns.get(i);
+                    JsonElement v = obj.get(col);
+                    row[i] = v == null ? "" :
+                            v.isJsonPrimitive() ? v.getAsString() : v.toString();
+                }
+                rows.add(row);
+            }
+
+            setTable(columns, rows);
+        }
+
+        /**
+         * Generic array-of-objects fallback.
+         */
+        private void updateTableFromArrayOfObjectsGeneric(JsonArray arr) {
+            Set<String> columnsSet = new LinkedHashSet<>();
+            for (JsonElement el : arr) {
+                if (el.isJsonObject()) {
+                    JsonObject obj = el.getAsJsonObject();
+                    for (String key : obj.keySet()) {
+                        columnsSet.add(key);
+                    }
+                }
+            }
+            if (columnsSet.isEmpty()) {
+                columnsSet.add("Value");
+            }
+
+            List<String> columns = new ArrayList<>(columnsSet);
+            List<Object[]> rows = new ArrayList<>();
+
+            for (JsonElement el : arr) {
+                if (el.isJsonObject()) {
+                    JsonObject obj = el.getAsJsonObject();
+                    Object[] row = new Object[columns.size()];
+                    for (int i = 0; i < columns.size(); i++) {
+                        String col = columns.get(i);
+                        JsonElement v = obj.get(col);
+                        row[i] = v == null ? "" :
+                                v.isJsonPrimitive() ? v.getAsString() : v.toString();
+                    }
+                    rows.add(row);
+                } else {
+                    rows.add(new Object[]{el.toString()});
+                }
+            }
+
+            setTable(columns, rows);
+        }
+
+        /**
+         * Generic object: "Field / Value" two-column view.
+         */
+        private void updateTableFromObjectGeneric(JsonObject obj) {
+            List<String> columns = Arrays.asList("Field", "Value");
+            List<Object[]> rows = new ArrayList<>();
+
+            for (String key : obj.keySet()) {
+                JsonElement v = obj.get(key);
+                String value;
+                if (v == null || v.isJsonNull()) {
+                    value = "";
+                } else if (v.isJsonPrimitive()) {
+                    value = v.getAsString();
+                } else {
+                    value = v.toString();
+                }
+                rows.add(new Object[]{key, value});
+            }
+
+            setTable(columns, rows);
+        }
+
+        private void setSimpleTable(String colName, List<Object[]> rows) {
+            List<String> cols = Collections.singletonList(colName);
+            setTable(cols, rows);
+        }
+
+        private void setTable(List<String> columns, List<Object[]> rows) {
+            tableModel.setRowCount(0);
+            tableModel.setColumnCount(0);
+
+            for (String col : columns) {
+                tableModel.addColumn(col);
+            }
+
+            for (Object[] row : rows) {
+                tableModel.addRow(row);
+            }
+
+            SwingUtilities.invokeLater(() -> UtilTable.autoSizeTableColumns(table));
+        }
+
+        private String safeJsonPrimitiveToString(JsonElement el) {
+            if (el == null || el.isJsonNull()) {
+                return "";
+            }
+            if (!el.isJsonPrimitive()) {
+                return el.toString();
+            }
+            return el.getAsString();
+        }
+
+        private String formatCoordsTuple(JsonObject coords) {
+            if (coords == null) {
+                return "";
+            }
+            String x = coords.has("x") ? safeJsonPrimitiveToString(coords.get("x")) : "";
+            String y = coords.has("y") ? safeJsonPrimitiveToString(coords.get("y")) : "";
+            String z = coords.has("z") ? safeJsonPrimitiveToString(coords.get("z")) : "";
+            return x + ", " + y + ", " + z;
+        }
     }
 
     // ============================================================
@@ -1317,4 +1730,142 @@ public class EdsmQueryTool extends JFrame {
             tool.setVisible(true);
         });
     }
+    /**
+     * Order body columns so the most important are first.
+     */
+    private List<String> orderBodyColumns(Set<String> columnsSet) {
+        List<String> cols = new ArrayList<>(columnsSet);
+
+        cols.sort((a, b) -> {
+            int pa = bodyColumnPriority(a);
+            int pb = bodyColumnPriority(b);
+            if (pa != pb) {
+                return Integer.compare(pa, pb);
+            }
+            return a.compareToIgnoreCase(b);
+        });
+
+        return cols;
+    }
+
+    private int bodyColumnPriority(String col) {
+        if ("id".equals(col)) {
+            return 0;
+        }
+        if ("name".equals(col)) {
+            return 1;
+        }
+        if ("type".equals(col)) {
+            return 2;
+        }
+        if ("subType".equals(col)) {
+            return 3;
+        }
+        if ("distanceToArrival".equals(col)) {
+            return 4;
+        }
+        return 10;
+    }
+
+    /**
+     * Blank out negative / uninteresting values:
+     *  - "false", "0"
+     *  - strings starting with "No " (e.g. "No volcanism")
+     */
+    /**
+     * Normalize body values:
+     *  - distanceToArrival: show integer if value is effectively whole
+     *  - subType: strip trailing " body"
+     *  - terraforming state: map to simple forms, hide "Not terraformable"
+     *  - generic negatives: "false", "0", and "No ..." become blank
+     */
+    private String normalizeBodyValue(String col, String value) {
+        if (value == null) {
+            return "";
+        }
+        String v = value.trim();
+        if (v.isEmpty()) {
+            return "";
+        }
+
+        String lower = v.toLowerCase(Locale.ROOT);
+
+        // --- Terraforming state simplification ---
+        if ("terraformingState".equals(col) || "terraforming".equals(col)) {
+            if ("not terraformable".equals(lower)) {
+                // hide this entirely
+                return "";
+            }
+            if ("candidate for terraforming".equals(lower)) {
+                return "Candidate";
+            }
+            if ("terraforming".equals(lower)) {
+                return "Terraforming";
+            }
+            if ("terraformed".equals(lower)) {
+                return "Terraformed";
+            }
+            // Any other unexpected value, just return as-is
+            return v;
+        }
+
+        // --- distanceToArrival: integer if no real fraction ---
+        if ("distanceToArrival".equals(col)) {
+            try {
+                double d = Double.parseDouble(v);
+                long rounded = Math.round(d);
+                if (Math.abs(d - rounded) < 1e-6) {
+                    // close enough to whole number → show as integer
+                    return Long.toString(rounded);
+                }
+            } catch (NumberFormatException ignore) {
+                // fall through and return original text
+            }
+            return v;
+        }
+
+        // --- subType: strip trailing " body" ---
+        if ("subType".equals(col)) {
+            if (lower.endsWith(" body")) {
+                return v.substring(0, v.length() - " body".length()).trim();
+            }
+            return v;
+        }
+
+        // --- Generic negatives / uninteresting flags ---
+        if ("false".equals(lower) || "0".equals(lower)) {
+            return "";
+        }
+        if (lower.startsWith("no ")) {
+            // e.g. "No volcanism"
+            return "";
+        }
+
+        return v;
+    }
+    // Columns we never want to show in the bodies table (too star-techy / noisy)
+    private static final Set<String> BODIES_SKIP_COLUMNS = new LinkedHashSet<>(
+            Arrays.asList(
+                    "id64",
+                    "isMainStar",
+                    "isScoopable",
+                    "age",
+                    "luminosity",
+                    "absoluteMagnitude",
+                    "rings",
+                    "orbitalEccentricity",
+                    "orbitalInclination",
+                    "orbitalPeriod",
+                    "rotaionalPeriod",
+                    "rotationalPeriodTidallyLocked",
+                    "type",
+                    "argOfPeriapsis",
+                    "axialTilt",
+                    "rotationalPeriod",
+                    "semiMajorAxis",
+                    "solarMasses",
+                    "solarRadius"
+            )
+    );
+
 }
