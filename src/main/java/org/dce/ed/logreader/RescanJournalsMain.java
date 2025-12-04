@@ -1,5 +1,15 @@
 package org.dce.ed.logreader;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
 import org.dce.ed.SystemCache;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssBodySignalsEvent;
@@ -10,15 +20,6 @@ import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent.Genus;
 import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent.Signal;
 import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
 import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Standalone utility with a main() that scans all Elite Dangerous journal files
@@ -248,19 +249,10 @@ public class RescanJournalsMain {
             }
 
             // Full display name (truth row): "Bacterium Nebulus", etc.
+         // Full display name (truth row): "Tussock Serrati", "Bacterium Nebulus", etc.
             String genusDisp = firstNonEmpty(e.getGenusLocalised(), e.getGenus());
             String speciesDisp = firstNonEmpty(e.getSpeciesLocalised(), e.getSpecies());
-            String displayName;
-
-            if (!isEmpty(genusDisp) && !isEmpty(speciesDisp)) {
-                displayName = genusDisp + " " + speciesDisp;
-            } else if (!isEmpty(genusDisp)) {
-                displayName = genusDisp;
-            } else if (!isEmpty(speciesDisp)) {
-                displayName = speciesDisp;
-            } else {
-                displayName = null;
-            }
+            String displayName = buildDisplayName(genusDisp, speciesDisp);
 
             if (!isEmpty(displayName)) {
                 if (info.observedBioDisplayNames == null) {
@@ -268,6 +260,37 @@ public class RescanJournalsMain {
                 }
                 info.observedBioDisplayNames.add(displayName);
             }
+        }
+        private static String buildDisplayName(String genusDisp, String speciesDisp) {
+            // If we have nothing, return null
+            if (isEmpty(genusDisp) && isEmpty(speciesDisp)) {
+                return null;
+            }
+            // If only one side is present, just use that
+            if (isEmpty(genusDisp)) {
+                return speciesDisp;
+            }
+            if (isEmpty(speciesDisp)) {
+                return genusDisp;
+            }
+
+            String genusTrim = genusDisp.trim();
+            String speciesTrim = speciesDisp.trim();
+
+            // Species often already includes the genus, e.g. "Tussock Serrati" with genus "Tussock".
+            // In that case, drop the leading genus so we don't get "Tussock Tussock Serrati".
+            String[] parts = speciesTrim.split("\\s+");
+            if (parts.length > 0 && parts[0].equalsIgnoreCase(genusTrim)) {
+                if (parts.length == 1) {
+                    // Species was just "Tussock" – effectively only genus
+                    return genusTrim;
+                }
+                String epithets = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
+                return genusTrim + " " + epithets;
+            }
+
+            // Normal case: species is just the epithet, e.g. "Serrati"
+            return genusTrim + " " + speciesTrim;
         }
 
         private BodyInfo findOrCreateBodyByIdOrName(int bodyId, String bodyName) {

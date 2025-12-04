@@ -1,53 +1,76 @@
 package org.dce.ed.exobiology;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * EB-accurate exobiology prediction engine.
+ * Exobiology prediction helper using rulesets derived from the
+ * open-source ruleset catalog.
  *
- * Species constraints are stored in a central database
- * and used by the predictor to evaluate each species
- * against planetary attributes.
- *
- * BioCandidate now carries full per-species constraints,
- * as requested.
+ * Species rules are stored as a set of SpeciesRule entries per species.
+ * A species is considered valid for a body if ANY of its rules match.
  */
-public class ExobiologyData {
+public final class ExobiologyData {
 
-    /* -----------------------------------------------------------
-     * ENUMS
-     * ----------------------------------------------------------- */
+    private ExobiologyData() {
+    }
+
+    /* =====================================================================
+     * Enums
+     * ===================================================================== */
+
+    public enum PlanetType {
+        ROCKY,
+        METAL_RICH,
+        HIGH_METAL,
+        ROCKY_ICE,
+        ICY,
+        OTHER,
+        UNKNOWN
+    }
 
     public enum AtmosphereType {
         NONE,
         CO2,
-        OXYGEN,
-        NITROGEN,
-        AMMONIA,
         METHANE,
-        SULPHUR_DIOXIDE,
-        ARGON,
+        NITROGEN,
+        OXYGEN,
         NEON,
+        ARGON,
         WATER,
+        SULPHUR_DIOXIDE,
+        AMMONIA,
         HELIUM,
+        OTHER,
         UNKNOWN
     }
 
-    public enum PlanetType {
-        ROCKY,
-        ROCKY_ICE,
-        ICY,
-        METAL_RICH,
-        HIGH_METAL,
-        OTHER
+    /**
+     * Volcanism constraint used by a single rule.
+     */
+    public enum VolcanismRequirement {
+        ANY,
+        NO_VOLCANISM,
+        VOLCANIC_ONLY
     }
 
-    /* -----------------------------------------------------------
-     * BODY ATTRIBUTES (input to predictor)
-     * ----------------------------------------------------------- */
+    /* =====================================================================
+     * BodyAttributes
+     * ===================================================================== */
 
-    public static class BodyAttributes {
+    /**
+     * Attributes of a body required for prediction.
+     * This should match what your overlay already builds.
+     */
+    public static final class BodyAttributes {
+
         public final PlanetType planetType;
         public final double gravity;
         public final AtmosphereType atmosphere;
@@ -73,689 +96,497 @@ public class ExobiologyData {
         }
     }
 
-    /* -----------------------------------------------------------
-     * SPECIES CONSTRAINT DEFINITION
-     * ----------------------------------------------------------- */
+    /* =====================================================================
+     * Rules and constraints
+     * ===================================================================== */
 
-    public static class SpeciesConstraint {
-        public final String genus;
-        public final String species;
+    /**
+     * One ruleset row for a given {genus, species}, mapped from the Python
+     * rulesets entry.
+     *
+     * Missing dimensions in the source ruleset are represented as:
+     *  - gravity:   [0, 100] (effectively "no constraint")
+     *  - temp:      [0, 1_000_000]
+     *  - atmospheres: empty set  => no restriction
+     *  - bodyTypes:  empty set   => no restriction
+     *  - volcanism:  ANY
+     */
+    /**
+     * One ruleset row for a given {genus, species}, mapped from the Python
+     * rulesets entry.
+     *
+     * Missing dimensions in the source ruleset are represented as:
+     *  - gravity:   [0, 100] (effectively "no constraint")
+     *  - temp:      [0, 1_000_000]
+     *  - pressure:  [0, 1_000_000]
+     *  - atmospheres: empty set  => no restriction
+     *  - bodyTypes:  empty set   => no restriction
+     *  - volcanism:  ANY
+     *  - lists/maps: empty => no restriction (until you choose to use them)
+     */
+    public static final class SpeciesRule {
 
         public final double minGravity;
         public final double maxGravity;
+        public final double minTempK;
+        public final double maxTempK;
 
-        public final double minTemp;
-        public final double maxTemp;
+        public final double minPressure;
+        public final double maxPressure;
 
-        public final boolean requiresVolcanism;
-        public final Set<AtmosphereType> allowedAtmo;
-        public final Set<PlanetType> allowedPlanetTypes;
+        public final Set<AtmosphereType> atmospheres;
+        public final Set<PlanetType> bodyTypes;
 
-        public final long baseValue;
+        /** Optional detailed atmosphere components (e.g. {"CO2": 0.8}). */
+        public final Map<String, Double> atmosphereComponents;
+
+        /** Optional host body types / names (for Brain Trees etc.). */
+        public final List<String> bodies;
+
+        /** Optional maximum orbital period constraint. */
+        public final Double maxOrbitalPeriod;
+
+        /** Optional distance constraint (meaning as defined in rulesets). */
+        public final Double distance;
+
+        /** Optional Guardian-space flag constraint. */
+        public final Boolean guardian;
+
+        /** Optional nebula name / flag. */
+        public final String nebula;
+
+        /** Optional parent star constraints. */
+        public final List<String> parentStars;
+
+        /** Optional galactic region constraints. */
+        public final List<String> regions;
+
+        /** Optional host star class constraints (e.g. "B IV"). */
+        public final List<String> starClasses;
+
+        /** Optional “tuber” anchor constraints. */
+        public final List<String> tuberTargets;
+
+        public final VolcanismRequirement volcanismRequirement;
+
+        public SpeciesRule(double minGravity,
+                           double maxGravity,
+                           double minTempK,
+                           double maxTempK,
+                           double minPressure,
+                           double maxPressure,
+                           Set<AtmosphereType> atmospheres,
+                           Set<PlanetType> bodyTypes,
+                           Map<String, Double> atmosphereComponents,
+                           List<String> bodies,
+                           Double maxOrbitalPeriod,
+                           Double distance,
+                           Boolean guardian,
+                           String nebula,
+                           List<String> parentStars,
+                           List<String> regions,
+                           List<String> starClasses,
+                           List<String> tuberTargets,
+                           VolcanismRequirement volcanismRequirement) {
+
+            this.minGravity = minGravity;
+            this.maxGravity = maxGravity;
+            this.minTempK = minTempK;
+            this.maxTempK = maxTempK;
+
+            this.minPressure = minPressure;
+            this.maxPressure = maxPressure;
+
+            this.atmospheres = atmospheres;
+            this.bodyTypes = bodyTypes;
+
+            this.atmosphereComponents = atmosphereComponents;
+            this.bodies = bodies;
+            this.maxOrbitalPeriod = maxOrbitalPeriod;
+            this.distance = distance;
+            this.guardian = guardian;
+            this.nebula = nebula;
+            this.parentStars = parentStars;
+            this.regions = regions;
+            this.starClasses = starClasses;
+            this.tuberTargets = tuberTargets;
+
+            this.volcanismRequirement = volcanismRequirement;
+        }
+
+        /**
+         * Returns true if this rule considers the body a valid habitat.
+         *
+         * Right now this only checks the dimensions we actually
+         * have in BodyAttributes: planetType, atmosphere, gravity,
+         * temperature, and coarse volcanism. The extra fields
+         * (pressure, regions, guardian, etc.) are stored but ignored
+         * until BodyAttributes carries matching data and we decide
+         * how to enforce them.
+         */
+        public boolean matches(BodyAttributes body) {
+            if (body == null) {
+                return false;
+            }
+
+            // Planet type constraint
+            if (bodyTypes != null && !bodyTypes.isEmpty()
+                    && !bodyTypes.contains(body.planetType)) {
+                return false;
+            }
+
+            // Atmosphere constraint
+            if (atmospheres != null && !atmospheres.isEmpty()
+                    && !atmospheres.contains(body.atmosphere)) {
+                return false;
+            }
+
+            // Gravity constraint
+            if (body.gravity < minGravity || body.gravity > maxGravity) {
+                return false;
+            }
+
+            // Temperature: any overlap between [body.min, body.max] and [rule.min, rule.max]
+            if (body.tempKMax < minTempK || body.tempKMin > maxTempK) {
+                return false;
+            }
+
+            // Volcanism (coarse)
+            switch (volcanismRequirement) {
+                case NO_VOLCANISM:
+                    if (body.hasVolcanism) {
+                        return false;
+                    }
+                    break;
+                case VOLCANIC_ONLY:
+                    if (!body.hasVolcanism) {
+                        return false;
+                    }
+                    break;
+                case ANY:
+                default:
+                    break;
+            }
+
+            // NOTE: pressure / regions / guardian / nebula / starClasses /
+            // parentStars / tuberTargets / atmosphereComponents / bodies /
+            // maxOrbitalPeriod / distance are not enforced yet.
+
+            return true;
+        }
+    }
+
+    /**
+     * Constraint block for a single {genus, species}.
+     * Contains the Vista value and a list of SpeciesRule entries.
+     */
+    /**
+     * Constraint block for a single {genus, species}.
+     * Contains the Vista value and a list of SpeciesRule entries.
+     */
+    public static final class SpeciesConstraint {
+
+        private final String genus;
+        private final String species;
+        private final long baseValue;
+        private final List<SpeciesRule> rules;
 
         public SpeciesConstraint(String genus,
                                  String species,
                                  long baseValue,
-                                 double minGravity,
-                                 double maxGravity,
-                                 double minTemp,
-                                 double maxTemp,
-                                 boolean requiresVolcanism,
-                                 Set<AtmosphereType> allowedAtmo,
-                                 Set<PlanetType> allowedPlanetTypes) {
+                                 List<SpeciesRule> rules) {
             this.genus = genus;
             this.species = species;
             this.baseValue = baseValue;
-            this.minGravity = minGravity;
-            this.maxGravity = maxGravity;
-            this.minTemp = minTemp;
-            this.maxTemp = maxTemp;
-            this.requiresVolcanism = requiresVolcanism;
-            this.allowedAtmo = allowedAtmo;
-            this.allowedPlanetTypes = allowedPlanetTypes;
+            this.rules = rules;
+        }
+
+        public String getGenus() {
+            return genus;
+        }
+
+        public String getSpecies() {
+            return species;
+        }
+
+        public long getBaseValue() {
+            return baseValue;
+        }
+
+        public List<SpeciesRule> getRules() {
+            return rules;
+        }
+
+        /**
+         * Key used in the constraints map.
+         */
+        public String key() {
+            return genus + " " + species;
         }
     }
 
-    /* -----------------------------------------------------------
-     * BIO CANDIDATE (OUTPUT)
-     * ----------------------------------------------------------- */
+    /* =====================================================================
+     * BioCandidate
+     * ===================================================================== */
 
-    public static class BioCandidate {
+    /**
+     * A scored candidate prediction for a given body.
+     */
+    public static final class BioCandidate {
 
         private final SpeciesConstraint constraint;
-        private final double matchScore;
+        private final double score;
         private final String reason;
 
-        public BioCandidate(SpeciesConstraint constraint,
-                            double matchScore,
-                            String reason) {
+        public BioCandidate(SpeciesConstraint constraint, double score, String reason) {
             this.constraint = constraint;
-            this.matchScore = matchScore;
+            this.score = score;
             this.reason = reason;
         }
 
-        public String getGenus() { return constraint.genus; }
-        public String getSpecies() { return constraint.species; }
-        public String getDisplayName() { return constraint.genus + " " + constraint.species; }
+        public String getGenus() {
+            return constraint.getGenus();
+        }
 
-        public long getBaseValue() { return constraint.baseValue; }
-        public double getScore() { return matchScore; }
-        public String getReason() { return reason; }
+        public String getSpecies() {
+            return constraint.getSpecies();
+        }
 
-        /* New fields exposed directly from constraint */
-        public double getMinGravity() { return constraint.minGravity; }
-        public double getMaxGravity() { return constraint.maxGravity; }
-        public double getMinTemp() { return constraint.minTemp; }
-        public double getMaxTemp() { return constraint.maxTemp; }
-        public boolean requiresVolcanism() { return constraint.requiresVolcanism; }
-        public Set<AtmosphereType> getAllowedAtmospheres() { return constraint.allowedAtmo; }
-        public Set<PlanetType> getAllowedPlanetTypes() { return constraint.allowedPlanetTypes; }
+        public String getDisplayName() {
+            return constraint.getGenus() + " " + constraint.getSpecies();
+        }
 
-        public long getEstimatedPayout(boolean firstLogged) {
-            return firstLogged ? constraint.baseValue * 5 : constraint.baseValue;
+        public long getBaseValue() {
+            return constraint.getBaseValue();
+        }
+
+        public double getScore() {
+            return score;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+
+        public SpeciesConstraint getConstraint() {
+            return constraint;
+        }
+
+        /**
+         * Simple estimated payout based on Vista base value.
+         * If you want a different multiplier for first discovery, change it here.
+         */
+        public long getEstimatedPayout(boolean firstDiscovery) {
+            if (firstDiscovery) {
+                return constraint.getBaseValue() * 5L;  // rough ED-style bump
+            }
+            return constraint.getBaseValue();
+        }
+
+        @Override
+        public String toString() {
+            return "BioCandidate{" +
+                    "name='" + getDisplayName() + '\'' +
+                    ", score=" + score +
+                    ", value=" + constraint.getBaseValue() +
+                    ", reason='" + reason + '\'' +
+                    '}';
         }
     }
 
-    /* -----------------------------------------------------------
-     * CENTRAL SPECIES CONSTRAINT DATABASE
-     * ----------------------------------------------------------- */
+    /* =====================================================================
+     * Database and initialization
+     * ===================================================================== */
 
-    public static final Map<String, SpeciesConstraint> CONSTRAINTS = new LinkedHashMap<>();
-    /* -----------------------------------------------------------
-     * POPULATE EB-ACCURATE SPECIES CONSTRAINTS
-     * ----------------------------------------------------------- */
+    private static final Map<String, SpeciesConstraint> CONSTRAINTS = new LinkedHashMap<>();
 
     static {
-
-        // Helper lambdas for cleaner table entries:
-        java.util.function.Function<AtmosphereType[], Set<AtmosphereType>> A =
-                arr -> new HashSet<>(Arrays.asList(arr));
-        java.util.function.Function<PlanetType[], Set<PlanetType>> P =
-                arr -> new HashSet<>(Arrays.asList(arr));
-
-        // Quick refs:
-        Set<PlanetType> ROCKY = P.apply(new PlanetType[]{
-                PlanetType.ROCKY, PlanetType.METAL_RICH, PlanetType.HIGH_METAL
-        });
-        Set<PlanetType> ANY_SOLID = P.apply(new PlanetType[]{
-                PlanetType.ROCKY, PlanetType.METAL_RICH, PlanetType.HIGH_METAL,
-                PlanetType.ROCKY_ICE, PlanetType.ICY
-        });
-        Set<PlanetType> ICY = P.apply(new PlanetType[]{
-                PlanetType.ROCKY_ICE, PlanetType.ICY
-        });
-
-        // Atmos shortcuts:
-        AtmosphereType[] AT_CO2 = {AtmosphereType.CO2};
-        AtmosphereType[] AT_NOBLE = {AtmosphereType.NEON, AtmosphereType.ARGON};
-        AtmosphereType[] AT_LIGHT = {
-                AtmosphereType.METHANE, AtmosphereType.NITROGEN,
-                AtmosphereType.OXYGEN, AtmosphereType.NEON, AtmosphereType.ARGON
-        };
-        AtmosphereType[] AT_WATER = {AtmosphereType.WATER};
-        AtmosphereType[] AT_SO2 = {AtmosphereType.SULPHUR_DIOXIDE};
-        AtmosphereType[] AT_AMMONIA = {AtmosphereType.AMMONIA};
-
-
-        /* -----------------------------------------------------------
-         * RECEPTA
-         * ----------------------------------------------------------- */
-
-        add("Recepta", "Deltahedronix", 16202800L,
-                0.05, 0.40, 140, 210,
-                true,
-                A.apply(AT_SO2),
-                ANY_SOLID);
-
-        add("Recepta", "Conditivus", 14313700L,
-                0.05, 0.40, 130, 200,
-                true,
-                A.apply(AT_SO2),
-                ANY_SOLID);
-
-        add("Recepta", "Umbrux", 12934900L,
-                0.01, 0.30, 100, 180,
-                true,
-                A.apply(AT_SO2),
-                ANY_SOLID);
-
-
-        /* -----------------------------------------------------------
-         * FONTICULUA
-         * ----------------------------------------------------------- */
-
-        add("Fonticulua", "Digitos", 1804100L,
-                0.01, 0.08, 60, 200,
-                false,
-                A.apply(AT_LIGHT),
-                ICY);
-
-        add("Fonticulua", "Fluctus", 20000000L,
-                0.01, 0.07, 50, 130,
-                false,
-                A.apply(AT_NOBLE),
-                ICY);
-
-        add("Fonticulua", "Lapida", 3111000L,
-                0.05, 0.20, 80, 180,
-                true,
-                A.apply(AT_LIGHT),
-                ICY);
-
-        add("Fonticulua", "Segmentatus", 19010800L,
-                0.01, 0.25, 80, 180,
-                true,
-                A.apply(AT_LIGHT),
-                ICY);
-
-        add("Fonticulua", "Upupam", 5727600L,
-                0.02, 0.15, 120, 200,
-                false,
-                A.apply(AT_LIGHT),
-                ICY);
-
-        add("Fonticulua", "Campestris", 1000000L,
-                0.03, 0.20, 140, 220,
-                false,
-                A.apply(AT_LIGHT),
-                ICY);
-
-
-        /* -----------------------------------------------------------
-         * BACTERIUM
-         * ----------------------------------------------------------- */
-
-        add("Bacterium", "Tela", 1949000L,
-                0.00, 0.12, 30, 300,
-                false,
-                A.apply(new AtmosphereType[]{
-                        AtmosphereType.METHANE, AtmosphereType.NITROGEN,
-                        AtmosphereType.CO2, AtmosphereType.ARGON
-                }),
-                ANY_SOLID);
-
-        add("Bacterium", "Bullaris", 1152500L,
-                0.00, 0.12, 60, 180,
-                false,
-                A.apply(new AtmosphereType[]{
-                        AtmosphereType.METHANE, AtmosphereType.NITROGEN,
-                        AtmosphereType.CO2, AtmosphereType.ARGON
-                }),
-                ANY_SOLID);
-
-        add("Bacterium", "Vesicula", 1000000L,
-                0.00, 0.20, 30, 200,
-                false,
-                A.apply(new AtmosphereType[]{
-                        AtmosphereType.ARGON
-                }),
-                ANY_SOLID);
-
-        add("Bacterium", "Aurasus", 1000000L,
-                0.00, 0.25, 80, 280,
-                false,
-                A.apply(new AtmosphereType[]{
-                        AtmosphereType.CO2, AtmosphereType.WATER,
-                        AtmosphereType.SULPHUR_DIOXIDE
-                }),
-                ANY_SOLID);
-
-        add("Bacterium", "Alcyoneum", 1658500L,
-                0.00, 0.25, 50, 250,
-                false,
-                A.apply(AT_AMMONIA),
-                ANY_SOLID);
-
-
-        /* -----------------------------------------------------------
-         * TUBUS
-         * ----------------------------------------------------------- */
-
-        add("Tubus", "Cavas", 11873200L,
-                0.12, 0.40, 120, 300,
-                false,
-                A.apply(AT_CO2),
-                ANY_SOLID);
-
-        add("Tubus", "Compagibus", 7774700L,
-                0.01, 0.09, 80, 250,
-                false,
-                A.apply(AT_CO2),
-                ANY_SOLID);
-
-        add("Tubus", "Conifer", 2415500L,
-                0.04, 0.10, 80, 250,
-                false,
-                A.apply(AT_CO2),
-                ANY_SOLID);
-
-        add("Tubus", "Rosarium", 2637500L,
-                0.08, 0.17, 80, 250,
-                false,
-                A.apply(AT_CO2),
-                ANY_SOLID);
-
-        add("Tubus", "Sororibus", 5727600L,
-                0.05, 0.12, 80, 250,
-                false,
-                A.apply(AT_CO2),
-                ANY_SOLID);
-
-
-        /* -----------------------------------------------------------
-         * FRUTEXA
-         * ----------------------------------------------------------- */
-
-        add("Frutexa", "Acus", 7774700L,
-                0.20, 1.30, 150, 350,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-        add("Frutexa", "Collum", 1639800L,
-                0.20, 1.30, 200, 400,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-        add("Frutexa", "Fera", 1632500L,
-                0.15, 1.20, 180, 350,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-        add("Frutexa", "Flabellum", 1808900L,
-                0.15, 1.20, 170, 320,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-        add("Frutexa", "Flammasis", 10326000L,
-                0.20, 1.20, 210, 350,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-        add("Frutexa", "Metallicum", 1632500L,
-                0.20, 1.30, 170, 400,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-        add("Frutexa", "Sponsae", 5988000L,
-                0.20, 1.30, 200, 350,
-                false,
-                A.apply(AT_CO2),
-                ROCKY);
-
-
-        /* -----------------------------------------------------------
-         * TUSSOCK (huge genus, many invalid on ammonia/methane)
-         * ----------------------------------------------------------- */
-
-        // Ammonia-only trio
-        add("Tussock", "Catena", 1766600L,
-                0.02, 0.40, 120, 280,
-                false,
-                A.apply(AT_AMMONIA),
-                ANY_SOLID);
-
-        add("Tussock", "Cultro", 1766600L,
-                0.02, 0.40, 120, 280,
-                false,
-                A.apply(AT_AMMONIA),
-                ANY_SOLID);
-
-        add("Tussock", "Divisa", 1766600L,
-                0.02, 0.40, 120, 280,
-                false,
-                A.apply(AT_AMMONIA),
-                ANY_SOLID);
-
-        // Normal CO2/light-gas species
-        add("Tussock", "Ventusa", 3227700L,
-                0.05, 0.40, 120, 250,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Ignis", 1849000L,
-                0.05, 0.40, 120, 250,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Virgam", 14313700L,
-                0.05, 0.40, 140, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Stigmasis", 19010800L,
-                0.05, 0.40, 160, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Pennata", 5853800L,
-                0.05, 0.40, 120, 240,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Pennatis", 1000000L,
-                0.05, 0.40, 120, 240,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Propagito", 1000000L,
-                0.05, 0.40, 120, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Albata", 3252500L,
-                0.05, 0.40, 110, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Capillum", 7025800L,
-                0.05, 0.40, 110, 250,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Caputus", 3472400L,
-                0.05, 0.40, 120, 240,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Triticum", 7774700L,
-                0.05, 0.40, 130, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Tussock", "Serrati", 4447100L,
-                0.05, 0.40, 140, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-
-        /* -----------------------------------------------------------
-         * CONCHA
-         * ----------------------------------------------------------- */
-
-        add("Concha", "Aureolas", 7774700L,
-                0.10, 1.00, 160, 250,
-                false, A.apply(AT_WATER), ANY_SOLID);
-
-        add("Concha", "Biconcavis", 19010800L,
-                0.10, 1.00, 160, 250,
-                false, A.apply(AT_WATER), ANY_SOLID);
-
-        add("Concha", "Labiata", 2352400L,
-                0.10, 1.00, 160, 250,
-                false, A.apply(AT_WATER), ANY_SOLID);
-
-        add("Concha", "Renibus", 4572400L,
-                0.10, 1.00, 160, 250,
-                false, A.apply(AT_WATER), ANY_SOLID);
-
-
-        /* -----------------------------------------------------------
-         * FUNGOIDA
-         * ----------------------------------------------------------- */
-
-        add("Fungoida", "Bullarum", 3703200L,
-                0.01, 0.30, 120, 220,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Fungoida", "Gelata", 3330300L,
-                0.01, 0.30, 120, 220,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Fungoida", "Stabitis", 2680300L,
-                0.01, 0.30, 120, 220,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        add("Fungoida", "Setisis", 1670100L,
-                0.01, 0.30, 120, 220,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-
-        /* -----------------------------------------------------------
-         * OTHERS (Osseus, Clypeus, Bark, Tubers, Electricae...)
-         * ----------------------------------------------------------- */
-
-        // Electricae
-        add("Electricae", "Pluma", 6284600L,
-                0.01, 0.20, 90, 180,
-                false, A.apply(AT_NOBLE), ICY);
-
-        add("Electricae", "Radialem", 6284600L,
-                0.01, 0.20, 90, 180,
-                false, A.apply(AT_NOBLE), ICY);
-
-        // Bark Mounds
-        add("Bark", "Mounds", 1471900L,
-                0.00, 1.50, 150, 450,
-                false, A.apply(AT_CO2), ANY_SOLID);
-
-        // Sinuous Tubers
-        add("Tubers", "Roseum", 6000000L,
-                0.10, 0.80, 200, 500,
-                false, A.apply(AT_CO2), ROCKY);
-
-        add("Tubers", "Prasinum", 6000000L,
-                0.10, 0.80, 200, 500,
-                false, A.apply(AT_CO2), ROCKY);
-
-        // Clypeus
-        add("Clypeus", "Speculumi", 19010800L,
-                0.30, 1.30, 190, 350,
-                false, A.apply(AT_CO2), ROCKY);
-
-        // Osseus
-        add("Osseus", "Pellebantus", 5000000L,
-                0.10, 1.20, 160, 260,
-                false, A.apply(AT_LIGHT), ANY_SOLID);
-
-        // Stratum
-        add("Stratum", "Tectonicas", 19010800L,
-                0.05, 0.40, 160, 260,
-                false, A.apply(new AtmosphereType[]{
-                        AtmosphereType.CO2, AtmosphereType.AMMONIA
-                }), ANY_SOLID);
-
-        add("Stratum", "Paleas", 1362000L,
-                0.05, 0.40, 160, 260,
-                false, A.apply(new AtmosphereType[]{
-                        AtmosphereType.CO2, AtmosphereType.AMMONIA
-                }), ANY_SOLID);
-
-        add("Stratum", "Cucumisis", 16202800L,
-                0.05, 0.40, 160, 260,
-                false, A.apply(new AtmosphereType[]{
-                        AtmosphereType.CO2, AtmosphereType.AMMONIA
-                }), ANY_SOLID);
-
-    } // END static init
-
-
-
-    /* -----------------------------------------------------------
-     * SHORT HELPER FOR ADDING CONSTRAINTS
-     * ----------------------------------------------------------- */
-
-    private static void add(String genus,
-                            String species,
-                            long baseValue,
-                            double minG, double maxG,
-                            double minT, double maxT,
-                            boolean reqVolc,
-                            Set<AtmosphereType> atmo,
-                            Set<PlanetType> worlds) {
-
-        String key = genus + " " + species;
-
-        CONSTRAINTS.put(key,
-                new SpeciesConstraint(
-                        genus,
-                        species,
-                        baseValue,
-                        minG, maxG,
-                        minT, maxT,
-                        reqVolc,
-                        atmo,
-                        worlds)
-        );
+        initConstraints();
     }
-    /* -----------------------------------------------------------
-     * EB-ACCURATE PREDICTOR
-     * ----------------------------------------------------------- */
 
     /**
-     * Produce a list of valid species for the given planet.
-     * This is fully EB-accurate and checks:
+     * Populates the CONSTRAINTS map.
      *
-     *  - gravity band
-     *  - temperature band
-     *  - atmosphere requirements
-     *  - volcanism requirement
-     *  - planet type restrictions
-     *
-     * Uses matchScore to indicate how well the planet sits
-     * within the internal ranges (center = highest).
+     * IMPORTANT:
+     *  Replace the body of this method with the contents of your
+     *  generated file: ExobiologyData_initConstraints.txt
+     *  (everything between "private static void initConstraints() {" and
+     *  its closing brace).
      */
-    public static List<BioCandidate> predict(BodyAttributes body) {
-        List<BioCandidate> out = new ArrayList<>();
+    private static void initConstraints() {
+    	ExobiologyDataConstraints.initConstraints(CONSTRAINTS);
+    }
+
+    /* =====================================================================
+     * Prediction
+     * ===================================================================== */
+
+    /**
+     * Predict possible exobiology candidates for the given body.
+     * Returns a list sorted by descending score and then baseValue.
+     */
+    public static List<BioCandidate> predict(BodyAttributes attrs) {
+        if (attrs == null) {
+            return Collections.emptyList();
+        }
+
+        List<BioCandidate> result = new ArrayList<>();
 
         for (SpeciesConstraint sc : CONSTRAINTS.values()) {
+            SpeciesRule bestRule = null;
+            double bestScore = 0.0;
+            String bestReason = null;
 
-            // Planet type check
-            if (!sc.allowedPlanetTypes.contains(body.planetType)) {
-                continue;
+            for (SpeciesRule rule : sc.getRules()) {
+                if (!rule.matches(attrs)) {
+                    continue;
+                }
+
+                double gScore = scoreInRange(attrs.gravity, rule.minGravity, rule.maxGravity);
+                double tScore = scoreInRange(
+                        0.5 * (attrs.tempKMin + attrs.tempKMax),
+                        rule.minTempK,
+                        rule.maxTempK
+                );
+
+                double score = 0.5 * (gScore + tScore);
+
+                String reason = String.format(
+                        Locale.ROOT,
+                        "gravity=%.3f (%.3f–%.3f); temp=%.0f–%.0f K (%.0f–%.0f); atmo=%s; score=%.3f",
+                        attrs.gravity, rule.minGravity, rule.maxGravity,
+                        attrs.tempKMin, attrs.tempKMax,
+                        rule.minTempK, rule.maxTempK,
+                        attrs.atmosphere,
+                        score
+                );
+
+                if (bestRule == null || score > bestScore) {
+                    bestRule = rule;
+                    bestScore = score;
+                    bestReason = reason;
+                }
             }
 
-            // Atmosphere check
-            if (!sc.allowedAtmo.contains(body.atmosphere)) {
-                continue;
+            if (bestRule != null) {
+                result.add(new BioCandidate(sc, bestScore, bestReason));
             }
-
-            // Gravity check
-            if (body.gravity < sc.minGravity || body.gravity > sc.maxGravity) {
-                continue;
-            }
-
-            // Temp check — EB uses min/max bands vs planet range.
-            // If planet's max < minT OR planet's min > maxT → no match.
-            if (body.tempKMax < sc.minTemp || body.tempKMin > sc.maxTemp) {
-                continue;
-            }
-
-            // Volcanism requirement
-            if (sc.requiresVolcanism && !body.hasVolcanism) {
-                continue;
-            }
-
-            // Compute match score
-            double score = computeScore(body, sc);
-
-            // Reason string for debugging/UI
-            String reason = makeReasonString(body, sc, score);
-
-            out.add(new BioCandidate(sc, score, reason));
         }
 
-        // Sort by score descending (best scoring predictions first)
-        out.sort(Comparator.comparingDouble(BioCandidate::getScore).reversed());
-        return out;
+        // Sort by score, then by Vista value
+        result.sort(
+                Comparator.comparingDouble(BioCandidate::getScore).reversed()
+                        .thenComparingLong(BioCandidate::getBaseValue).reversed()
+        );
+
+        return result;
     }
 
-
-    /* -----------------------------------------------------------
-     * INTERNAL SCORING
-     * ----------------------------------------------------------- */
-
-    private static double computeScore(BodyAttributes b, SpeciesConstraint sc) {
-        double gScore = bandScore(b.gravity, sc.minGravity, sc.maxGravity);
-        double tScore = tempBandScore(b, sc);
-
-        // EB essentially weights temp + gravity
-        return (gScore * 0.5) + (tScore * 0.5);
-    }
-
-    private static double bandScore(double value, double min, double max) {
-        if (value < min || value > max) return 0.0;
-        double mid = (min + max) / 2.0;
-        double span = (max - min) / 2.0;
-        if (span <= 0.00001) return 1.0;
-        return Math.max(0.0, 1.0 - (Math.abs(value - mid) / span));
-    }
-
-    private static double tempBandScore(BodyAttributes b, SpeciesConstraint sc) {
-        // Planet spans tempMin..tempMax, species spans sc.minTemp..sc.maxTemp
-        // Use midpoint approximation
-        double planetMid = (b.tempKMin + b.tempKMax) / 2.0;
-        double tMin = sc.minTemp;
-        double tMax = sc.maxTemp;
-        return bandScore(planetMid, tMin, tMax);
-    }
-
-
-    /* -----------------------------------------------------------
-     * REASON STRING BUILDER
-     * ----------------------------------------------------------- */
-
-    private static String makeReasonString(BodyAttributes b,
-                                           SpeciesConstraint sc,
-                                           double score) {
-
-        StringBuilder sb = new StringBuilder();
-
-        sb.append(String.format(Locale.ROOT,
-                "gravity=%.3f (range %.3f–%.3f); ",
-                b.gravity, sc.minGravity, sc.maxGravity));
-
-        sb.append(String.format(Locale.ROOT,
-                "temp=%.0f–%.0f K (range %.0f–%.0f); ",
-                b.tempKMin, b.tempKMax, sc.minTemp, sc.maxTemp));
-
-        sb.append("atmo=" + b.atmosphere + " allowed=" + sc.allowedAtmo + "; ");
-
-        if (sc.requiresVolcanism) {
-            sb.append("requires volcanism=" + sc.requiresVolcanism +
-                      " (planet has=" + b.hasVolcanism + "); ");
+    /**
+     * Simple helper to score how "central" x is within [min,max].
+     * 1.0 at the midpoint, 0.0 at or outside the bounds.
+     */
+    private static double scoreInRange(double x, double min, double max) {
+        if (x < min || x > max) {
+            return 0.0;
         }
-
-        sb.append(String.format(Locale.ROOT, "score=%.3f", score));
-        return sb.toString();
+        if (max <= min) {
+            return 1.0;
+        }
+        double mid = 0.5 * (min + max);
+        double half = 0.5 * (max - min);
+        if (half <= 0.0) {
+            return 1.0;
+        }
+        return 1.0 - Math.abs(x - mid) / half;
     }
 
+    /* =====================================================================
+     * Parsing helpers used by BodyInfo / SystemEventProcessor
+     * ===================================================================== */
 
-    /* -----------------------------------------------------------
-     * ATMOSPHERE PARSER (optional helper)
-     * ----------------------------------------------------------- */
+    public static PlanetType parsePlanetType(String planetClassRaw) {
+        if (planetClassRaw == null || planetClassRaw.isEmpty()) {
+            return PlanetType.UNKNOWN;
+        }
+        String pc = planetClassRaw.toLowerCase(Locale.ROOT);
 
-    public static AtmosphereType parseAtmosphere(String atmo) {
-        if (atmo == null) return AtmosphereType.UNKNOWN;
-        String s = atmo.toLowerCase(Locale.ROOT);
-
-        if (s.contains("none")) return AtmosphereType.NONE;
-        if (s.contains("carbon dioxide") || s.contains("co2")) return AtmosphereType.CO2;
-        if (s.contains("oxygen")) return AtmosphereType.OXYGEN;
-        if (s.contains("nitrogen")) return AtmosphereType.NITROGEN;
-        if (s.contains("ammonia")) return AtmosphereType.AMMONIA;
-        if (s.contains("methane")) return AtmosphereType.METHANE;
-        if (s.contains("sulphur dioxide") || s.contains("sulfur dioxide")) return AtmosphereType.SULPHUR_DIOXIDE;
-        if (s.contains("argon")) return AtmosphereType.ARGON;
-        if (s.contains("neon")) return AtmosphereType.NEON;
-        if (s.contains("water")) return AtmosphereType.WATER;
-        if (s.contains("helium")) return AtmosphereType.HELIUM;
-
-        return AtmosphereType.UNKNOWN;
-    }
-
-
-    /* -----------------------------------------------------------
-     * PLANET TYPE PARSER
-     * ----------------------------------------------------------- */
-
-    public static PlanetType parsePlanetType(String t) {
-        if (t == null) return PlanetType.OTHER;
-        String s = t.toLowerCase(Locale.ROOT);
-
-        if (s.contains("rocky ice")) return PlanetType.ROCKY_ICE;
-        if (s.contains("icy")) return PlanetType.ICY;
-        if (s.contains("metal rich")) return PlanetType.METAL_RICH;
-        if (s.contains("high metal")) return PlanetType.HIGH_METAL;
-        if (s.contains("rocky")) return PlanetType.ROCKY;
+        if (pc.contains("rocky ice")) {
+            return PlanetType.ROCKY_ICE;
+        }
+        if (pc.contains("icy body") || pc.contains("icy world")) {
+            return PlanetType.ICY;
+        }
+        if (pc.contains("metal-rich") || pc.contains("metal rich")) {
+            return PlanetType.METAL_RICH;
+        }
+        if (pc.contains("high metal content")) {
+            return PlanetType.HIGH_METAL;
+        }
+        if (pc.contains("rocky body") || pc.contains("rocky world")) {
+            return PlanetType.ROCKY;
+        }
 
         return PlanetType.OTHER;
     }
 
-} // END CLASS
+    public static AtmosphereType parseAtmosphere(String atmosphereRaw) {
+        if (atmosphereRaw == null) {
+            return AtmosphereType.UNKNOWN;
+        }
+        String at = atmosphereRaw.toLowerCase(Locale.ROOT).trim();
+        if (at.isEmpty()
+                || at.equals("none")
+                || at.contains("no atmosphere")) {
+            return AtmosphereType.NONE;
+        }
 
-    
-    
+        if (at.contains("carbon dioxide")) {
+            return AtmosphereType.CO2;
+        }
+        if (at.contains("methane")) {
+            return AtmosphereType.METHANE;
+        }
+        if (at.contains("nitrogen")) {
+            return AtmosphereType.NITROGEN;
+        }
+        if (at.contains("oxygen")) {
+            return AtmosphereType.OXYGEN;
+        }
+        if (at.contains("neon")) {
+            return AtmosphereType.NEON;
+        }
+        if (at.contains("argon")) {
+            return AtmosphereType.ARGON;
+        }
+        if (at.contains("water")) {
+            return AtmosphereType.WATER;
+        }
+        if (at.contains("sulphur dioxide") || at.contains("sulfur dioxide")) {
+            return AtmosphereType.SULPHUR_DIOXIDE;
+        }
+        if (at.contains("ammonia")) {
+            return AtmosphereType.AMMONIA;
+        }
+        if (at.contains("helium")) {
+            return AtmosphereType.HELIUM;
+        }
+
+        return AtmosphereType.OTHER;
+    }
+
+    /* =====================================================================
+     * Utility lookup (optional)
+     * ===================================================================== */
+
+    public static SpeciesConstraint getConstraintFor(String genus, String species) {
+        if (genus == null || species == null) {
+            return null;
+        }
+        return CONSTRAINTS.get(genus + " " + species);
+    }
+
+    public static Map<String, SpeciesConstraint> getAllConstraints() {
+        return Collections.unmodifiableMap(CONSTRAINTS);
+    }
+}
