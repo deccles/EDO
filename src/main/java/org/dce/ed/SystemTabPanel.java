@@ -7,10 +7,9 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Set;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -19,27 +18,29 @@ import javax.swing.JTable;
 import javax.swing.JViewport;
 import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
-import org.dce.ed.SystemTabPanel.BodyInfo;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
 import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
-import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
+import org.dce.ed.state.BodyInfo;
+import org.dce.ed.state.SystemEventProcessor;
+import org.dce.ed.state.SystemState;
 
 /**
- * System tab – shows system bodies based on local journal events,
- * with exobiology predictions and a cache-backed preload using SystemCache.
+ * System tab – now a *pure UI* renderer.
  *
- * Bodies are cached on disk via {@link SystemCache}, so that
- * we can re-load system info when ED isn't running.
+ * All parsing, prediction, and system-state logic lives in:
+ *   SystemState
+ *   SystemEventProcessor
+ *   SystemCache
  */
 public class SystemTabPanel extends JPanel {
 
@@ -50,34 +51,35 @@ public class SystemTabPanel extends JPanel {
     private final JTable table;
     private final JLabel headerLabel;
     private final SystemBodiesTableModel tableModel;
-    private final SystemTracker tracker;
+
+    private final SystemState state = new SystemState();
+    private final SystemEventProcessor processor = new SystemEventProcessor(state);
 
     public SystemTabPanel() {
         super(new BorderLayout());
-
         setOpaque(false);
 
+        // Header label
         headerLabel = new JLabel("Waiting for system data…");
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
 
+        // Table setup
         tableModel = new SystemBodiesTableModel();
         table = new JTable(tableModel);
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setRowSelectionAllowed(true);
-        table.setColumnSelectionAllowed(false);
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
 
-        // Header styling
         JTableHeader header = table.getTableHeader();
         header.setOpaque(true);
         header.setForeground(ED_ORANGE);
         header.setBackground(Color.BLACK);
         header.setFont(header.getFont().deriveFont(Font.BOLD, 11f));
+
         header.setDefaultRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table,
@@ -100,7 +102,6 @@ public class SystemTabPanel extends JPanel {
             }
         });
 
-        // Transparent cells
         DefaultTableCellRenderer cellRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
@@ -116,19 +117,49 @@ public class SystemTabPanel extends JPanel {
                                                            int column) {
                 Component c = super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
-                c.setForeground(ED_ORANGE);
-                if (isSelected) {
-                    c.setForeground(Color.BLACK);
-                }
+
+                c.setForeground(isSelected ? Color.BLACK : ED_ORANGE);
                 return c;
             }
         };
+
         table.setDefaultRenderer(Object.class, cellRenderer);
+
+        DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
+            {
+                setOpaque(false);
+                setForeground(ED_ORANGE);
+            }
+
+            @Override
+            public Component getTableCellRendererComponent(JTable table,
+                                                           Object value,
+                                                           boolean isSelected,
+                                                           boolean hasFocus,
+                                                           int row,
+                                                           int column) {
+                Component c = super.getTableCellRendererComponent(table,
+                                                                  value,
+                                                                  isSelected,
+                                                                  hasFocus,
+                                                                  row,
+                                                                  column);
+
+                setHorizontalAlignment(SwingConstants.RIGHT);
+                c.setForeground(isSelected ? Color.BLACK : ED_ORANGE);
+
+                return c;
+            }
+        };
+
+        // Column index 4 is "Value"
+        table.getColumnModel().getColumn(4).setCellRenderer(valueRightRenderer);
 
         JScrollPane scrollPane = new JScrollPane(table);
         scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
+
         JViewport headerViewport = scrollPane.getColumnHeader();
         if (headerViewport != null) {
             headerViewport.setOpaque(false);
@@ -142,39 +173,40 @@ public class SystemTabPanel extends JPanel {
         add(headerLabel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
-        // Column widths
+        // Column widths preserved
         TableColumnModel columns = table.getColumnModel();
-        columns.getColumn(0).setPreferredWidth(40);   // Body
-        columns.getColumn(1).setPreferredWidth(60);   // g
-        columns.getColumn(2).setPreferredWidth(220);  // Atmosphere / Type
-        columns.getColumn(3).setPreferredWidth(140);  // Bio
-        columns.getColumn(4).setPreferredWidth(100);  // Value
-        columns.getColumn(5).setPreferredWidth(60);   // Land
-        columns.getColumn(6).setPreferredWidth(80);   // Dist (Ls)
+        columns.getColumn(0).setPreferredWidth(40);
+        columns.getColumn(1).setPreferredWidth(60);
+        columns.getColumn(2).setPreferredWidth(220);
+        columns.getColumn(3).setPreferredWidth(70);
+        columns.getColumn(4).setPreferredWidth(20);
+        columns.getColumn(4).setMinWidth(60);
+        columns.getColumn(4).setMaxWidth(80);
+        columns.getColumn(4).setResizable(false);
+        
+        
+        columns.getColumn(5).setPreferredWidth(30);
+        columns.getColumn(6).setPreferredWidth(80);
 
-        tracker = new SystemTracker();
-
-        // On startup, try to preload the current system from cache using Status.json
         refreshFromCache();
     }
 
-    /**
-     * Called by EliteOverlayTabbedPane's LiveJournalMonitor wiring.
-     */
+    // ---------------------------------------------------------------------
+    // Event forwarding
+    // ---------------------------------------------------------------------
+
     public void handleLogEvent(EliteLogEvent event) {
         if (event != null) {
-            tracker.handleEvent(event);
+            processor.handleEvent(event);
+            rebuildTable();
+            persistIfPossible();
         }
     }
 
-    /**
-     * On startup (or when explicitly invoked), try to infer the *current* system
-     * from Status.json and load that system's bodies from SystemCache.
-     *
-     * If the system is in the cache (from your rescan tool or live caching),
-     * the System tab will immediately show those bodies even before any new
-     * journal events arrive.
-     */
+    // ---------------------------------------------------------------------
+    // Cache loading at startup
+    // ---------------------------------------------------------------------
+
     public void refreshFromCache() {
         try {
             EliteJournalReader reader = new EliteJournalReader();
@@ -182,7 +214,6 @@ public class SystemTabPanel extends JPanel {
             String systemName = null;
             long systemAddress = 0L;
 
-            // 1) First try just the latest journal file
             List<EliteLogEvent> events = reader.readEventsFromLatestJournal();
 
             for (EliteLogEvent event : events) {
@@ -194,652 +225,270 @@ public class SystemTabPanel extends JPanel {
                     FsdJumpEvent e = (FsdJumpEvent) event;
                     systemName = e.getStarSystem();
                     systemAddress = e.getSystemAddress();
-                } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
-                    EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
-                    if (systemName == null) {
-                        systemName = e.getSystemName();
-                    }
-                    if (systemAddress == 0L) {
-                        systemAddress = e.getSystemAddress();
-                    }
                 }
             }
 
-            // 2) If we still don't have any system info, look back through
-            //    the last few journal files (including the latest one).
-            if (systemName == null && systemAddress == 0L) {
-                final int N = 10;
-                events = reader.readEventsFromLastNJournalFiles(N);
-
-                for (EliteLogEvent event : events) {
-                    if (event instanceof LocationEvent) {
-                        LocationEvent e = (LocationEvent) event;
-                        systemName = e.getStarSystem();
-                        systemAddress = e.getSystemAddress();
-                    } else if (event instanceof FsdJumpEvent) {
-                        FsdJumpEvent e = (FsdJumpEvent) event;
-                        systemName = e.getStarSystem();
-                        systemAddress = e.getSystemAddress();
-                    } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
-                        EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
-                        if (systemName == null) {
-                            systemName = e.getSystemName();
-                        }
-                        if (systemAddress == 0L) {
-                            systemAddress = e.getSystemAddress();
-                        }
-                    }
-                }
-            }
-
-            // If we couldn't find *any* system info, just bail quietly
-            if (systemName == null && systemAddress == 0L) {
-                return;
-            }
-
-            // 3) Try to load from cache first
             SystemCache cache = SystemCache.getInstance();
             SystemCache.CachedSystem cs = cache.get(systemAddress, systemName);
 
             if (cs != null) {
-                // Populate from cache (this fills bodies + header)
-                tracker.loadFromCache(cs);
-            } else {
-                // Fallback: build a basic body list from the journal events themselves
-                tracker.setCurrentSystem(systemName, systemAddress);
-
-                // Reuse the same events we already read – feed them through the normal pipeline
-                for (EliteLogEvent event : events) {
-                    if (event instanceof EliteLogEvent.ScanEvent
-                            || event instanceof EliteLogEvent.FssDiscoveryScanEvent
-                            || event instanceof EliteLogEvent.SaasignalsFoundEvent) {
-                        // This is the same path used during live updates
-                        handleLogEvent(event);
-                    }
-                }
+                cache.loadInto(state, cs);
+                rebuildTable();
             }
-        } catch (Exception e) {
-            // Best-effort only; failure here should not break the overlay
-            e.printStackTrace();
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
     }
 
     // ---------------------------------------------------------------------
-    //  Internal model
+    // UI rebuild from SystemState
     // ---------------------------------------------------------------------
 
-    class BodyInfo {
-        String name;
-        String shortName;
-        int bodyId = -1;
-        double distanceLs = Double.NaN;
-        Double gravityMS = null;
-        boolean landable = false;
-        boolean hasBio = false;
-        boolean hasGeo = false;
-        boolean highValue = false;
-        String atmoOrType = "";
+    private void rebuildTable() {
+        updateHeaderLabel();
 
-        // Extra fields used for prediction
-        String planetClass;
-        String atmosphere;
-        Double surfaceTempK;
-        String volcanism;
+        List<BodyInfo> sorted = new ArrayList<>(state.getBodies().values());
+        sorted.sort(Comparator.comparingDouble(b -> Double.isNaN(b.getDistanceLs())
+                ? Double.MAX_VALUE
+                : b.getDistanceLs()));
 
-        // Detail-row + prediction data
-        java.util.List<ExobiologyData.BioCandidate> bioCandidates;
-        boolean detailRow = false;
-        int parentBodyId = -1;
-        String bioDetailText;
-        String bioDetailValueText;
+        List<Row> rows = new ArrayList<>();
 
-        // SAASignalsFound refinement
-        java.util.Set<String> observedGenusPrefixes;
-    }
+        for (BodyInfo b : sorted) {
+            rows.add(Row.body(b));
 
-    public class SystemTracker {
-
-        public String getSystemName() {
-            return systemName;
-        }
-
-        public void setSystemName(String systemName) {
-            this.systemName = systemName;
-        }
-
-        public long getSystemAddress() {
-            return systemAddress;
-        }
-
-        public void setSystemAddress(long systemAddress) {
-            this.systemAddress = systemAddress;
-        }
-
-        public Integer getTotalBodies() {
-            return totalBodies;
-        }
-
-        public void setTotalBodies(Integer totalBodies) {
-            this.totalBodies = totalBodies;
-        }
-
-        public Integer getNonBodyCount() {
-            return nonBodyCount;
-        }
-
-        public void setNonBodyCount(Integer nonBodyCount) {
-            this.nonBodyCount = nonBodyCount;
-        }
-
-        public Double getFssProgress() {
-            return fssProgress;
-        }
-
-        public void setFssProgress(Double fssProgress) {
-            this.fssProgress = fssProgress;
-        }
-
-        public Map<Integer, BodyInfo> getBodies() {
-            return bodies;
-        }
-
-        String systemName = null;
-        long systemAddress = 0L;
-
-        Integer totalBodies = null;
-        Integer nonBodyCount = null;
-        Double fssProgress = null;
-
-        final Map<Integer, BodyInfo> bodies = new HashMap<>();
-
-        void setCurrentSystem(String name, long addr) {
-            this.systemName = name;
-            this.systemAddress = addr;
-            refreshTable();
-        }
-
-        void handleEvent(EliteLogEvent event) {
-            if (event instanceof LocationEvent) {
-                LocationEvent e = (LocationEvent) event;
-                enterSystem(e.getStarSystem(), e.getSystemAddress());
-
-            } else if (event instanceof FsdJumpEvent) {
-                FsdJumpEvent e = (FsdJumpEvent) event;
-                enterSystem(e.getStarSystem(), e.getSystemAddress());
-
-            } else if (event instanceof EliteLogEvent.FssDiscoveryScanEvent) {
-                EliteLogEvent.FssDiscoveryScanEvent e = (EliteLogEvent.FssDiscoveryScanEvent) event;
-                if (systemName == null) {
-                    systemName = e.getSystemName();
-                }
-                if (e.getSystemAddress() != 0L) {
-                    systemAddress = e.getSystemAddress();
-                }
-                fssProgress = e.getProgress();
-                totalBodies = e.getBodyCount();
-                nonBodyCount = e.getNonBodyCount();
-
-            } else if (event instanceof ScanOrganicEvent) {
-                ScanOrganicEvent e = (ScanOrganicEvent) event;
-
-                if (e.getSystemAddress() != 0L && systemAddress == 0L) {
-                    systemAddress = e.getSystemAddress();
-                }
-
-                BodyInfo info = bodies.computeIfAbsent(e.getBodyId(), id -> new BodyInfo());
-                info.bodyId = e.getBodyId();
-
-                // Only set name if we actually have one (ScanOrganic usually doesn't)
-                String bodyName = e.getBodyName();
-                if ((info.name == null || info.name.isEmpty()) && bodyName != null && !bodyName.isEmpty()) {
-                    info.name = bodyName;
-                    info.shortName = computeShortName(bodyName);
-                }
-
-                // Confirmed bio on this body
-                info.hasBio = true;
-
-                // Also record the genus so prediction list can be narrowed
-                String genusName = toLower(e.getGenusLocalised());
-                if (genusName == null || genusName.isEmpty()) {
-                    genusName = toLower(e.getGenus());
-                }
-                if (genusName != null && !genusName.isEmpty()) {
-                    if (info.observedGenusPrefixes == null) {
-                        info.observedGenusPrefixes = new java.util.HashSet<>();
-                    }
-                    info.observedGenusPrefixes.add(genusName);
-                }
-            } else if (event instanceof EliteLogEvent.ScanEvent) {
-                EliteLogEvent.ScanEvent e = (EliteLogEvent.ScanEvent) event;
-
-                // Skip belts / rings
-                if (isBeltOrRing(e.getBodyName())) {
-                    return;
-                }
-
-                BodyInfo info = bodies.computeIfAbsent(e.getBodyId(), id -> new BodyInfo());
-                info.bodyId = e.getBodyId();
-                info.name = e.getBodyName();
-                info.shortName = computeShortName(e.getBodyName());
-                info.distanceLs = e.getDistanceFromArrivalLs();
-                info.landable = e.isLandable();
-                info.gravityMS = e.getSurfaceGravity();
-                info.atmoOrType = chooseAtmoOrType(e);
-                info.highValue = isHighValue(e);
-
-                // Fields used by exobiology prediction
-                info.planetClass = e.getPlanetClass();
-                info.atmosphere = e.getAtmosphere();
-
-                Double temp = e.getSurfaceTemperature();
-                if (temp != null) {
-                    info.surfaceTempK = temp;
-                }
-
-                String volc = e.getVolcanism();
-                if (volc != null && !volc.isEmpty()) {
-                    info.volcanism = volc;
-                }
-
-            } else if (event instanceof SaasignalsFoundEvent) {
-                // SAASignalsFound from the journal
-                SaasignalsFoundEvent e = (SaasignalsFoundEvent) event;
-                // Optionally tighten systemAddress if we don't have one yet
-                if (e.getSystemAddress() != 0L && systemAddress == 0L) {
-                    systemAddress = e.getSystemAddress();
-                }
-                handleSignals(e.getBodyId(), e.getSignals());
-                handleGenuses(e.getBodyId(), e.getGenuses());
-
-            } else if (event instanceof EliteLogEvent.FssBodySignalsEvent) {
-                // FSSBodySignalsDiscovered events (same signal structure)
-                EliteLogEvent.FssBodySignalsEvent e = (EliteLogEvent.FssBodySignalsEvent) event;
-                if (e.getSystemAddress() != 0L && systemAddress == 0L) {
-                    systemAddress = e.getSystemAddress();
-                }
-                handleSignals(e.getBodyId(), e.getSignals());
+            if (!b.hasBio()) {
+                continue;
             }
 
-            // Rebuild rows, recompute predictions, and update SystemCache
-            refreshTable();
-        }
+            // Start from whatever predictions the state has already computed.
+            List<ExobiologyData.BioCandidate> preds = b.getPredictions();
 
-        private void enterSystem(String name, long addr) {
-            boolean sameName = (name != null && name.equals(systemName));
-            boolean sameAddr = (addr != 0L && addr == systemAddress);
-
-            if (sameName || sameAddr) {
-                if (name != null) {
-                    systemName = name;
-                }
-                if (addr != 0L) {
-                    systemAddress = addr;
-                }
-                return;
-            }
-
-            // Try to load this system from cache first
-            SystemCache cache = SystemCache.getInstance();
-            SystemCache.CachedSystem cs = cache.get(addr, name);
-            if (cs != null) {
-                // This will set systemName/systemAddress, repopulate bodies, and refresh the table
-                loadFromCache(cs);
-                return;
-            }
-
-            // No cache entry – start fresh
-            systemName = name;
-            systemAddress = addr;
-            totalBodies = null;
-            nonBodyCount = null;
-            fssProgress = null;
-            bodies.clear();
-        }
-
-        private boolean isBeltOrRing(String bodyName) {
-            if (bodyName == null) {
-                return false;
-            }
-            String n = bodyName.toLowerCase(Locale.ROOT);
-            return n.contains("belt cluster")
-                    || n.contains("ring")
-                    || n.contains("belt ");
-        }
-
-        private void handleSignals(int bodyId, List<SaasignalsFoundEvent.Signal> signals) {
-            if (bodyId < 0 || signals == null || signals.isEmpty()) {
-                return;
-            }
-            BodyInfo info = bodies.computeIfAbsent(bodyId, id -> new BodyInfo());
-            for (SaasignalsFoundEvent.Signal s : signals) {
-                String type = toLower(s.getType());
-                String loc = toLower(s.getTypeLocalised());
-                if (type.contains("biological") || loc.contains("biological")) {
-                    info.hasBio = true;
-                } else if (type.contains("geological") || loc.contains("geological")) {
-                    info.hasGeo = true;
-                }
-            }
-        }
-
-        private void handleGenuses(int bodyId, java.util.List<SaasignalsFoundEvent.Genus> genuses) {
-            if (bodyId < 0 || genuses == null || genuses.isEmpty()) {
-                return;
-            }
-            BodyInfo info = bodies.computeIfAbsent(bodyId, id -> new BodyInfo());
-            if (info.observedGenusPrefixes == null) {
-                info.observedGenusPrefixes = new java.util.HashSet<>();
-            }
-            for (SaasignalsFoundEvent.Genus g : genuses) {
-                // Prefer the localised genus (e.g. "Bacterium", "Fonticulua", etc.)
-                String genusName = toLower(g.getGenusLocalised());
-                if (genusName.isEmpty()) {
-                    // Fallback to the raw codex name if localised is missing
-                    genusName = toLower(g.getGenus());
-                }
-                if (!genusName.isEmpty()) {
-                    info.observedGenusPrefixes.add(genusName);
-                }
-            }
-        }
-
-        void refreshTable() {
-            StringBuilder sb = new StringBuilder();
-            if (systemName != null && !systemName.isEmpty()) {
-                sb.append(systemName);
-            } else {
-                sb.append("Current system");
-            }
-
-            if (totalBodies != null) {
-                int scanned = bodies.size();
-                sb.append("  |  Bodies: ").append(scanned).append(" of ").append(totalBodies);
-                if (fssProgress != null) {
-                    sb.append("  (").append(Math.round(fssProgress * 100.0)).append("%)");
-                }
-            }
-
-            if (nonBodyCount != null) {
-                sb.append("  |  Non-bodies: ").append(nonBodyCount);
-            }
-
-            if (fssProgress != null && fssProgress < 0.999) {
-                sb.append("  |  Incomplete");
-            }
-
-            headerLabel.setText(sb.toString());
-
-            // Build flattened view: each real body row plus optional Bio detail rows
-            List<BodyInfo> sortedBodies = new ArrayList<>(bodies.values());
-            sortedBodies.sort(Comparator.comparingDouble(b -> {
-                if (Double.isNaN(b.distanceLs)) {
-                    return Double.MAX_VALUE;
-                }
-                return b.distanceLs;
-            }));
-
-            List<BodyInfo> rows = new ArrayList<>();
-
-            for (BodyInfo b : sortedBodies) {
-                // Main body row
-                b.detailRow = false;
-                b.parentBodyId = -1;
-                rows.add(b);
-
-                if (!b.hasBio) {
-                    continue;
-                }
-
-                //
-                // Ensure we (re)compute prediction candidates once we actually
-                // have enough scan data. This fixes the case where FSS signals
-                // arrive before the first detailed Scan.
-                //
-                ExobiologyData.BodyAttributes attrs = buildBodyAttributes(b);
-                if (attrs != null && (b.bioCandidates == null || b.bioCandidates.isEmpty())) {
-                    List<ExobiologyData.BioCandidate> preds = ExobiologyData.predict(attrs);
-                    if (preds != null && !preds.isEmpty()) {
-                        b.bioCandidates = new ArrayList<>(preds);
-                    } else {
-                        b.bioCandidates = new ArrayList<>();
-                    }
-                } else if (b.bioCandidates == null) {
-                    // no attrs yet and nothing computed – keep an empty list
-                    b.bioCandidates = new ArrayList<>();
-                }
-
-                if (!b.bioCandidates.isEmpty()) {
-                    // Start from the full prediction list
-                    java.util.List<ExobiologyData.BioCandidate> displayCandidates =
-                            new java.util.ArrayList<>(b.bioCandidates);
-
-                    // If the DSS has told us which genera are actually present on this body,
-                    // narrow the list to those genera only.
-                    if (b.observedGenusPrefixes != null && !b.observedGenusPrefixes.isEmpty()) {
-                        java.util.List<ExobiologyData.BioCandidate> filtered =
-                                new java.util.ArrayList<>();
-                        for (ExobiologyData.BioCandidate cand : displayCandidates) {
-                            String nameLower = toLower(cand.getDisplayName());
-                            boolean matches = false;
-                            for (String genusPrefix : b.observedGenusPrefixes) {
-                                if (nameLower.startsWith(genusPrefix + " ")
-                                        || nameLower.equals(genusPrefix)) {
-                                    matches = true;
-                                    break;
+            // If there are no predictions yet, try a one-shot calculation here
+            // so the GUI can still show something useful.
+            if (preds == null || preds.isEmpty()) {
+                ExobiologyData.BodyAttributes attrs = b.buildBodyAttributes();
+                if (attrs != null) {
+                    List<ExobiologyData.BioCandidate> base = ExobiologyData.predict(attrs);
+                    if (base != null && !base.isEmpty()) {
+                        // If we know which genera are present, narrow to those.
+                        java.util.Set<String> genusPrefixes = b.getObservedGenusPrefixes();
+                        if (genusPrefixes != null && !genusPrefixes.isEmpty()) {
+                            java.util.Set<String> lower = new java.util.HashSet<>();
+                            for (String g : genusPrefixes) {
+                                if (g != null && !g.isEmpty()) {
+                                    lower.add(g.toLowerCase(java.util.Locale.ROOT));
                                 }
                             }
-                            if (matches) {
-                                filtered.add(cand);
+
+                            List<ExobiologyData.BioCandidate> filtered = new ArrayList<>();
+                            for (ExobiologyData.BioCandidate cand : base) {
+                                String nameLower = cand.getDisplayName()
+                                        .toLowerCase(java.util.Locale.ROOT);
+                                boolean matches = false;
+                                for (String prefix : lower) {
+                                    if (nameLower.startsWith(prefix + " ")
+                                            || nameLower.equals(prefix)) {
+                                        matches = true;
+                                        break;
+                                    }
+                                }
+                                if (matches) {
+                                    filtered.add(cand);
+                                }
+                            }
+
+                            if (!filtered.isEmpty()) {
+                                preds = filtered;
+                            } else {
+                                preds = base;
+                            }
+                        } else {
+                            preds = base;
+                        }
+                    }
+                }
+            }
+
+            // Build the final list of display names:
+            //  1) Observed names (truth from ScanOrganic / DSS)
+            //  2) Any predicted names we don't already have
+            List<String> displayNames = new ArrayList<>();
+
+            java.util.Set<String> existing = new java.util.LinkedHashSet<>(displayNames);
+
+            Set<String> observed = b.getObservedBioDisplayNames();
+            if (observed != null && !observed.isEmpty()) {
+                displayNames.addAll(observed);
+            } else if (preds != null && !preds.isEmpty()) {
+                for (ExobiologyData.BioCandidate cand : preds) {
+                    String name = cand.getDisplayName();
+                    if (!existing.contains(name)) {
+                        displayNames.add(name);
+                        existing.add(name);
+                    }
+                }
+            }
+
+            if (!displayNames.isEmpty()) {
+                // Collect bio rows with their credit values so we can sort
+                class BioRowData {
+                    final String name;
+                    final Long cr;
+
+                    BioRowData(String name, Long cr) {
+                        this.name = name;
+                        this.cr = cr;
+                    }
+                }
+
+                List<BioRowData> bioRows = new ArrayList<>();
+
+                for (String name : displayNames) {
+                    Long cr = null;
+                    if (preds != null && !preds.isEmpty()) {
+                        for (ExobiologyData.BioCandidate cand : preds) {
+                            if (name.equals(cand.getDisplayName())) {
+                                cr = cand.getEstimatedPayout(true);
+                                break;
                             }
                         }
-                        // Only shrink the list if we actually matched something –
-                        // otherwise keep the broader prediction list.
-                        if (!filtered.isEmpty()) {
-                            displayCandidates = filtered;
-                        }
                     }
 
-                    for (ExobiologyData.BioCandidate cand : displayCandidates) {
-                        BodyInfo detail = new BodyInfo();
-                        detail.detailRow = true;
-                        detail.parentBodyId = b.bodyId;
-                        detail.bioDetailText = cand.getDisplayName();
-                        long potential = cand.getEstimatedPayout(true); // or getFirstLoggedTotal()
-                        detail.bioDetailValueText =
-                                String.format(Locale.US, "%,d Cr", potential);
+                    bioRows.add(new BioRowData(name, cr));
+                }
 
-                        rows.add(detail);
+             // Sort:
+           //   1) Genus (first word) ascending
+           //   2) Value numerically (credits) descending
+           //   3) Full name ascending as tie-breaker
+           bioRows.sort((a, bRow) -> {
+               String aName = (a.name != null) ? a.name : "";
+               String bName = (bRow.name != null) ? bRow.name : "";
+
+               // Genus = first word before space
+               String aGenus = aName;
+               String bGenus = bName;
+
+               int aSpace = aName.indexOf(' ');
+               if (aSpace > 0) {
+                   aGenus = aName.substring(0, aSpace);
+               }
+               int bSpace = bName.indexOf(' ');
+               if (bSpace > 0) {
+                   bGenus = bName.substring(0, bSpace);
+               }
+
+               // 1) Genus ascending
+               int cmp = aGenus.compareToIgnoreCase(bGenus);
+               if (cmp != 0) {
+                   return cmp;
+               }
+
+               // 2) Value descending (higher first)
+               long aVal = (a.cr != null) ? a.cr.longValue() : Long.MIN_VALUE;
+               long bVal = (bRow.cr != null) ? bRow.cr.longValue() : Long.MIN_VALUE;
+               cmp = Long.compare(bVal, aVal);
+               if (cmp != 0) {
+                   return cmp;
+               }
+
+               // 3) Full name ascending
+               return aName.compareToIgnoreCase(bName);
+           });
+
+
+
+                for (BioRowData data : bioRows) {
+                    String valueText = "";
+                    if (data.cr != null) {
+                        long millions = Math.round(data.cr.longValue() / 1_000_000.0);
+                        valueText = String.format(Locale.US, "%dM Cr", millions);
                     }
-                } else {
-                    // Fallback: at least show that something biological exists
-                    BodyInfo detail = new BodyInfo();
-                    detail.detailRow = true;
-                    detail.parentBodyId = b.bodyId;
-                    detail.bioDetailText = "Biological signals detected";
-                    detail.bioDetailValueText = "";
-                    rows.add(detail);
+
+                    rows.add(Row.bio(b.getBodyId(), data.name, valueText));
                 }
-            }
-
-            tableModel.setBodies(rows);
-
-            if (systemName != null && systemAddress != 0L && !bodies.isEmpty()) {
-                try {
-                    List<SystemCache.CachedBody> cachedBodies = toCachedBodies();
-                    SystemCache.getInstance().put(systemAddress, systemName, cachedBodies);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
+            } else {
+                rows.add(Row.bio(
+                        b.getBodyId(),
+                        "Biological signals detected",
+                        ""));
             }
         }
 
-        private ExobiologyData.BodyAttributes buildBodyAttributes(BodyInfo b) {
-            String planetClass = b.planetClass;
-            String atmosphere = b.atmosphere;
+        tableModel.setRows(rows);
+    }
 
-            double gravityG = Double.NaN;
-            if (b.gravityMS != null && !Double.isNaN(b.gravityMS)) {
-                gravityG = b.gravityMS / 9.80665;
-            }
+    private void updateHeaderLabel() {
+        String name = state.getSystemName();
+        StringBuilder sb = new StringBuilder();
 
-            double tempK = (b.surfaceTempK != null) ? b.surfaceTempK : Double.NaN;
-            String volcanism = b.volcanism;
-            boolean hasVolcanism = volcanism != null && !volcanism.isEmpty();
-
-            // If we literally know nothing, don't bother calling the predictor
-            if ((planetClass == null || planetClass.isEmpty())
-                    && (atmosphere == null || atmosphere.isEmpty())
-                    && Double.isNaN(gravityG)) {
-                return null;
-            }
-
-            ExobiologyData.PlanetType planetTypeEnum =
-                    ExobiologyData.parsePlanetType(planetClass);
-            ExobiologyData.AtmosphereType atmoTypeEnum =
-                    ExobiologyData.parseAtmosphere(atmosphere);
-
-            double tempMinK = tempK;
-            double tempMaxK = tempK;
-
-            return new ExobiologyData.BodyAttributes(
-                    planetTypeEnum,
-                    gravityG,
-                    atmoTypeEnum,
-                    tempMinK,
-                    tempMaxK,
-                    hasVolcanism,
-                    volcanism
-            );
+        if (name != null && !name.isEmpty()) {
+            sb.append(name);
+        } else {
+            sb.append("Current system");
         }
 
-        private String toLower(String s) {
-            return s == null ? "" : s.toLowerCase(Locale.ROOT);
+        if (state.getTotalBodies() != null) {
+            int scanned = state.getBodies().size();
+            sb.append("  |  Bodies: ").append(scanned)
+              .append(" of ").append(state.getTotalBodies());
+
+            if (state.getFssProgress() != null) {
+                sb.append("  (")
+                  .append(Math.round(state.getFssProgress() * 100.0))
+                  .append("%)");
+            }
         }
 
-        int getBodyCount() {
-            return bodies.size();
+        if (state.getNonBodyCount() != null) {
+            sb.append("  |  Non-bodies: ").append(state.getNonBodyCount());
         }
 
-        void loadFromCache(SystemCache.CachedSystem cs) {
-            if (cs == null || cs.bodies == null) {
-                return;
-            }
-            this.systemName = cs.systemName;
-            this.systemAddress = cs.systemAddress;
+        headerLabel.setText(sb.toString());
+    }
 
-            bodies.clear();
-            for (SystemCache.CachedBody cb : cs.bodies) {
-                BodyInfo info = new BodyInfo();
-                info.name = cb.name;
-                info.shortName = computeShortName(cb.name);
-                info.bodyId = cb.bodyId;
-                info.distanceLs = cb.distanceLs;
-                info.gravityMS = cb.gravityMS;
-                info.landable = cb.landable;
-                info.hasBio = cb.hasBio;
-                info.hasGeo = cb.hasGeo;
-                info.highValue = cb.highValue;
-                info.atmoOrType = cb.atmoOrType;
-                info.planetClass = cb.planetClass;
-                info.atmosphere = cb.atmosphere;
+    private void persistIfPossible() {
+        if (state.getSystemName() != null
+                && state.getSystemAddress() != 0L
+                && !state.getBodies().isEmpty()) {
 
-                // NEW: restore extra physical attributes from cache
-                info.surfaceTempK = cb.surfaceTempK;
-                info.volcanism = cb.volcanism;
-
-                bodies.put(info.bodyId, info);
-            }
-            refreshTable();
-        }
-
-        public List<SystemCache.CachedBody> toCachedBodies() {
-            List<SystemCache.CachedBody> list = new ArrayList<>();
-            for (BodyInfo b : bodies.values()) {
-                SystemCache.CachedBody cb = new SystemCache.CachedBody();
-                cb.name = b.name;
-                cb.bodyId = b.bodyId;
-                cb.distanceLs = b.distanceLs;
-                cb.gravityMS = b.gravityMS;
-                cb.landable = b.landable;
-                cb.hasBio = b.hasBio;
-                cb.hasGeo = b.hasGeo;
-                cb.highValue = b.highValue;
-                cb.atmoOrType = b.atmoOrType;
-                cb.planetClass = b.planetClass;
-                cb.atmosphere = b.atmosphere;
-
-                // NEW: persist extra physical attributes
-                cb.surfaceTempK = b.surfaceTempK;
-                cb.volcanism = b.volcanism;
-
-                list.add(cb);
-            }
-            return list;
-        }
-
-        private String computeShortName(String fullName) {
-            if (fullName == null) {
-                return "";
-            }
-
-            // If we know the system name, strip it off the front
-            // "HIP 30377 A 1" with systemName "HIP 30377" => "A 1"
-            // "HIP 82152 1"  with systemName "HIP 82152" => "1"
-            if (systemName != null && !systemName.isEmpty()) {
-                String prefix = systemName + " ";
-                if (fullName.startsWith(prefix)) {
-                    String suffix = fullName.substring(prefix.length());
-                    if (!suffix.isEmpty()) {
-                        return suffix;
-                    }
-                }
-            }
-
-            // Fallback: keep last token if we couldn't match the system name
-            int idx = fullName.lastIndexOf(' ');
-            if (idx >= 0 && idx + 1 < fullName.length()) {
-                return fullName.substring(idx + 1);
-            }
-            return fullName;
-        }
-
-
-        private String chooseAtmoOrType(EliteLogEvent.ScanEvent e) {
-            String atmo = e.getAtmosphere();
-            if (atmo != null && !atmo.isEmpty()) {
-                return atmo;
-            }
-            String pc = e.getPlanetClass();
-            if (pc != null && !pc.isEmpty()) {
-                return pc;
-            }
-            String star = e.getStarType();
-            return star != null ? star : "";
-        }
-
-        private boolean isHighValue(EliteLogEvent.ScanEvent e) {
-            String pc = toLower(e.getPlanetClass());
-            String tf = toLower(e.getTerraformState());
-            if (pc.contains("earth-like")) {
-                return true;
-            }
-            if (pc.contains("water world")) {
-                return true;
-            }
-            if (pc.contains("ammonia world")) {
-                return true;
-            }
-            if (tf.contains("terraformable")) {
-                return true;
-            }
-            return false;
+            SystemCache.getInstance().storeSystem(state);
         }
     }
 
     // ---------------------------------------------------------------------
-    //  Table model
+    // Table model
     // ---------------------------------------------------------------------
+
+    private static class Row {
+        final BodyInfo body;
+        final boolean detail;
+        final int parentId;
+        final String bioText;
+        final String bioValue;
+
+        private Row(BodyInfo body,
+                    boolean detail,
+                    int parentId,
+                    String bioText,
+                    String bioValue) {
+            this.body = body;
+            this.detail = detail;
+            this.parentId = parentId;
+            this.bioText = bioText;
+            this.bioValue = bioValue;
+        }
+
+        static Row body(BodyInfo b) {
+            return new Row(b, false, -1, null, null);
+        }
+
+        static Row bio(int parentId, String text, String val) {
+            return new Row(null, true, parentId, text, val);
+        }
+    }
 
     class SystemBodiesTableModel extends AbstractTableModel {
 
@@ -853,19 +502,19 @@ public class SystemTabPanel extends JPanel {
                 "Dist (Ls)"
         };
 
-        private final List<BodyInfo> bodies = new ArrayList<>();
+        private final List<Row> rows = new ArrayList<>();
 
-        void setBodies(List<BodyInfo> newBodies) {
-            bodies.clear();
-            if (newBodies != null) {
-                bodies.addAll(newBodies);
+        void setRows(List<Row> newRows) {
+            rows.clear();
+            if (newRows != null) {
+                rows.addAll(newRows);
             }
             fireTableDataChanged();
         }
 
         @Override
         public int getRowCount() {
-            return bodies.size();
+            return rows.size();
         }
 
         @Override
@@ -874,68 +523,53 @@ public class SystemTabPanel extends JPanel {
         }
 
         @Override
-        public String getColumnName(int column) {
-            return columns[column];
+        public String getColumnName(int col) {
+            return columns[col];
         }
 
         @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            BodyInfo b = bodies.get(rowIndex);
+        public Object getValueAt(int rowIndex, int col) {
+            Row r = rows.get(rowIndex);
 
-            // Detail rows: only Bio + Value columns are used
-            if (b.detailRow) {
-                switch (columnIndex) {
-                    case 3:
-                        return b.bioDetailText != null ? b.bioDetailText : "";
-                    case 4:
-                        return b.bioDetailValueText != null ? b.bioDetailValueText : "";
-                    default:
-                        return "";
+            if (r.detail) {
+                switch (col) {
+                    case 3: return r.bioText != null ? r.bioText : "";
+                    case 4: return r.bioValue != null ? r.bioValue : "";
+                    default: return "";
                 }
             }
 
-            // Normal body rows
-            switch (columnIndex) {
+            BodyInfo b = r.body;
+            switch (col) {
                 case 0:
-                    return b.shortName != null ? b.shortName : "";
+                    return b.getShortName() != null ? b.getShortName() : "";
                 case 1:
-                    if (b.gravityMS == null) {
-                        return "";
-                    }
-                    double g = b.gravityMS / 9.80665;
+                    if (b.getGravityMS() == null) return "";
+                    double g = b.getGravityMS() / 9.80665;
                     return String.format(Locale.US, "%.2f g", g);
                 case 2:
-                    return b.atmoOrType != null ? b.atmoOrType : "";
+                    return b.getAtmoOrType() != null ? b.getAtmoOrType() : "";
                 case 3:
-                    if (b.hasBio && b.hasGeo) {
-                        return "Bio + Geo";
-                    } else if (b.hasBio) {
-                        return "Bio";
-                    } else if (b.hasGeo) {
-                        return "Geo";
-                    }
+                    if (b.hasBio() && b.hasGeo()) return "Bio + Geo";
+                    if (b.hasBio()) return "Bio";
+                    if (b.hasGeo()) return "Geo";
                     return "";
                 case 4:
-                    return b.highValue ? "High" : "";
+                    // Keep "High" marker for the main body row;
+                    // detail rows carry the M Cr values.
+                    return b.isHighValue() ? "High" : "";
                 case 5:
-                    return b.landable ? "Yes" : "";
+                    return b.isLandable() ? "Yes" : "";
                 case 6:
-                    if (Double.isNaN(b.distanceLs)) {
-                        return "";
-                    }
-                    return String.format(Locale.US, "%.0f Ls", b.distanceLs);
+                    if (Double.isNaN(b.getDistanceLs())) return "";
+                    return String.format(Locale.US, "%.0f Ls", b.getDistanceLs());
                 default:
                     return "";
             }
         }
 
         @Override
-        public Class<?> getColumnClass(int columnIndex) {
-            return String.class;
-        }
-
-        @Override
-        public boolean isCellEditable(int rowIndex, int columnIndex) {
+        public boolean isCellEditable(int r, int c) {
             return false;
         }
     }

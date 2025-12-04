@@ -1,9 +1,5 @@
 package org.dce.ed;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -16,6 +12,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;       // NEW
+
+import org.dce.ed.state.BodyInfo;
+import org.dce.ed.state.SystemState;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 
 /**
  * Simple on-disk cache of system bodies, similar in spirit to what
@@ -26,8 +30,6 @@ import java.util.Map;
  * previously scanned systems can be shown immediately on future runs.
  */
 public final class SystemCache {
-    // Remember the last system we saw in the cache file so callers
-    // can easily restore "whatever was loaded last" at startup.
     private CachedSystem lastLoadedSystem;
 
     private static final String CACHE_FILE_NAME = ".edOverlaySystems.json";
@@ -37,7 +39,6 @@ public final class SystemCache {
     private final Gson gson;
     private final Path cachePath;
 
-    // In-memory maps
     private final Map<Long, CachedSystem> byAddress = new HashMap<>();
     private final Map<String, CachedSystem> byName = new HashMap<>();
 
@@ -58,13 +59,13 @@ public final class SystemCache {
     public static SystemCache getInstance() {
         return INSTANCE;
     }
-    
+
     public static CachedSystem load() throws IOException {
         SystemCache cache = getInstance();
         cache.ensureLoaded();
         return cache.lastLoadedSystem;
     }
-    
+
     /**
      * Represents one body as stored in the cache.
      */
@@ -78,17 +79,21 @@ public final class SystemCache {
         public boolean hasGeo;
         public boolean highValue;
 
-        // extra fields used by SystemTabPanel for exobiology prediction / display
         public String planetClass;
         public String atmosphere;
         public String atmoOrType;
 
-        // NEW: extra physical attributes
         public Double surfaceTempK;
         public String volcanism;
+
+        // NEW: confirmed genera observed (ScanOrganic / DSS)
+        public Set<String> observedGenusPrefixes;   // may be null if none known
+        
+        // Full "truth" names like "Bacterium Nebulus", "Stratum Tectonicas", etc.
+        public Set<String> observedBioDisplayNames;  // may be null
+
+        
     }
-
-
 
     /**
      * Represents a cached system and its bodies.
@@ -98,7 +103,7 @@ public final class SystemCache {
         public String systemName;
         public List<CachedBody> bodies = new ArrayList<>();
     }
-    
+
     private synchronized void ensureLoaded() {
         if (loaded) {
             return;
@@ -127,7 +132,6 @@ public final class SystemCache {
                 if (cs.systemName != null && !cs.systemName.isEmpty()) {
                     byName.put(cs.systemName, cs);
                 }
-                // NEW: remember the last one we saw
                 lastLoadedSystem = cs;
             }
         } catch (IOException ex) {
@@ -135,9 +139,6 @@ public final class SystemCache {
         }
     }
 
-    /**
-     * Returns a cached system by address or (fallback) name.
-     */
     public synchronized CachedSystem get(long systemAddress, String systemName) {
         ensureLoaded();
 
@@ -179,11 +180,93 @@ public final class SystemCache {
 
         save();
     }
+    public void loadInto(SystemState state, CachedSystem cs) {
+        if (state == null || cs == null) {
+            return;
+        }
 
+        state.setSystemName(cs.systemName);
+        state.setSystemAddress(cs.systemAddress);
+
+        state.resetBodies();
+
+        for (CachedBody cb : cs.bodies) {
+            BodyInfo info = new BodyInfo();
+            info.setName(cb.name);
+            info.setShortName(state.computeShortName(cb.name));
+            info.setBodyId(cb.bodyId);
+            info.setDistanceLs(cb.distanceLs);
+            info.setGravityMS(cb.gravityMS);
+            info.setLandable(cb.landable);
+            info.setHasBio(cb.hasBio);
+            info.setHasGeo(cb.hasGeo);
+            info.setHighValue(cb.highValue);
+            info.setAtmoOrType(cb.atmoOrType);
+            info.setPlanetClass(cb.planetClass);
+            info.setAtmosphere(cb.atmosphere);
+            info.setSurfaceTempK(cb.surfaceTempK);
+            info.setVolcanism(cb.volcanism);
+
+            if (cb.observedGenusPrefixes != null && !cb.observedGenusPrefixes.isEmpty()) {
+                info.setObservedGenusPrefixes(new java.util.HashSet<>(cb.observedGenusPrefixes));
+            }
+            if (cb.observedBioDisplayNames != null && !cb.observedBioDisplayNames.isEmpty()) {
+                info.setObservedBioDisplayNames(new java.util.HashSet<>(cb.observedBioDisplayNames));
+            }
+            state.getBodies().put(info.getBodyId(), info);
+        }
+    }
+
+    public void storeSystem(SystemState state) {
+        if (state == null || state.getSystemName() == null || state.getSystemAddress() == 0L) {
+            return;
+        }
+
+        List<CachedBody> list = new ArrayList<>();
+
+        for (BodyInfo b : state.getBodies().values()) {
+            CachedBody cb = new CachedBody();
+            cb.name = b.getName();
+            cb.bodyId = b.getBodyId();
+            cb.distanceLs = b.getDistanceLs();
+            cb.gravityMS = b.getGravityMS();
+            cb.landable = b.isLandable();
+            cb.hasBio = b.hasBio();
+            cb.hasGeo = b.hasGeo();
+            cb.highValue = b.isHighValue();
+            cb.atmoOrType = b.getAtmoOrType();
+            cb.planetClass = b.getPlanetClass();
+            cb.atmosphere = b.getAtmosphere();
+            cb.surfaceTempK = b.getSurfaceTempK();
+            cb.volcanism = b.getVolcanism();
+
+            if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
+                cb.observedGenusPrefixes = new java.util.HashSet<>(b.getObservedGenusPrefixes());
+            }
+
+            if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
+                cb.observedGenusPrefixes = new java.util.HashSet<>(b.getObservedGenusPrefixes());
+            } else {
+                cb.observedGenusPrefixes = null;
+            }
+
+            if (b.getObservedBioDisplayNames() != null && !b.getObservedBioDisplayNames().isEmpty()) {
+                cb.observedBioDisplayNames = new java.util.HashSet<>(b.getObservedBioDisplayNames());
+            } else {
+                cb.observedBioDisplayNames = null;
+            }
+            
+            list.add(cb);
+        }
+
+        put(state.getSystemAddress(), state.getSystemName(), list);
+    }
+
+    
     private synchronized void save() {
         try {
             List<CachedSystem> systems = new ArrayList<>();
-            // Use a map to avoid duplicates if a system appears under both keys
+
             Map<String, CachedSystem> unique = new HashMap<>();
             for (CachedSystem cs : byAddress.values()) {
                 if (cs.systemName != null) {
