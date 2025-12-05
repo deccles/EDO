@@ -26,11 +26,22 @@ public class EdsmClient {
 
     private final HttpClient client;
     private final Gson gson;
-
+    
+    // Last raw JSON returned by the EDSM API (for debugging / query tool)
+    private volatile String lastRawJson;
     public EdsmClient() {
         this.client = HttpClient.newHttpClient();
         this.gson = new GsonBuilder().create();
     }
+    
+    /**
+     * Returns the raw JSON from the most recent API call made via this client.
+     * May be null if no call has been made yet, or if the last call failed.
+     */
+    public String getLastRawJson() {
+        return lastRawJson;
+    }
+
 
     private <T> T get(String url, Class<T> clazz) throws IOException, InterruptedException {
         HttpRequest req = HttpRequest.newBuilder()
@@ -41,6 +52,9 @@ public class EdsmClient {
 
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         String body = resp.body();
+
+        // Remember the *raw* JSON so the query tool can display it verbatim
+        lastRawJson = body;
 
         if (body == null || body.isEmpty()) {
             return null;

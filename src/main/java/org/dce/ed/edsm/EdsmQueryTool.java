@@ -1240,7 +1240,6 @@ public class EdsmQueryTool extends JFrame {
 
     private void runQueryAsync(TabOutputPanel output, String label, QuerySupplier supplier) {
         output.clear();
-        output.showTable();
         output.appendText("=== " + label + " ===\n");
         output.appendText("Running query...\n");
 
@@ -1271,12 +1270,33 @@ public class EdsmQueryTool extends JFrame {
     }
 
     private String toJsonOrMessage(Object obj) {
+        // Prefer the raw JSON from the last EDSM call
+        String raw = client.getLastRawJson();
+
+        if (raw != null && !raw.isEmpty()) {
+            try {
+                // Pretty-print using Gson
+                JsonElement tree = JsonParser.parseString(raw);
+                return gson.toJson(tree);  // gson is already configured with pretty printing in this tool
+            } catch (Exception ex) {
+                // If parsing fails (rare), fall back to raw text
+                return raw;
+            }
+        }
+
+        // Fallback when raw JSON isn't available
         if (obj == null) {
             return "(no result / empty response)";
         }
-        return gson.toJson(obj);
-    }
 
+        try {
+            JsonElement tree = gson.toJsonTree(obj);
+            return gson.toJson(tree);
+        } catch (Exception ex) {
+            return obj.toString();
+        }
+    }
+    
     private void appendOutput(TabOutputPanel panel, String text) {
         panel.appendText(text);
     }

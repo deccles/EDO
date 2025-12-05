@@ -139,7 +139,9 @@ public class EliteOverlayTabbedPane extends JPanel {
                  logTab.handleLogEvent(event);
 
                 // System tab
-                systemTab.handleLogEvent(event);
+                 systemTab.handleLogEvent(event);
+                 
+                 routeTab.handleLogEvent(event);
             });
 
 //            monitor.start(); // if your monitor requires an explicit start
