@@ -27,6 +27,7 @@ public enum EliteEventType {
     SAASIGNALS_FOUND("SAASignalsFound"),
     SCAN("Scan"),
     FSS_DISCOVERY_SCAN("FSSDiscoveryScan"),
+    FSS_ALL_BODIES_FOUND("FSSAllBodiesFound"),  
     FSS_BODY_SIGNAL_DISCOVERED("FSSBodySignals"),
     SAASCAN_COMPLETE("SAAScanComplete"),
     CODEX_ENTRY("CodexEntry"),

@@ -12,6 +12,7 @@ import java.util.Set;
 
 import org.dce.ed.SystemCache;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
+import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssBodySignalsEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
@@ -113,6 +114,7 @@ public class RescanJournalsMain {
         Integer totalBodies;
         Integer nonBodyCount;
         Double fssProgress;
+        Boolean allBodiesFound;
 
         final Map<Integer, BodyInfo> bodies = new HashMap<>();
 
@@ -149,6 +151,23 @@ public class RescanJournalsMain {
             if (e.getSystemAddress() != 0L) {
                 systemAddress = e.getSystemAddress();
             }
+        }
+        void applyFssAllBodiesFound(FssAllBodiesFoundEvent e) {
+            // Prefer system info from the event if present
+            if (e.getSystemName() != null && !e.getSystemName().isEmpty()) {
+                systemName = e.getSystemName();
+            }
+            if (e.getSystemAddress() != 0L) {
+                systemAddress = e.getSystemAddress();
+            }
+
+            // Count in this event is the total number of bodies in the system
+            if (e.getBodyCount() > 0) {
+                totalBodies = e.getBodyCount();
+            }
+
+            // Mark this system as fully scanned
+            allBodiesFound = Boolean.TRUE;
         }
 
         void applyScan(ScanEvent e) {
@@ -463,6 +482,20 @@ public class RescanJournalsMain {
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyFssDiscovery(fds);
+            } else if (event instanceof FssAllBodiesFoundEvent) {          // NEW
+                FssAllBodiesFoundEvent fab = (FssAllBodiesFoundEvent) event;
+                long addr = fab.getSystemAddress();
+                String name = fab.getSystemName();
+                if (addr == 0L) {
+                    addr = currentSystemAddress;
+                }
+                if (name == null || name.isEmpty()) {
+                    name = currentSystemName;
+                }
+                SystemKey key = new SystemKey(addr, name);
+                SystemAccumulator acc = systems.computeIfAbsent(
+                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
+                acc.applyFssAllBodiesFound(fab);
 
             } else if (event instanceof ScanEvent) {
                 ScanEvent se = (ScanEvent) event;
@@ -524,7 +557,16 @@ public class RescanJournalsMain {
                 continue;
             }
             List<SystemCache.CachedBody> bodies = acc.toCachedBodies();
-            cache.put(acc.systemAddress, acc.systemName, bodies);
+
+            cache.put(
+                acc.systemAddress,
+                acc.systemName,
+                acc.totalBodies,
+                acc.nonBodyCount,
+                acc.fssProgress,
+                acc.allBodiesFound,          // allBodiesFound (Rescan doesn’t compute this yet)
+                bodies
+            );
             systemCount++;
             bodyCount += bodies.size();
         }

@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -49,6 +51,14 @@ public class EliteLogParser {
             	return parseScanOrganic(ts, obj);
             case FSS_DISCOVERY_SCAN:
                 return parseFssDiscoveryScan(ts, obj);
+            case FSS_ALL_BODIES_FOUND:
+                return new FssAllBodiesFoundEvent(
+                    ts,
+                    obj,
+                    obj.has("SystemName") ? obj.get("SystemName").getAsString() : null,
+                    		obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L,
+                    				obj.has("Count") ? obj.get("Count").getAsInt() : 0
+                );
             case FSS_BODY_SIGNAL_DISCOVERED:
                 return parseFssBodySignals(ts, obj);
 

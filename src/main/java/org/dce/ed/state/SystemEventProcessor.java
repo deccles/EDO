@@ -7,6 +7,7 @@ import org.dce.ed.SystemCache;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
+import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssBodySignalsEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
@@ -61,6 +62,11 @@ public class SystemEventProcessor {
 
         if (event instanceof FssBodySignalsEvent) {
             handleFssBodySignals((FssBodySignalsEvent) event);
+            return;
+        }
+        
+        if (event instanceof FssAllBodiesFoundEvent) {
+            handleFssAllBodiesFound((FssAllBodiesFoundEvent) event);
             return;
         }
 
@@ -209,6 +215,27 @@ public class SystemEventProcessor {
         updatePredictions(info);
     }
 
+    // ---------------------------------------------------------------------
+    // FSSAllBodiesFound – all bodies in system discovered
+    // ---------------------------------------------------------------------
+
+    private void handleFssAllBodiesFound(FssAllBodiesFoundEvent e) {
+        if (state.getSystemName() == null) {
+            state.setSystemName(e.getSystemName());
+        }
+        if (e.getSystemAddress() != 0L) {
+            state.setSystemAddress(e.getSystemAddress());
+        }
+
+        // If we don't already know the total bodies, use Count from this event.
+        if (state.getTotalBodies() == null && e.getBodyCount() > 0) {
+            state.setTotalBodies(e.getBodyCount());
+        }
+
+        state.setAllBodiesFound(Boolean.TRUE);
+    }
+
+    
     // ---------------------------------------------------------------------
     // ScanOrganic – the most important exobiology event
     // ---------------------------------------------------------------------

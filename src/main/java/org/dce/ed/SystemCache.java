@@ -102,7 +102,13 @@ public final class SystemCache {
         public long systemAddress;
         public String systemName;
         public List<CachedBody> bodies = new ArrayList<>();
+
+        public Integer totalBodies;
+        public Integer nonBodyCount;
+        public Double fssProgress;
+        public Boolean allBodiesFound;
     }
+
 
     private synchronized void ensureLoaded() {
         if (loaded) {
@@ -155,7 +161,13 @@ public final class SystemCache {
     /**
      * Stores/updates a cached system and persists to disk.
      */
-    public synchronized void put(long systemAddress, String systemName, List<CachedBody> bodies) {
+    public synchronized void put(long systemAddress,
+            String systemName,
+            Integer totalBodies,
+            Integer nonBodyCount,
+            Double fssProgress,
+            Boolean allBodiesFound,
+            List<CachedBody> bodies) {
         ensureLoaded();
 
         if ((systemAddress == 0L) && (systemName == null || systemName.isEmpty())) {
@@ -169,6 +181,10 @@ public final class SystemCache {
 
         cs.systemAddress = systemAddress;
         cs.systemName = systemName;
+        cs.totalBodies = totalBodies;
+        cs.nonBodyCount = nonBodyCount;
+        cs.fssProgress = fssProgress;
+        cs.allBodiesFound = allBodiesFound;
         cs.bodies = (bodies != null) ? new ArrayList<>(bodies) : new ArrayList<>();
 
         if (systemAddress != 0L) {
@@ -190,6 +206,11 @@ public final class SystemCache {
 
         state.resetBodies();
 
+        state.setTotalBodies(cs.totalBodies);
+        state.setNonBodyCount(cs.nonBodyCount);
+        state.setFssProgress(cs.fssProgress);
+        state.setAllBodiesFound(cs.allBodiesFound);
+        
         for (CachedBody cb : cs.bodies) {
             BodyInfo info = new BodyInfo();
             info.setName(cb.name);
@@ -258,8 +279,13 @@ public final class SystemCache {
             
             list.add(cb);
         }
-
-        put(state.getSystemAddress(), state.getSystemName(), list);
+        put(state.getSystemAddress(),
+                state.getSystemName(),
+                state.getTotalBodies(),
+                state.getNonBodyCount(),
+                state.getFssProgress(),
+                state.getAllBodiesFound(),
+                list);
     }
 
     

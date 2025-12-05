@@ -23,6 +23,9 @@ public class SystemState {
     private Integer nonBodyCount;
     private Double fssProgress;
 
+    // null = unknown, true = yes, false = known not complete (if you want that later)
+    private Boolean allBodiesFound;
+    
     /** Genera we know are present on this body (lower-cased, e.g. "bacterium", "stratum"). */
     private java.util.Set<String> observedGenusPrefixes;
 
@@ -41,6 +44,7 @@ public class SystemState {
         totalBodies = null;
         nonBodyCount = null;
         fssProgress = null;
+        allBodiesFound = null;
         bodies.clear();
     }
 
@@ -211,6 +215,7 @@ public class SystemState {
         totalBodies = null;
         nonBodyCount = null;
         fssProgress = null;
+        allBodiesFound = null;
     }
 
     public void setSystemNameIfEmptyFromBodyName(String bodyName) {
@@ -236,4 +241,13 @@ public class SystemState {
     private static String toLower(String s) {
         return s == null ? "" : s.toLowerCase(Locale.ROOT);
     }
+    
+    public Boolean getAllBodiesFound() {
+        return allBodiesFound;
+    }
+
+    public void setAllBodiesFound(Boolean allBodiesFound) {
+        this.allBodiesFound = allBodiesFound;
+    }
+
 }

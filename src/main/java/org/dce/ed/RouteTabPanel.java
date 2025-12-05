@@ -343,6 +343,16 @@ public class RouteTabPanel extends JPanel {
      * Returns true if this system is fully scanned in our local cache
      * (all bodies known and FSS progress ~100%).
      */
+    /**
+     * Returns true if this system is fully scanned *by you* according to the
+     * local cache.
+     *
+     * Uses the new SystemState fields:
+     *   - allBodiesFound (from FSSAllBodiesFound)
+     *   - totalBodies
+     *   - fssProgress
+     * and the number of cached bodies.
+     */
     private boolean isLocallyFullyScanned(RouteEntry entry) {
         if (entry == null) {
             return false;
@@ -352,31 +362,40 @@ public class RouteTabPanel extends JPanel {
         SystemCache cache = SystemCache.getInstance();
         SystemCache.CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
         if (cs == null) {
-            return false;  // nothing cached locally
+            // Nothing cached locally → definitely not "fully scanned by me"
+            return false;
         }
 
-        // Load into a temporary SystemState so we can inspect counts/progress
+        // Load into a temporary SystemState so we can inspect metadata
         SystemState tmp = new SystemState();
         cache.loadInto(tmp, cs);
 
+        // 1) If we have an explicit "all bodies found" flag, trust that first.
+        Boolean all = tmp.getAllBodiesFound();
+        if (Boolean.TRUE.equals(all)) {
+            return true;
+        }
+
+        // 2) Otherwise, fall back to counts / progress.
         Integer totalBodies = tmp.getTotalBodies();
         if (totalBodies == null || totalBodies == 0) {
-            return false;  // we don’t know how many bodies there *should* be
+            // We don't know how many bodies there should be; can't claim "fully scanned".
+            return false;
         }
 
         int knownBodies = tmp.getBodies().size();
         if (knownBodies < totalBodies) {
-            // We’ve seen some bodies but not all – treat as “not fully mapped”
+            // We've seen some bodies but not all → not fully scanned.
             return false;
         }
 
-        // Optionally also require ~100% FSS progress
+        // If FSS progress exists, require it to be ~100%.
         Double progress = tmp.getFssProgress();
         if (progress != null && progress < 0.999) {
             return false;
         }
 
-        // At this point, cache says we know all bodies and FSS is complete
+        // At this point, cache says we know all bodies and FSS is effectively complete.
         return true;
     }
 
