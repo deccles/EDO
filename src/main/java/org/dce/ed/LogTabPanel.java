@@ -1,16 +1,5 @@
 package org.dce.ed;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import org.dce.ed.logreader.EliteEventType;
-import org.dce.ed.logreader.EliteJournalReader;
-import org.dce.ed.logreader.EliteLogEvent;
-
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import javax.swing.table.AbstractTableModel;
-import javax.swing.table.TableColumn;
-import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -33,6 +22,31 @@ import java.util.List;
 import java.util.Set;
 import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
+
+import javax.swing.Box;
+import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JMenuItem;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.JToolBar;
+import javax.swing.SwingUtilities;
+import javax.swing.border.EmptyBorder;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.TableColumn;
+import javax.swing.table.TableRowSorter;
+
+import org.dce.ed.logreader.EliteEventType;
+import org.dce.ed.logreader.EliteJournalReader;
+import org.dce.ed.logreader.EliteLogEvent;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 /**
  * Tab that displays Elite Dangerous journal events in a table:
@@ -154,6 +168,15 @@ public class LogTabPanel extends JPanel {
                 default:
                     return "";
             }
+        }
+        
+        void addRow(LogRow row) {
+            if (row == null) {
+                return;
+            }
+            int idx = rows.size();
+            rows.add(row);
+            fireTableRowsInserted(idx, idx);
         }
     }
 
@@ -464,6 +487,13 @@ public class LogTabPanel extends JPanel {
         }
 
         tableModel.setRows(visibleRows);
+        
+        SwingUtilities.invokeLater(() -> {
+            int last = logTable.getRowCount() - 1;
+            if (last >= 0) {
+                logTable.scrollRectToVisible(logTable.getCellRect(last, 0, true));
+            }
+        });
     }
 
     /**
@@ -895,5 +925,43 @@ public class LogTabPanel extends JPanel {
 
         return new Font("SansSerif", Font.PLAIN, 13);
     }
+
+	public void handleLogEvent(EliteLogEvent event) {
+		if (event == null) {
+	        return;
+	    }
+
+	    // Only show events for the currently selected date
+	    if (currentDate != null) {
+	        LocalDate eventDate = event.getTimestamp()
+	                .atZone(LOCAL_ZONE)
+	                .toLocalDate();
+	        if (!eventDate.equals(currentDate)) {
+	            // Different day – ignore for this tab's view
+	            return;
+	        }
+	    }
+
+	    // Respect excluded-event filters
+	    String eventName = extractEventName(event);
+	    if (eventName != null && !eventName.isEmpty()) {
+	        knownEventNames.add(eventName);
+	    }
+	    if (eventName != null && excludedEventNames.contains(eventName)) {
+	        return;
+	    }
+
+	    String details = formatDetails(event);
+	    LogRow row = new LogRow(event, details);
+	    tableModel.addRow(row);
+
+	    // Always jump to bottom when a new live entry shows up
+	    SwingUtilities.invokeLater(() -> {
+	        int last = logTable.getRowCount() - 1;
+	        if (last >= 0) {
+	            logTable.scrollRectToVisible(logTable.getCellRect(last, 0, true));
+	        }
+	    });	
+	}
 
 }

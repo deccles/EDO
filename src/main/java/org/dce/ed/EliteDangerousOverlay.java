@@ -42,12 +42,12 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         overlayFrame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                overlayFrame.saveBoundsToPreferences(
-                        PREF_WINDOW_X,
-                        PREF_WINDOW_Y,
-                        PREF_WINDOW_WIDTH,
-                        PREF_WINDOW_HEIGHT
-                );
+//                overlayFrame.saveBoundsToPreferences(
+//                        PREF_WINDOW_X,
+//                        PREF_WINDOW_Y,
+//                        PREF_WINDOW_WIDTH,
+//                        PREF_WINDOW_HEIGHT
+//                );
 
                 try {
                     GlobalScreen.unregisterNativeHook();

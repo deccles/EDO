@@ -223,7 +223,6 @@ public class OverlayFrame extends JFrame {
         dispose();
         System.exit(0);
     }
-
     private static class ResizeHandler extends MouseAdapter {
 
         private static final int BORDER_DRAG_THICKNESS = 12;
@@ -231,10 +230,16 @@ public class OverlayFrame extends JFrame {
         private final OverlayFrame frame;
         private int dragCursor = Cursor.DEFAULT_CURSOR;
         private boolean dragging = false;
+
+        // Mouse position at press time (screen coords)
         private int dragOffsetX;
         private int dragOffsetY;
+
+        // Frame bounds at press time
         private int dragWidth;
         private int dragHeight;
+        private int dragStartX;
+        private int dragStartY;
 
         ResizeHandler(OverlayFrame frame) {
             this.frame = frame;
@@ -265,6 +270,8 @@ public class OverlayFrame extends JFrame {
                 dragOffsetY = e.getYOnScreen();
                 dragWidth = frame.getWidth();
                 dragHeight = frame.getHeight();
+                dragStartX = frame.getX();
+                dragStartY = frame.getY();
             }
         }
 
@@ -283,8 +290,9 @@ public class OverlayFrame extends JFrame {
             int dx = e.getXOnScreen() - dragOffsetX;
             int dy = e.getYOnScreen() - dragOffsetY;
 
-            int newX = frame.getX();
-            int newY = frame.getY();
+            // Always base on the ORIGINAL frame position & size
+            int newX = dragStartX;
+            int newY = dragStartY;
             int newW = dragWidth;
             int newH = dragHeight;
 
@@ -300,26 +308,26 @@ public class OverlayFrame extends JFrame {
                     newH = dragHeight + dy;
                     break;
                 case Cursor.W_RESIZE_CURSOR:
-                    newX = frame.getX() + dx;
+                    newX = dragStartX + dx;
                     newW = dragWidth - dx;
                     break;
                 case Cursor.N_RESIZE_CURSOR:
-                    newY = frame.getY() + dy;
+                    newY = dragStartY + dy;
                     newH = dragHeight - dy;
                     break;
                 case Cursor.NW_RESIZE_CURSOR:
-                    newX = frame.getX() + dx;
+                    newX = dragStartX + dx;
                     newW = dragWidth - dx;
-                    newY = frame.getY() + dy;
+                    newY = dragStartY + dy;
                     newH = dragHeight - dy;
                     break;
                 case Cursor.NE_RESIZE_CURSOR:
-                    newY = frame.getY() + dy;
+                    newY = dragStartY + dy;
                     newH = dragHeight - dy;
                     newW = dragWidth + dx;
                     break;
                 case Cursor.SW_RESIZE_CURSOR:
-                    newX = frame.getX() + dx;
+                    newX = dragStartX + dx;
                     newW = dragWidth - dx;
                     newH = dragHeight + dy;
                     break;
@@ -337,6 +345,7 @@ public class OverlayFrame extends JFrame {
                 }
                 newW = frame.getMinimumSize().width;
             }
+
             if (newH < frame.getMinimumSize().height) {
                 int diff = frame.getMinimumSize().height - newH;
                 if (dragCursor == Cursor.N_RESIZE_CURSOR ||
@@ -382,4 +391,5 @@ public class OverlayFrame extends JFrame {
             }
         }
     }
+
 }

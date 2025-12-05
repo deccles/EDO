@@ -3,6 +3,7 @@ package org.dce.ed.state;
 import java.util.List;
 import java.util.Locale;
 
+import org.dce.ed.SystemCache;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
@@ -239,6 +240,11 @@ public class SystemEventProcessor {
         String genusName = firstNonBlank(e.getGenusLocalised(), e.getGenus());
         String speciesName = firstNonBlank(e.getSpeciesLocalised(), e.getSpecies());
 
+        if (speciesName.contains(" ")) {
+        	speciesName = speciesName.split(" ")[1];
+        	System.out.println("Sketchy, is this the right place to do this?");
+        }
+        
         if (genusName != null && !genusName.isEmpty()) {
             // used for narrowing predictions
             info.addObservedGenusPrefix(genusName);
@@ -327,66 +333,6 @@ public class SystemEventProcessor {
 
         info.setPredictions(candidates);
     }
-    
-    /**
-     * Ensure this body has up-to-date exobiology predictions.
-     * Called whenever we either:
-     *  - process a detailed Scan, or
-     *  - learn that the body has biological signals.
-     */
-    private void ensurePredictions(BodyInfo info) {
-        if (info == null) {
-            return;
-        }
-        // If we already have predictions, leave them alone.
-        if (info.getPredictions() != null && !info.getPredictions().isEmpty()) {
-            return;
-        }
-
-        String planetClass = info.getPlanetClass();
-        String atmosphere  = info.getAtmosphere();
-
-        double gravityG = Double.NaN;
-        if (info.getGravityMS() != null && !Double.isNaN(info.getGravityMS())) {
-            gravityG = info.getGravityMS() / 9.80665;
-        }
-
-        double tempK = (info.getSurfaceTempK() != null) ? info.getSurfaceTempK() : Double.NaN;
-        String volcanism = info.getVolcanism();
-        boolean hasVolcanism = volcanism != null && !volcanism.isEmpty();
-
-        // If we literally know nothing, don't bother.
-        if ((planetClass == null || planetClass.isEmpty())
-                && (atmosphere == null || atmosphere.isEmpty())
-                && Double.isNaN(gravityG)) {
-            return;
-        }
-
-        ExobiologyData.PlanetType planetTypeEnum =
-                ExobiologyData.parsePlanetType(planetClass);
-        ExobiologyData.AtmosphereType atmoTypeEnum =
-                ExobiologyData.parseAtmosphere(atmosphere);
-
-        double tempMinK = tempK;
-        double tempMaxK = tempK;
-
-        ExobiologyData.BodyAttributes attrs = new ExobiologyData.BodyAttributes(
-                planetTypeEnum,
-                gravityG,
-                atmoTypeEnum,
-                tempMinK,
-                tempMaxK,
-                hasVolcanism,
-                volcanism
-        );
-
-        List<ExobiologyData.BioCandidate> preds = ExobiologyData.predict(attrs);
-        if (preds != null && !preds.isEmpty()) {
-            info.setPredictions(preds);
-        }
-    }
-
-    
 
     // ---------------------------------------------------------------------
     // Helpers

@@ -198,7 +198,13 @@ public class SystemTabPanel extends JPanel {
     public void handleLogEvent(EliteLogEvent event) {
         if (event != null) {
             processor.handleEvent(event);
-            rebuildTable();
+            
+            if (event instanceof FsdJumpEvent) {
+            	FsdJumpEvent e = (FsdJumpEvent)event;
+            	loadSystem(e.getStarSystem(), e.getSystemAddress());
+            } else {
+            	rebuildTable();
+            }
             persistIfPossible();
         }
     }
@@ -228,18 +234,22 @@ public class SystemTabPanel extends JPanel {
                 }
             }
 
-            SystemCache cache = SystemCache.getInstance();
-            SystemCache.CachedSystem cs = cache.get(systemAddress, systemName);
-
-            if (cs != null) {
-                cache.loadInto(state, cs);
-                rebuildTable();
-            }
+            loadSystem(systemName, systemAddress);
 
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
+
+	private void loadSystem(String systemName, long systemAddress) {
+		SystemCache cache = SystemCache.getInstance();
+		SystemCache.CachedSystem cs = cache.get(systemAddress, systemName);
+
+		if (cs != null) {
+		    cache.loadInto(state, cs);
+		    rebuildTable();
+		}
+	}
 
     // ---------------------------------------------------------------------
     // UI rebuild from SystemState
@@ -321,10 +331,16 @@ public class SystemTabPanel extends JPanel {
             Set<String> observed = b.getObservedBioDisplayNames();
             if (observed != null && !observed.isEmpty()) {
                 displayNames.addAll(observed);
-            } else if (preds != null && !preds.isEmpty()) {
+                
+                for (String o : observed) {
+                	existing.add(firstWord(o).toLowerCase());
+                }
+            } 
+
+            if (preds != null && !preds.isEmpty()) {
                 for (ExobiologyData.BioCandidate cand : preds) {
                     String name = cand.getDisplayName();
-                    if (!existing.contains(name)) {
+                    if (!existing.contains(firstWord(name).toLowerCase())) {
                         displayNames.add(name);
                         existing.add(name);
                     }
@@ -420,6 +436,11 @@ public class SystemTabPanel extends JPanel {
         tableModel.setRows(rows);
     }
 
+    public static String firstWord(String s) {
+        if (s == null) return "";
+        String[] parts = s.trim().split("\\s+");
+        return parts.length > 0 ? parts[0] : "";
+    }
     private void updateHeaderLabel() {
         String name = state.getSystemName();
         StringBuilder sb = new StringBuilder();
