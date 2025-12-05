@@ -8,17 +8,19 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-
-import javax.swing.JButton;
-import javax.swing.ButtonGroup;
-import javax.swing.JPanel;
-import javax.swing.SwingUtilities;
-
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import javax.swing.ButtonGroup;
+import javax.swing.JButton;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -36,6 +38,8 @@ public class EliteOverlayTabbedPane extends JPanel {
     private static final String CARD_BIOLOGY = "BIOLOGY";
     private static final String CARD_LOG = "LOG";
 
+    private static final int TAB_HOVER_DELAY_MS = 500;
+    
     private final CardLayout cardLayout;
     private final JPanel cardPanel;
 
@@ -113,6 +117,13 @@ public class EliteOverlayTabbedPane extends JPanel {
             }
         });
         
+        // Hover-to-switch: resting over a tab for a short time activates it
+        installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick());
+        installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick());
+        installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick());
+        installHoverSwitch(logButton, TAB_HOVER_DELAY_MS, () -> logButton.doClick());
+        
+        
         // Select Route tab by default
         systemButton.doClick();
 
@@ -125,7 +136,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
             monitor.addListener(event -> {
                 // Log tab (if you added a live handler there)
-//                 logTab.handleLogEvent(event);
+                 logTab.handleLogEvent(event);
 
                 // System tab
                 systemTab.handleLogEvent(event);
@@ -145,6 +156,15 @@ public class EliteOverlayTabbedPane extends JPanel {
         add(cardPanel, BorderLayout.CENTER);
     }
 
+    /**
+     * Attach a generic hover handler to a button; when the mouse rests over
+     * the button for the given delay, the action is invoked on the EDT.
+     */
+    private static void installHoverSwitch(JButton button, int delayMs, Runnable action) {
+        HoverSwitchHandler handler = new HoverSwitchHandler(delayMs, action);
+        button.addMouseListener(handler);
+    }
+    
     private JButton createTabButton(String text) {
         JButton button = new JButton(text);
         button.setFocusable(false);
@@ -242,4 +262,43 @@ public class EliteOverlayTabbedPane extends JPanel {
             }
         }
     }
+    /**
+     * Generic hover handler that runs a callback after the mouse rests over
+     * a component for a configured delay. Can be reused for other hover-based
+     * behaviors.
+     */
+    private static class HoverSwitchHandler extends MouseAdapter implements ActionListener {
+
+        private final Timer timer;
+        private final Runnable action;
+
+        HoverSwitchHandler(int delayMs, Runnable action) {
+            this.action = action;
+            this.timer = new Timer(delayMs, this);
+            this.timer.setRepeats(false);
+        }
+
+        @Override
+        public void mouseEntered(MouseEvent e) {
+            timer.restart();
+        }
+
+        @Override
+        public void mouseExited(MouseEvent e) {
+            timer.stop();
+        }
+
+        @Override
+        public void mousePressed(MouseEvent e) {
+            timer.stop();
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (action != null) {
+                action.run();
+            }
+        }
+    }
+    
 }

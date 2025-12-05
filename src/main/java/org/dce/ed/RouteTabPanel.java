@@ -4,6 +4,9 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -29,6 +33,7 @@ import org.dce.ed.logreader.EliteLogEvent.FsdTargetEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
 import org.dce.ed.logreader.EliteLogFileLocator;
+import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 
 import com.google.gson.JsonArray;
@@ -37,10 +42,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 /**
- * Route tab – shows the current plotted NavRoute.json as a table.
- *
- * Designed for the transparent overlay: the panel and scrollpane are
- * non-opaque, and all text uses the same orange as SystemTabPanel.
+ * Route tab that visualizes the current plotted route from NavRoute.json.
+ * This is styled to match the Elite Dangerous UI and SystemTabPanel for the
+ * overlay: the panel and scrollpane are non-opaque, and all text uses the
+ * same orange as SystemTabPanel.
  */
 public class RouteTabPanel extends JPanel {
 
@@ -48,6 +53,14 @@ public class RouteTabPanel extends JPanel {
 
     /** Same color as SystemTabPanel.ED_ORANGE. */
     private static final Color ED_ORANGE = new Color(255, 140, 0);
+    private static final Color STATUS_GRAY = new Color(210, 210, 210);
+
+    private static final Icon ICON_LOCAL_COMPLETE =
+            new StatusCircleIcon(ED_ORANGE, "\u2713");
+    private static final Icon ICON_EDSM_COMPLETE =
+            new StatusCircleIcon(STATUS_GRAY, "\u2713");
+    private static final Icon ICON_UNKNOWN =
+            new StatusCircleIcon(STATUS_GRAY, "?");
 
     // Column indexes
     private static final int COL_INDEX    = 0;
@@ -59,39 +72,45 @@ public class RouteTabPanel extends JPanel {
     private final JLabel headerLabel;
     private final JTable table;
     private final RouteTableModel tableModel;
-
-    private final EdsmClient edsmClient = new EdsmClient();
+    private final EdsmClient edsmClient;
 
     public RouteTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
 
-        // Header row – simple summary of route
-        headerLabel = new JLabel("No plotted route.");
-        headerLabel.setOpaque(false);
-        headerLabel.setForeground(ED_ORANGE);
-        headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
-        headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
-        add(headerLabel, BorderLayout.NORTH);
+        this.edsmClient = new EdsmClient();
 
-        // Table setup
+        headerLabel = new JLabel("Route: (no data)");
+        headerLabel.setForeground(ED_ORANGE);
+        headerLabel.setBorder(new EmptyBorder(4, 4, 4, 4));
+
         tableModel = new RouteTableModel();
-        table = new JTable(tableModel);
+        table = new JTable(tableModel) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
+        table.setRowHeight(20);
         table.setForeground(ED_ORANGE);
         table.setBackground(new Color(0, 0, 0, 0));
-        table.setRowHeight(22);
+        table.setSelectionForeground(Color.BLACK);
+        table.setSelectionBackground(new Color(255, 255, 255, 64));
+        table.setFont(new Font("Dialog", Font.PLAIN, 12));
+        table.getTableHeader().setReorderingAllowed(false);
+        table.getTableHeader().setResizingAllowed(true);
+        table.getTableHeader().setForeground(ED_ORANGE);
+        table.getTableHeader().setBackground(new Color(0, 0, 0, 0));
+        table.getTableHeader().setFont(new Font("Dialog", Font.BOLD, 12));
 
-        JScrollPane scroll = new JScrollPane(table);
-        scroll.setOpaque(false);
-        scroll.getViewport().setOpaque(false);
-        scroll.setBorder(new EmptyBorder(0, 0, 0, 0));
-        add(scroll, BorderLayout.CENTER);
-
-        // Default renderer for most columns – transparent + orange text
+        // Default renderer that gives us consistent orange text + padding
         DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer() {
+            private static final long serialVersionUID = 1L;
             {
                 setOpaque(false);
                 setForeground(ED_ORANGE);
@@ -124,8 +143,9 @@ public class RouteTabPanel extends JPanel {
              .getColumn(COL_STATUS)
              .setCellRenderer(new StatusRenderer());
 
-        // Right-align the distance column
+        // Distance column right-aligned
         DefaultTableCellRenderer distanceRenderer = new DefaultTableCellRenderer() {
+            private static final long serialVersionUID = 1L;
             {
                 setOpaque(false);
                 setHorizontalAlignment(SwingConstants.RIGHT);
@@ -146,23 +166,37 @@ public class RouteTabPanel extends JPanel {
                                                                   row,
                                                                   column);
                 c.setForeground(ED_ORANGE);
+                if (c instanceof JLabel) {
+                    ((JLabel) c).setBorder(new EmptyBorder(0, 4, 0, 8));
+                }
                 return c;
             }
         };
-        table.getColumnModel().getColumn(COL_DISTANCE).setCellRenderer(distanceRenderer);
+        table.getColumnModel()
+             .getColumn(COL_DISTANCE)
+             .setCellRenderer(distanceRenderer);
 
-        SystemTableHoverCopyManager hoverManager =
-                new SystemTableHoverCopyManager(table, 1);
-        hoverManager.start();
-        
-        // Rough column widths similar to in-game layout
-        TableColumnModel cols = table.getColumnModel();
-        cols.getColumn(COL_INDEX).setPreferredWidth(32);
-        cols.getColumn(COL_SYSTEM).setPreferredWidth(260);
-        cols.getColumn(COL_CLASS).setPreferredWidth(40);
-        cols.getColumn(COL_STATUS).setPreferredWidth(40);
-        cols.getColumn(COL_DISTANCE).setPreferredWidth(80);
-        
+        // Copy-to-clipboard behavior on hover for the system name column,
+        // consistent with SystemTabPanel.
+        SystemTableHoverCopyManager systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM);
+        systemTableHoverCopyManager.start();
+
+        // Column widths
+        TableColumnModel columns = table.getColumnModel();
+        columns.getColumn(COL_INDEX).setPreferredWidth(40);   // #
+        columns.getColumn(COL_SYSTEM).setPreferredWidth(260); // system name
+        columns.getColumn(COL_CLASS).setPreferredWidth(40);   // class
+        columns.getColumn(COL_STATUS).setPreferredWidth(40);  // check/? status
+        columns.getColumn(COL_DISTANCE).setPreferredWidth(60); // Ly
+
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.setBorder(new EmptyBorder(0, 0, 0, 0));
+
+        add(headerLabel, BorderLayout.NORTH);
+        add(scroll, BorderLayout.CENTER);
+
         reloadFromNavRouteFile();
     }
 
@@ -181,7 +215,7 @@ public class RouteTabPanel extends JPanel {
         if (event instanceof NavRouteEvent
             || event instanceof FsdTargetEvent
             || event instanceof NavRouteClearEvent) {
-        	System.out.println("Reloading");
+            System.out.println("Reloading");
             reloadFromNavRouteFile();
         }
     }
@@ -219,23 +253,22 @@ public class RouteTabPanel extends JPanel {
                     String starClass     = safeString(obj, "StarClass");
                     JsonArray pos        = obj.getAsJsonArray("StarPos");
 
-                    double x = 0;
-                    double y = 0;
-                    double z = 0;
-                    if (pos != null && pos.size() == 3) {
-                        x = pos.get(0).getAsDouble();
-                        y = pos.get(1).getAsDouble();
-                        z = pos.get(2).getAsDouble();
-                    }
-                    coords.add(new double[] { x, y, z });
-
                     RouteEntry entry = new RouteEntry();
-                    entry.index         = entries.size();
+                    entry.index = entries.size();
                     entry.systemName    = systemName;
                     entry.systemAddress = systemAddress;
                     entry.starClass     = starClass;
                     entry.status        = ScanStatus.UNKNOWN;
                     entries.add(entry);
+
+                    if (pos != null && pos.size() == 3) {
+                        double x = pos.get(0).getAsDouble();
+                        double y = pos.get(1).getAsDouble();
+                        double z = pos.get(2).getAsDouble();
+                        coords.add(new double[] { x, y, z });
+                    } else {
+                        coords.add(null);
+                    }
                 }
 
                 // Compute per-jump distances (Ly) from the StarPos coordinates
@@ -245,11 +278,15 @@ public class RouteTabPanel extends JPanel {
                     } else {
                         double[] prev = coords.get(i - 1);
                         double[] cur  = coords.get(i);
-                        double dx = cur[0] - prev[0];
-                        double dy = cur[1] - prev[1];
-                        double dz = cur[2] - prev[2];
-                        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                        entries.get(i).distanceLy = dist;
+                        if (prev == null || cur == null) {
+                            entries.get(i).distanceLy = null;
+                        } else {
+                            double dx = cur[0] - prev[0];
+                            double dy = cur[1] - prev[1];
+                            double dz = cur[2] - prev[2];
+                            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            entries.get(i).distanceLy = dist;
+                        }
                     }
                 }
             }
@@ -302,10 +339,47 @@ public class RouteTabPanel extends JPanel {
      * Right now this is a stub so that only EDSM can produce a checkmark.
      * Replace with your own integration against SystemState / DB, etc.
      */
+    /**
+     * Returns true if this system is fully scanned in our local cache
+     * (all bodies known and FSS progress ~100%).
+     */
     private boolean isLocallyFullyScanned(RouteEntry entry) {
-        // TODO: integrate with your SystemState / local cache
-        return false;
+        if (entry == null) {
+            return false;
+        }
+
+        // Look up cached system by address/name (same pattern as SystemTabPanel)
+        SystemCache cache = SystemCache.getInstance();
+        SystemCache.CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
+        if (cs == null) {
+            return false;  // nothing cached locally
+        }
+
+        // Load into a temporary SystemState so we can inspect counts/progress
+        SystemState tmp = new SystemState();
+        cache.loadInto(tmp, cs);
+
+        Integer totalBodies = tmp.getTotalBodies();
+        if (totalBodies == null || totalBodies == 0) {
+            return false;  // we don’t know how many bodies there *should* be
+        }
+
+        int knownBodies = tmp.getBodies().size();
+        if (knownBodies < totalBodies) {
+            // We’ve seen some bodies but not all – treat as “not fully mapped”
+            return false;
+        }
+
+        // Optionally also require ~100% FSS progress
+        Double progress = tmp.getFssProgress();
+        if (progress != null && progress < 0.999) {
+            return false;
+        }
+
+        // At this point, cache says we know all bodies and FSS is complete
+        return true;
     }
+
 
     private static String safeString(JsonObject obj, String key) {
         JsonElement el = obj.get(key);
@@ -341,6 +415,7 @@ public class RouteTabPanel extends JPanel {
     }
 
     private static final class RouteTableModel extends AbstractTableModel {
+        private static final long serialVersionUID = 1L;
 
         private final List<RouteEntry> entries = new ArrayList<>();
 
@@ -409,7 +484,69 @@ public class RouteTabPanel extends JPanel {
         }
     }
 
+    private static final class StatusCircleIcon implements Icon {
+
+        private final int size;
+        private final Color circleColor;
+        private final String symbol;
+
+        StatusCircleIcon(Color circleColor, String symbol) {
+            this(circleColor, symbol, 14);
+        }
+
+        StatusCircleIcon(Color circleColor, String symbol, int size) {
+            this.circleColor = circleColor;
+            this.symbol = symbol;
+            this.size = size;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                    RenderingHints.VALUE_ANTIALIAS_ON);
+
+                int d = size - 1;
+                g2.setColor(circleColor);
+                g2.fillOval(x, y, d, d);
+
+                g2.setColor(Color.BLACK);
+                g2.drawOval(x, y, d, d);
+
+                if (symbol != null && !symbol.isEmpty()) {
+                    Font font = c.getFont();
+                    if (font != null) {
+                        font = font.deriveFont(Font.BOLD,
+                                               Math.max(10f, font.getSize2D()));
+                        g2.setFont(font);
+                    }
+                    java.awt.FontMetrics fm = g2.getFontMetrics();
+                    int textWidth = fm.stringWidth(symbol);
+                    int textAscent = fm.getAscent();
+                    int tx = x + (size - textWidth) / 2;
+                    int ty = y + (size + textAscent) / 2 - 2;
+                    g2.drawString(symbol, tx, ty);
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
+    }
+
     private static final class StatusRenderer extends DefaultTableCellRenderer {
+
+        private static final long serialVersionUID = 1L;
 
         StatusRenderer() {
             setOpaque(false);
@@ -430,30 +567,27 @@ public class RouteTabPanel extends JPanel {
                                                                         row,
                                                                         column);
             label.setBorder(new EmptyBorder(0, 0, 0, 0));
+            label.setText("");
+            label.setIcon(null);
 
             if (value instanceof ScanStatus) {
                 ScanStatus status = (ScanStatus) value;
                 switch (status) {
                     case LOCAL_COMPLETE:
-                        label.setText("\u2713"); // orange check
-                        label.setForeground(ED_ORANGE);
+                        label.setIcon(ICON_LOCAL_COMPLETE);
                         break;
                     case EDSM_COMPLETE:
-                        label.setText("\u2713"); // gray check
-                        label.setForeground(Color.LIGHT_GRAY);
+                        label.setIcon(ICON_EDSM_COMPLETE);
                         break;
                     case UNKNOWN:
                     default:
-                        label.setText("?");
-                        label.setForeground(ED_ORANGE);
+                        label.setIcon(ICON_UNKNOWN);
                         break;
                 }
-            } else {
-                label.setText("");
-                label.setForeground(ED_ORANGE);
             }
 
             return label;
         }
     }
+
 }

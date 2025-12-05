@@ -58,6 +58,7 @@ public class EdsmClient {
     public SystemResponse getSystem(String name) throws IOException, InterruptedException {
         String url = BASE_URL + "/api-v1/system"
                 + "?showId=1&showCoordinates=1&showPermit=1"
+        		+ "&showInformation=1"
                 + "&systemName=" + encode(name);
         return get(url, SystemResponse.class);
     }
@@ -77,6 +78,7 @@ public class EdsmClient {
         String url = BASE_URL + "/api-v1/system"
                 + "?systemName=" + encode(systemName)
                 + "&showId=1"
+                        		+ "&showInformation=1"
                 + "&showCoordinates=1"
                 + "&showPermit=1"
                 + "&showInformation=1"
@@ -117,12 +119,14 @@ public class EdsmClient {
     // ----------------- Bodies -----------------
 
     public BodiesResponse showBodies(String systemName) throws IOException, InterruptedException {
-        String url = BASE_URL + "/api-system-v1/bodies?systemName=" + encode(systemName);
+        String url = BASE_URL + "/api-system-v1/bodies?systemName=" + encode(systemName)
+		+ "&showInformation=1";
         return get(url, BodiesResponse.class);
     }
 
     public BodiesResponse showBodies(long systemId) throws IOException, InterruptedException {
-        String url = BASE_URL + "/api-system-v1/bodies?systemId=" + systemId;
+        String url = BASE_URL + "/api-system-v1/bodies?systemId=" + systemId
+        		+ "&showInformation=1";
         return get(url, BodiesResponse.class);
     }
 
