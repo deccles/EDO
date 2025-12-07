@@ -204,7 +204,6 @@ public class SystemTabPanel extends JPanel {
             if (event instanceof FsdJumpEvent) {
             	FsdJumpEvent e = (FsdJumpEvent)event;
             	loadSystem(e.getStarSystem(), e.getSystemAddress());
-            } else {
             	rebuildTable();
             }
             persistIfPossible();
