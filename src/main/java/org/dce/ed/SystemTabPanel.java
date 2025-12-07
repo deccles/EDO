@@ -5,6 +5,8 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -17,6 +19,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.JViewport;
 import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
@@ -54,7 +57,7 @@ public class SystemTabPanel extends JPanel {
     private static final Color ED_ORANGE = new Color(255, 140, 0);
 
     private final JTable table;
-    private final JLabel headerLabel;
+    private final JTextField headerLabel;
     private final SystemBodiesTableModel tableModel;
 
     private final SystemState state = new SystemState();
@@ -67,7 +70,34 @@ public class SystemTabPanel extends JPanel {
         setOpaque(false);
 
         // Header label
-        headerLabel = new JLabel("Waiting for system data…");
+        headerLabel = new JTextField("Waiting for system data…");
+        headerLabel.addKeyListener(new KeyListener() {
+
+			@Override
+			public void keyTyped(KeyEvent e) {
+				// TODO Auto-generated method stub
+				
+			}
+
+			@Override
+			public void keyPressed(KeyEvent e) {
+				if (e.getKeyChar() == KeyEvent.VK_ENTER) {
+					System.out.println("User hit enter");
+					state.setSystemName(headerLabel.getText());
+					state.setSystemAddress(0L);
+					
+	            	loadSystem(state.getSystemName(), state.getSystemAddress());
+	            	rebuildTable();
+					
+				}
+			}
+
+			@Override
+			public void keyReleased(KeyEvent e) {
+				
+			}
+        	
+        });
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
