@@ -279,7 +279,7 @@ public class RouteTabPanel extends JPanel {
     }
 
     private void reloadFromNavRouteFile() {
-        Path dir = EliteLogFileLocator.findDefaultJournalDirectory();
+        Path dir = OverlayPreferences.resolveJournalDirectory();
         if (dir == null) {
             headerLabel.setText("No journal directory.");
             tableModel.setEntries(new ArrayList<>());
