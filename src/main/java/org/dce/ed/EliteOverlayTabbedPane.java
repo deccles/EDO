@@ -22,6 +22,12 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
+import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
+import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
+import org.dce.ed.logreader.EliteLogEvent.StartJumpEvent;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -135,6 +141,9 @@ public class EliteOverlayTabbedPane extends JPanel {
                     org.dce.ed.logreader.LiveJournalMonitor.getInstance();
 
             monitor.addListener(event -> {
+            	
+            	this.handleLogEvent(event);
+            	
                 // Log tab (if you added a live handler there)
                  logTab.handleLogEvent(event);
 
@@ -158,7 +167,18 @@ public class EliteOverlayTabbedPane extends JPanel {
         add(cardPanel, BorderLayout.CENTER);
     }
 
-    /**
+    private void handleLogEvent(EliteLogEvent event) {
+    	if (event instanceof FsdJumpEvent
+    		|| event instanceof FssDiscoveryScanEvent
+    		|| event instanceof ScanEvent) {
+    		showSystemTabFromStatusWatcher();
+    	}
+    	if (event instanceof StartJumpEvent) {
+    		showRouteTabFromStatusWatcher();
+    	}
+	}
+
+	/**
      * Attach a generic hover handler to a button; when the mouse rests over
      * the button for the given delay, the action is invoked on the EDT.
      */

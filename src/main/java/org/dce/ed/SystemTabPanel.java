@@ -25,6 +25,8 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
+import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.cache.SystemCache;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
@@ -243,7 +245,7 @@ public class SystemTabPanel extends JPanel {
 
 	private void loadSystem(String systemName, long systemAddress) {
 		SystemCache cache = SystemCache.getInstance();
-		SystemCache.CachedSystem cs = cache.get(systemAddress, systemName);
+		CachedSystem cs = cache.get(systemAddress, systemName);
 
 		if (cs != null) {
 		    cache.loadInto(state, cs);

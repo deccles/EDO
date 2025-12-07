@@ -3,7 +3,7 @@ package org.dce.ed.state;
 import java.util.List;
 import java.util.Locale;
 
-import org.dce.ed.SystemCache;
+import org.dce.ed.cache.SystemCache;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;

@@ -24,6 +24,7 @@ public class BodiesResponse {
         public String type;          // "Star" or "Planet"
         public String subType;       // e.g. "B (Blue-White) Star", "High metal content world"
 
+        public String discoveryCommander;
         public Double distanceToArrival;
         public Boolean isMainStar;
         public Boolean isScoopable;

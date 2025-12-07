@@ -44,10 +44,12 @@ public class BodyInfo {
     // Derived biological prediction data
     private List<ExobiologyData.BioCandidate> predictions;
 
-    java.util.Set<String> observedBioDisplayNames;
+    private java.util.Set<String> observedBioDisplayNames;
     
     // Observed genera from DSS or ScanOrganic
     private Set<String> observedGenusPrefixes;
+    
+    private String discoveryCommander;  // may be null or empty
     
     // ------------------------------------------------------------
     // Accessors
@@ -78,11 +80,11 @@ public class BodyInfo {
     }
 
     public boolean hasBio() {
-        return hasBio;
+        return isHasBio();
     }
 
     public boolean hasGeo() {
-        return hasGeo;
+        return isHasGeo();
     }
 
     public boolean isHighValue() {
@@ -123,6 +125,21 @@ public class BodyInfo {
 
     public void setObservedBioDisplayNames(java.util.Set<String> observedBioDisplayNames) {
         this.observedBioDisplayNames = observedBioDisplayNames;
+    }
+    public String getDiscoveryCommander() {
+        return discoveryCommander;
+    }
+
+    public void setDiscoveryCommander(String discoveryCommander) {
+        this.discoveryCommander = discoveryCommander;
+    }
+
+    /**
+     * Convenience helper: true if EDSM reports a non-empty discovery.commander
+     * for this body.
+     */
+    public boolean hasDiscoveryCommander() {
+        return getDiscoveryCommander() != null && !getDiscoveryCommander().isBlank();
     }
 
 
@@ -191,8 +208,8 @@ public class BodyInfo {
     }
 
     public void clearPredictions() {
-        if (predictions != null) {
-            predictions.clear();
+        if (getPredictions() != null) {
+            getPredictions().clear();
         }
     }
 
@@ -208,10 +225,10 @@ public class BodyInfo {
         if (genusPrefix == null || genusPrefix.isEmpty()) {
             return;
         }
-        if (observedGenusPrefixes == null) {
-            observedGenusPrefixes = new HashSet<>();
+        if (getObservedGenusPrefixes() == null) {
+            setObservedGenusPrefixes(new HashSet<>());
         }
-        observedGenusPrefixes.add(toLower(genusPrefix));
+        getObservedGenusPrefixes().add(toLower(genusPrefix));
     }
 
     // ------------------------------------------------------------
@@ -224,23 +241,23 @@ public class BodyInfo {
      */
     public ExobiologyData.BodyAttributes buildBodyAttributes() {
         double gravityG = Double.NaN;
-        if (gravityMS != null && !Double.isNaN(gravityMS)) {
-            gravityG = gravityMS / 9.80665;
+        if (getGravityMS() != null && !Double.isNaN(getGravityMS())) {
+            gravityG = getGravityMS() / 9.80665;
         }
 
-        if ((planetClass == null || planetClass.isEmpty())
-                && (atmosphere == null || atmosphere.isEmpty())
+        if ((getPlanetClass() == null || getPlanetClass().isEmpty())
+                && (getAtmosphere() == null || getAtmosphere().isEmpty())
                 && Double.isNaN(gravityG)) {
             return null; // Not enough info to predict
         }
 
-        ExobiologyData.PlanetType pt = ExobiologyData.parsePlanetType(planetClass);
-        ExobiologyData.AtmosphereType at = ExobiologyData.parseAtmosphere(atmosphere);
+        ExobiologyData.PlanetType pt = ExobiologyData.parsePlanetType(getPlanetClass());
+        ExobiologyData.AtmosphereType at = ExobiologyData.parseAtmosphere(getAtmosphere());
 
-        double tempMin = surfaceTempK != null ? surfaceTempK : Double.NaN;
+        double tempMin = getSurfaceTempK() != null ? getSurfaceTempK() : Double.NaN;
         double tempMax = tempMin;
 
-        boolean hasVolc = volcanism != null && !volcanism.isEmpty();
+        boolean hasVolc = getVolcanism() != null && !getVolcanism().isEmpty();
 
         return new ExobiologyData.BodyAttributes(
                 pt,
@@ -249,7 +266,7 @@ public class BodyInfo {
                 tempMin,
                 tempMax,
                 hasVolc,
-                volcanism
+                getVolcanism()
         );
     }
 
@@ -257,20 +274,20 @@ public class BodyInfo {
         if (genus == null || genus.isEmpty()) {
             return;
         }
-        if (observedGenusPrefixes == null) {
-            observedGenusPrefixes = new java.util.HashSet<>();
+        if (getObservedGenusPrefixes() == null) {
+            setObservedGenusPrefixes(new java.util.HashSet<>());
         }
-        observedGenusPrefixes.add(genus.toLowerCase(java.util.Locale.ROOT));
+        getObservedGenusPrefixes().add(genus.toLowerCase(java.util.Locale.ROOT));
     }
 
     public void addObservedBioDisplayName(String name) {
         if (name == null || name.isEmpty()) {
             return;
         }
-        if (observedBioDisplayNames == null) {
-            observedBioDisplayNames = new java.util.HashSet<>();
+        if (getObservedBioDisplayNames() == null) {
+            setObservedBioDisplayNames(new java.util.HashSet<>());
         }
-        observedBioDisplayNames.add(name);
+        getObservedBioDisplayNames().add(name);
     }
 
     
@@ -281,5 +298,13 @@ public class BodyInfo {
     private static String toLower(String s) {
         return s == null ? "" : s.toLowerCase(Locale.ROOT);
     }
+
+	public boolean isHasBio() {
+		return hasBio;
+	}
+
+	public boolean isHasGeo() {
+		return hasGeo;
+	}
 
 }

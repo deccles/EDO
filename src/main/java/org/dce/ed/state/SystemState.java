@@ -19,6 +19,13 @@ public class SystemState {
     private String systemName;
     private long systemAddress;
 
+    private boolean visitedByMe;
+    /**
+     * Total number of bodies reported by EDSM for this system (may be null if unknown).
+     */
+    private Integer edsmBodyCount;
+    
+    
     private Integer totalBodies;
     private Integer nonBodyCount;
     private Double fssProgress;
@@ -45,6 +52,8 @@ public class SystemState {
         nonBodyCount = null;
         fssProgress = null;
         allBodiesFound = null;
+        edsmBodyCount = null;
+        
         bodies.clear();
     }
 
@@ -248,6 +257,27 @@ public class SystemState {
 
     public void setAllBodiesFound(Boolean allBodiesFound) {
         this.allBodiesFound = allBodiesFound;
+    }
+    /**
+     * True if this system appears in the local SystemCache (i.e. you have visited it).
+     */
+    public boolean isVisitedByMe() {
+        return visitedByMe;
+    }
+
+    public void setVisitedByMe(boolean visitedByMe) {
+        this.visitedByMe = visitedByMe;
+    }
+
+    /**
+     * Total number of bodies reported by EDSM for this system (may be null if unknown).
+     */
+    public Integer getEdsmBodyCount() {
+        return edsmBodyCount;
+    }
+
+    public void setEdsmBodyCount(Integer edsmBodyCount) {
+        this.edsmBodyCount = edsmBodyCount;
     }
 
 }

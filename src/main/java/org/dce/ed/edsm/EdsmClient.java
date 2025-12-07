@@ -144,6 +144,134 @@ public class EdsmClient {
         return get(url, BodiesResponse.class);
     }
 
+    /**
+     * Lightweight summary of EDSM body discovery for a system.
+     * Parses bodyCount and discovery.commander flags from the /bodies endpoint.
+     *
+     * NOTE: This does not try to decide *who* the commander is – only whether the
+     * discovery.commander field is present and non-empty.
+     */
+    /**
+     * Lightweight summary of EDSM body discovery for a system.
+     * Parses bodyCount and discovery.commander flags from the /bodies endpoint.
+     *
+     * NOTE: This does not try to decide *who* the commander is – only whether the
+     * discovery.commander field is present and non-empty.
+     */
+    public static final class BodiesScanInfo {
+        public final Integer bodyCount;
+        public final java.util.List<BodyDiscoveryInfo> bodies;
+
+        public BodiesScanInfo(Integer bodyCount, java.util.List<BodyDiscoveryInfo> bodies) {
+            this.bodyCount = bodyCount;
+            this.bodies = bodies;
+        }
+    }
+
+    public static final class BodyDiscoveryInfo {
+        public final String name;
+        public final boolean hasDiscoveryCommander;
+
+        public BodyDiscoveryInfo(String name, boolean hasDiscoveryCommander) {
+            this.name = name;
+            this.hasDiscoveryCommander = hasDiscoveryCommander;
+        }
+    }
+
+    /**
+     * Fetches EDSM bodyCount and per-body discovery.commander presence for a system
+     * identified by name. Bodies are matched by name, not ID.
+     */
+    public BodiesScanInfo fetchBodiesScanInfo(String systemName) throws IOException, InterruptedException {
+        if (systemName == null || systemName.isEmpty()) {
+            return null;
+        }
+
+        String url = BASE_URL + "/api-system-v1/bodies?systemName=" + encode(systemName)
+                + "&showInformation=1";
+
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("User-Agent", "EDO-Tool")
+                .GET()
+                .build();
+
+        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        String body = resp.body();
+
+        // Remember the raw JSON for the query tool
+        lastRawJson = body;
+
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+
+        JsonElement root = JsonParser.parseString(body);
+        if (!root.isJsonObject()) {
+            return null;
+        }
+
+        JsonObject obj = root.getAsJsonObject();
+
+        Integer bodyCount = null;
+        if (obj.has("bodyCount") && !obj.get("bodyCount").isJsonNull()) {
+            try {
+                bodyCount = obj.get("bodyCount").getAsInt();
+            } catch (Exception ex) {
+                // leave as null if not an integer
+            }
+        }
+
+        java.util.List<BodyDiscoveryInfo> result = new java.util.ArrayList<>();
+
+        JsonArray bodiesArr = obj.getAsJsonArray("bodies");
+        if (bodiesArr != null) {
+            for (JsonElement el : bodiesArr) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject bo = el.getAsJsonObject();
+
+                String name = null;
+                JsonElement nameEl = bo.get("name");
+                if (nameEl != null && !nameEl.isJsonNull()) {
+                    try {
+                        name = nameEl.getAsString();
+                    } catch (Exception ex) {
+                        // ignore badly-typed names
+                    }
+                }
+                if (name == null) {
+                    // We need the name to be able to match bodies by name.
+                    continue;
+                }
+
+                boolean hasDiscoveryCommander = false;
+                JsonElement discoveryEl = bo.get("discovery");
+                if (discoveryEl != null && discoveryEl.isJsonObject()) {
+                    JsonObject disc = discoveryEl.getAsJsonObject();
+                    JsonElement cmdEl = disc.get("commander");
+                    if (cmdEl != null && !cmdEl.isJsonNull()) {
+                        try {
+                            String commander = cmdEl.getAsString();
+                            if (commander != null && !commander.isBlank()) {
+                                hasDiscoveryCommander = true;
+                            }
+                        } catch (Exception ex) {
+                            // ignore if commander isn't a string
+                        }
+                    }
+                }
+
+                result.add(new BodyDiscoveryInfo(name, hasDiscoveryCommander));
+            }
+        }
+
+        return new BodiesScanInfo(bodyCount, result);
+    }
+
+
+
     // ----------------- Stations (new) -----------------
 
     /**

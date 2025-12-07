@@ -26,8 +26,11 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumnModel;
 
-import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.EdsmClient;
+import org.dce.ed.edsm.EdsmClient.BodiesScanInfo;
+import org.dce.ed.edsm.EdsmClient.BodyDiscoveryInfo;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdTargetEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
@@ -51,14 +54,30 @@ public class RouteTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
-    /** Same color as SystemTabPanel.ED_ORANGE. */
     private static final Color ED_ORANGE = new Color(255, 140, 0);
     private static final Color STATUS_GRAY = new Color(210, 210, 210);
+    private static final Color STATUS_BLUE = new Color(100, 149, 237);
+    private static final Color STATUS_YELLOW = new Color(255, 215, 0);
 
-    private static final Icon ICON_LOCAL_COMPLETE =
+    // Orange / gray checkmarks for fully discovered systems.
+    private static final Icon ICON_FULLY_DISCOVERED_VISITED =
             new StatusCircleIcon(ED_ORANGE, "\u2713");
-    private static final Icon ICON_EDSM_COMPLETE =
+    private static final Icon ICON_FULLY_DISCOVERED_NOT_VISITED =
             new StatusCircleIcon(STATUS_GRAY, "\u2713");
+
+    // Crossed-out eye equivalents when any body is missing discovery.commander.
+    // (Rendered as an X in a colored circle; you can swap to a real eye icon later.)
+    private static final Icon ICON_DISCOVERY_MISSING_VISITED =
+            new StatusCircleIcon(STATUS_BLUE, "X");
+    private static final Icon ICON_DISCOVERY_MISSING_NOT_VISITED =
+            new StatusCircleIcon(STATUS_GRAY, "X");
+
+    // BodyCount mismatch between EDSM bodyCount and the number of bodies returned.
+    private static final Icon ICON_BODYCOUNT_MISMATCH_VISITED =
+            new StatusCircleIcon(STATUS_YELLOW, "!");
+    private static final Icon ICON_BODYCOUNT_MISMATCH_NOT_VISITED =
+            new StatusCircleIcon(STATUS_GRAY, "!");
+
     private static final Icon ICON_UNKNOWN =
             new StatusCircleIcon(STATUS_GRAY, "?");
 
@@ -215,7 +234,6 @@ public class RouteTabPanel extends JPanel {
         if (event instanceof NavRouteEvent
             || event instanceof FsdTargetEvent
             || event instanceof NavRouteClearEvent) {
-            System.out.println("Reloading");
             reloadFromNavRouteFile();
         }
     }
@@ -312,22 +330,62 @@ public class RouteTabPanel extends JPanel {
     }
 
     private void updateStatusFromEdsm(RouteEntry entry, int row) {
-        // First check local cache (if you wire this up)
-        if (isLocallyFullyScanned(entry)) {
-            entry.status = ScanStatus.LOCAL_COMPLETE;
-            SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
+        if (entry == null) {
             return;
         }
 
-        // Then ask EDSM
+        final boolean visited = isVisited(entry);
+
         try {
-            BodiesResponse bodies = edsmClient.showBodies(entry.systemName);
-            if (bodies != null && bodies.bodies != null && !bodies.bodies.isEmpty()) {
-                entry.status = ScanStatus.EDSM_COMPLETE;
-                SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
+            BodiesScanInfo info = edsmClient.fetchBodiesScanInfo(entry.systemName);
+            ScanStatus newStatus = ScanStatus.UNKNOWN;
+
+            if (info != null && info.bodies != null && !info.bodies.isEmpty()) {
+                boolean anyMissingDiscovery = false;
+                int bodiesWithDiscovery = 0;
+
+                for (BodyDiscoveryInfo bodyInfo : info.bodies) {
+                    if (bodyInfo == null) {
+                        continue;
+                    }
+                    if (bodyInfo.hasDiscoveryCommander) {
+                        bodiesWithDiscovery++;
+                    } else {
+                        anyMissingDiscovery = true;
+                    }
+                }
+
+                Integer bodyCount = info.bodyCount;
+                boolean hasBodyCount = bodyCount != null && bodyCount > 0;
+                int returnedBodies = info.bodies.size();
+
+                // Purely EDSM-based bodyCount mismatch: EDSM says there should be N bodies,
+                // but it returned a different number.
+                boolean bodyCountMismatch =
+                        hasBodyCount && returnedBodies > 0 && bodyCount.intValue() != returnedBodies;
+
+                if (bodyCountMismatch) {
+                    newStatus = visited
+                            ? ScanStatus.BODYCOUNT_MISMATCH_VISITED
+                            : ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
+                } else if (anyMissingDiscovery) {
+                    newStatus = visited
+                            ? ScanStatus.DISCOVERY_MISSING_VISITED
+                            : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
+                } else if (hasBodyCount && returnedBodies > 0 && bodiesWithDiscovery == returnedBodies) {
+                    // All bodies accounted for and each has a discovery.commander.
+                    newStatus = visited
+                            ? ScanStatus.FULLY_DISCOVERED_VISITED
+                            : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+                } else {
+                    newStatus = ScanStatus.UNKNOWN;
+                }
             }
+
+            entry.status = newStatus;
+            SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
         } catch (Exception e) {
-            // Network / API errors – leave status as UNKNOWN
+            // Network / API errors – leave status as UNKNOWN / previous value.
             e.printStackTrace();
         }
     }
@@ -360,7 +418,7 @@ public class RouteTabPanel extends JPanel {
 
         // Look up cached system by address/name (same pattern as SystemTabPanel)
         SystemCache cache = SystemCache.getInstance();
-        SystemCache.CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
+        CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
         if (cs == null) {
             // Nothing cached locally → definitely not "fully scanned by me"
             return false;
@@ -414,13 +472,37 @@ public class RouteTabPanel extends JPanel {
         }
     }
 
+    /**
+     * Returns true if the system for this route entry appears in the local cache.
+     * This is the only "me-related" state: it means you have visited the system.
+     */
+    private boolean isVisited(RouteEntry entry) {
+        if (entry == null) {
+            return false;
+        }
+        SystemCache cache = SystemCache.getInstance();
+        CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
+        return cs != null;
+    }
+
+    
     // ---------------------------------------------------------------------
     // Model + table
     // ---------------------------------------------------------------------
-
-    private enum ScanStatus {
-        LOCAL_COMPLETE,
-        EDSM_COMPLETE,
+    enum ScanStatus {
+        // Any body missing discovery.commander and you have visited the system.
+        DISCOVERY_MISSING_VISITED,
+        // Any body missing discovery.commander and you have NOT visited the system.
+        DISCOVERY_MISSING_NOT_VISITED,
+        // EDSM bodyCount does not match the number of bodies returned, and you have visited.
+        BODYCOUNT_MISMATCH_VISITED,
+        // EDSM bodyCount does not match the number of bodies returned, and you have NOT visited.
+        BODYCOUNT_MISMATCH_NOT_VISITED,
+        // All bodies accounted for in EDSM and each has discovery.commander, and you have visited.
+        FULLY_DISCOVERED_VISITED,
+        // All bodies accounted for in EDSM and each has discovery.commander, and you have NOT visited.
+        FULLY_DISCOVERED_NOT_VISITED,
+        // Anything else / no data.
         UNKNOWN
     }
 
@@ -588,15 +670,27 @@ public class RouteTabPanel extends JPanel {
             label.setBorder(new EmptyBorder(0, 0, 0, 0));
             label.setText("");
             label.setIcon(null);
-
+            
             if (value instanceof ScanStatus) {
                 ScanStatus status = (ScanStatus) value;
                 switch (status) {
-                    case LOCAL_COMPLETE:
-                        label.setIcon(ICON_LOCAL_COMPLETE);
+                    case FULLY_DISCOVERED_VISITED:
+                        label.setIcon(ICON_FULLY_DISCOVERED_VISITED);
                         break;
-                    case EDSM_COMPLETE:
-                        label.setIcon(ICON_EDSM_COMPLETE);
+                    case FULLY_DISCOVERED_NOT_VISITED:
+                        label.setIcon(ICON_FULLY_DISCOVERED_NOT_VISITED);
+                        break;
+                    case DISCOVERY_MISSING_VISITED:
+                        label.setIcon(ICON_DISCOVERY_MISSING_VISITED);
+                        break;
+                    case DISCOVERY_MISSING_NOT_VISITED:
+                        label.setIcon(ICON_DISCOVERY_MISSING_NOT_VISITED);
+                        break;
+                    case BODYCOUNT_MISMATCH_VISITED:
+                        label.setIcon(ICON_BODYCOUNT_MISMATCH_VISITED);
+                        break;
+                    case BODYCOUNT_MISMATCH_NOT_VISITED:
+                        label.setIcon(ICON_BODYCOUNT_MISMATCH_NOT_VISITED);
                         break;
                     case UNKNOWN:
                     default:
@@ -604,6 +698,7 @@ public class RouteTabPanel extends JPanel {
                         break;
                 }
             }
+
 
             return label;
         }

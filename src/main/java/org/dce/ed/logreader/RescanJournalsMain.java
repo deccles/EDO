@@ -8,9 +8,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
-import org.dce.ed.SystemCache;
+import org.dce.ed.cache.CachedBody;
+import org.dce.ed.cache.SystemCache;
 import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssBodySignalsEvent;
@@ -21,6 +21,7 @@ import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent.Genus;
 import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent.Signal;
 import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
 import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
+import org.dce.ed.state.BodyInfo;
 
 /**
  * Standalone utility with a main() that scans all Elite Dangerous journal files
@@ -76,33 +77,6 @@ public class RescanJournalsMain {
             }
             return systemName != null ? systemName.hashCode() : 0;
         }
-    }
-
-    /**
-     * Minimal body info, mirrors the fields we persist in SystemCache.CachedBody.
-     * This is intentionally kept in sync with the parsing logic used by the live
-     * overlay (SystemEventProcessor/SystemState).
-     */
-    private static final class BodyInfo {
-        String name;
-        int bodyId = -1;
-        double distanceLs = Double.NaN;
-        Double gravityMS = null;
-        boolean landable = false;
-        boolean hasBio = false;
-        boolean hasGeo = false;
-        boolean highValue = false;
-        String atmoOrType = "";
-
-        // Fields used for prediction/exobiology
-        String planetClass;
-        String atmosphere;
-        Double surfaceTempK;
-        String volcanism;
-
-        // Truth data from DSS / ScanOrganic
-        Set<String> observedGenusPrefixes;    // e.g. "bacterium", "stratum"
-        Set<String> observedBioDisplayNames;  // e.g. "Bacterium Nebulus"
     }
 
     /**
@@ -181,26 +155,26 @@ public class RescanJournalsMain {
             }
 
             BodyInfo info = bodies.computeIfAbsent(id, ignored -> new BodyInfo());
-            info.bodyId = id;
-            info.name = bodyName;
-            info.distanceLs = e.getDistanceFromArrivalLs();
-            info.landable = e.isLandable();
-            info.gravityMS = e.getSurfaceGravity();
-            info.atmoOrType = chooseAtmoOrType(e);
-            info.highValue = isHighValue(e);
+            info.setBodyId(id);
+            info.setName(bodyName);
+            info.setDistanceLs(e.getDistanceFromArrivalLs());
+            info.setLandable(e.isLandable());
+            info.setGravityMS(e.getSurfaceGravity());
+            info.setAtmoOrType(chooseAtmoOrType(e));
+            info.setHighValue(isHighValue(e));
 
             // Prediction-related attributes
-            info.planetClass = e.getPlanetClass();
-            info.atmosphere = e.getAtmosphere();
+            info.setPlanetClass(e.getPlanetClass());
+            info.setAtmosphere(e.getAtmosphere());
 
             Double temp = e.getSurfaceTemperature();
             if (temp != null) {
-                info.surfaceTempK = temp;
+                info.setSurfaceTempK(temp);
             }
 
             String volc = e.getVolcanism();
             if (volc != null && !volc.isEmpty()) {
-                info.volcanism = volc;
+                info.setVolcanism(volc);
             }
         }
 
@@ -213,9 +187,9 @@ public class RescanJournalsMain {
                 String type = toLower(s.getType());
                 String loc = toLower(s.getTypeLocalised());
                 if (type.contains("biological") || loc.contains("biological")) {
-                    info.hasBio = true;
+                    info.setHasBio(true);
                 } else if (type.contains("geological") || loc.contains("geological")) {
-                    info.hasGeo = true;
+                    info.setHasGeo(true);
                 }
             }
         }
@@ -225,8 +199,8 @@ public class RescanJournalsMain {
                 return;
             }
             BodyInfo info = bodies.computeIfAbsent(bodyId, ignored -> new BodyInfo());
-            if (info.observedGenusPrefixes == null) {
-                info.observedGenusPrefixes = new HashSet<>();
+            if (info.getObservedGenusPrefixes() == null) {
+                info.setObservedGenusPrefixes(new HashSet<>());
             }
             for (Genus g : genuses) {
                 String genusName = toLower(g.getGenusLocalised());
@@ -234,7 +208,7 @@ public class RescanJournalsMain {
                     genusName = toLower(g.getGenus());
                 }
                 if (!genusName.isEmpty()) {
-                    info.observedGenusPrefixes.add(genusName);
+                    info.getObservedGenusPrefixes().add(genusName);
                 }
             }
         }
@@ -248,11 +222,11 @@ public class RescanJournalsMain {
                 return;
             }
 
-            info.hasBio = true;
+            info.setHasBio(true);
 
             // If the ScanOrganic has a body name and the scan body didn't, fill it in.
-            if (bodyName != null && !bodyName.isEmpty() && (info.name == null || info.name.isEmpty())) {
-                info.name = bodyName;
+            if (bodyName != null && !bodyName.isEmpty() && (info.getName() == null || info.getName().isEmpty())) {
+                info.setName(bodyName);
             }
 
             // Genus prefix (for narrowing predictions)
@@ -261,10 +235,10 @@ public class RescanJournalsMain {
                 genusPrefix = toLower(e.getGenus());
             }
             if (!genusPrefix.isEmpty()) {
-                if (info.observedGenusPrefixes == null) {
-                    info.observedGenusPrefixes = new HashSet<>();
+                if (info.getObservedGenusPrefixes() == null) {
+                    info.setObservedGenusPrefixes(new HashSet<>());
                 }
-                info.observedGenusPrefixes.add(genusPrefix);
+                info.getObservedGenusPrefixes().add(genusPrefix);
             }
 
             // Full display name (truth row): "Bacterium Nebulus", etc.
@@ -274,10 +248,10 @@ public class RescanJournalsMain {
             String displayName = buildDisplayName(genusDisp, speciesDisp);
 
             if (!isEmpty(displayName)) {
-                if (info.observedBioDisplayNames == null) {
-                    info.observedBioDisplayNames = new HashSet<>();
+                if (info.getObservedBioDisplayNames() == null) {
+                    info.setObservedBioDisplayNames(new HashSet<>());
                 }
-                info.observedBioDisplayNames.add(displayName);
+                info.getObservedBioDisplayNames().add(displayName);
             }
         }
         private static String buildDisplayName(String genusDisp, String speciesDisp) {
@@ -317,24 +291,24 @@ public class RescanJournalsMain {
                 BodyInfo info = bodies.get(bodyId);
                 if (info == null) {
                     info = new BodyInfo();
-                    info.bodyId = bodyId;
-                    info.name = bodyName;
+                    info.setBodyId(bodyId);
+                    info.setName(bodyName);
                     bodies.put(bodyId, info);
-                } else if (bodyName != null && !bodyName.isEmpty() && (info.name == null || info.name.isEmpty())) {
-                    info.name = bodyName;
+                } else if (bodyName != null && !bodyName.isEmpty() && (info.getName() == null || info.getName().isEmpty())) {
+                    info.setName(bodyName);
                 }
                 return info;
             }
 
             if (bodyName != null && !bodyName.isEmpty()) {
                 for (BodyInfo b : bodies.values()) {
-                    if (bodyName.equals(b.name)) {
+                    if (bodyName.equals(b.getName())) {
                         return b;
                     }
                 }
                 BodyInfo info = new BodyInfo();
-                info.bodyId = -1;
-                info.name = bodyName;
+                info.setBodyId(-1);
+                info.setName(bodyName);
                 bodies.put(bodies.size() + 1000000, info);
                 return info;
             }
@@ -401,31 +375,32 @@ public class RescanJournalsMain {
             return null;
         }
 
-        List<SystemCache.CachedBody> toCachedBodies() {
-            List<SystemCache.CachedBody> list = new ArrayList<>();
+        List<CachedBody> toCachedBodies() {
+            List<CachedBody> list = new ArrayList<>();
             for (BodyInfo b : bodies.values()) {
-                SystemCache.CachedBody cb = new SystemCache.CachedBody();
-                cb.name = b.name;
-                cb.bodyId = b.bodyId;
-                cb.distanceLs = b.distanceLs;
-                cb.gravityMS = b.gravityMS;
-                cb.landable = b.landable;
-                cb.hasBio = b.hasBio;
-                cb.hasGeo = b.hasGeo;
-                cb.highValue = b.highValue;
+                CachedBody cb = new CachedBody();
+                cb.name = b.getName();
+                cb.bodyId = b.getBodyId();
+                cb.distanceLs = b.getDistanceLs();
+                cb.gravityMS = b.getGravityMS();
+                cb.landable = b.isLandable();
+                cb.hasBio = b.isHasBio();
+                cb.hasGeo = b.isHasGeo();
+                cb.highValue = b.isHighValue();
 
-                cb.planetClass = b.planetClass;
-                cb.atmosphere = b.atmosphere;
-                cb.atmoOrType = b.atmoOrType;
-                cb.surfaceTempK = b.surfaceTempK;
-                cb.volcanism = b.volcanism;
-
-                if (b.observedGenusPrefixes != null && !b.observedGenusPrefixes.isEmpty()) {
-                    cb.observedGenusPrefixes = new HashSet<>(b.observedGenusPrefixes);
+                cb.planetClass = b.getPlanetClass();
+                cb.atmosphere = b.getAtmosphere();
+                cb.atmoOrType = b.getAtmoOrType();
+                cb.surfaceTempK = b.getSurfaceTempK();
+                cb.volcanism = b.getVolcanism();
+                cb.discoveryCommander = b.getDiscoveryCommander();
+                
+                if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
+                    cb.observedGenusPrefixes = new HashSet<>(b.getObservedGenusPrefixes());
                 }
 
-                if (b.observedBioDisplayNames != null && !b.observedBioDisplayNames.isEmpty()) {
-                    cb.observedBioDisplayNames = new HashSet<>(b.observedBioDisplayNames);
+                if (b.getObservedBioDisplayNames() != null && !b.getObservedBioDisplayNames().isEmpty()) {
+                    cb.observedBioDisplayNames = new HashSet<>(b.getObservedBioDisplayNames());
                 }
 
                 list.add(cb);
@@ -556,7 +531,7 @@ public class RescanJournalsMain {
             if (acc.bodies.isEmpty()) {
                 continue;
             }
-            List<SystemCache.CachedBody> bodies = acc.toCachedBodies();
+            List<CachedBody> bodies = acc.toCachedBodies();
 
             cache.put(
                 acc.systemAddress,

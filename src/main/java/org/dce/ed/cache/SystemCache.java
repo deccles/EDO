@@ -1,4 +1,4 @@
-package org.dce.ed;
+package org.dce.ed.cache;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -64,49 +64,6 @@ public final class SystemCache {
         SystemCache cache = getInstance();
         cache.ensureLoaded();
         return cache.lastLoadedSystem;
-    }
-
-    /**
-     * Represents one body as stored in the cache.
-     */
-    public static final class CachedBody {
-        public String name;
-        public int bodyId;
-        public double distanceLs;
-        public Double gravityMS;
-        public boolean landable;
-        public boolean hasBio;
-        public boolean hasGeo;
-        public boolean highValue;
-
-        public String planetClass;
-        public String atmosphere;
-        public String atmoOrType;
-
-        public Double surfaceTempK;
-        public String volcanism;
-
-        // NEW: confirmed genera observed (ScanOrganic / DSS)
-        public Set<String> observedGenusPrefixes;   // may be null if none known
-        
-        // Full "truth" names like "Bacterium Nebulus", "Stratum Tectonicas", etc.
-        public Set<String> observedBioDisplayNames;  // may be null
-
-        
-    }
-
-    /**
-     * Represents a cached system and its bodies.
-     */
-    public static final class CachedSystem {
-        public long systemAddress;
-        public String systemName;
-        public List<CachedBody> bodies = new ArrayList<>();
-
-        public Integer totalBodies;
-        public Integer nonBodyCount;
-        public Double fssProgress;
-        public Boolean allBodiesFound;
     }
 
 
@@ -185,7 +142,7 @@ public final class SystemCache {
         cs.nonBodyCount = nonBodyCount;
         cs.fssProgress = fssProgress;
         cs.allBodiesFound = allBodiesFound;
-        cs.bodies = (bodies != null) ? new ArrayList<>(bodies) : new ArrayList<>();
+        cs.bodies = (bodies != null) ? new ArrayList<CachedBody>(bodies) : new ArrayList<>();
 
         if (systemAddress != 0L) {
             byAddress.put(systemAddress, cs);
@@ -203,7 +160,8 @@ public final class SystemCache {
 
         state.setSystemName(cs.systemName);
         state.setSystemAddress(cs.systemAddress);
-
+        state.setVisitedByMe(true);
+        
         state.resetBodies();
 
         state.setTotalBodies(cs.totalBodies);
@@ -227,7 +185,8 @@ public final class SystemCache {
             info.setAtmosphere(cb.atmosphere);
             info.setSurfaceTempK(cb.surfaceTempK);
             info.setVolcanism(cb.volcanism);
-
+            info.setDiscoveryCommander(cb.discoveryCommander);
+            
             if (cb.observedGenusPrefixes != null && !cb.observedGenusPrefixes.isEmpty()) {
                 info.setObservedGenusPrefixes(new java.util.HashSet<>(cb.observedGenusPrefixes));
             }
@@ -260,7 +219,8 @@ public final class SystemCache {
             cb.atmosphere = b.getAtmosphere();
             cb.surfaceTempK = b.getSurfaceTempK();
             cb.volcanism = b.getVolcanism();
-
+            cb.discoveryCommander = b.getDiscoveryCommander();
+            
             if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
                 cb.observedGenusPrefixes = new java.util.HashSet<>(b.getObservedGenusPrefixes());
             }
