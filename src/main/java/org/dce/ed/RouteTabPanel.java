@@ -333,51 +333,39 @@ public class RouteTabPanel extends JPanel {
         if (entry == null) {
             return;
         }
-
-        final boolean visited = isVisited(entry);
+        boolean v = isVisited(entry);
+        // First check local cache (if you wire this up)
+        if (isLocallyFullyScanned(entry)) {
+            entry.status = v ? ScanStatus.FULLY_DISCOVERED_VISITED : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+            SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
+            return;
+        }
 
         try {
             BodiesScanInfo info = edsmClient.fetchBodiesScanInfo(entry.systemName);
+
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
-            if (info != null && info.bodies != null && !info.bodies.isEmpty()) {
-                boolean anyMissingDiscovery = false;
-                int bodiesWithDiscovery = 0;
 
-                for (BodyDiscoveryInfo bodyInfo : info.bodies) {
-                    if (bodyInfo == null) {
-                        continue;
-                    }
-                    if (bodyInfo.hasDiscoveryCommander) {
-                        bodiesWithDiscovery++;
-                    } else {
-                        anyMissingDiscovery = true;
-                    }
-                }
-
+            if (info != null) {
+                int returnedBodies = (info.bodies == null) ? 0 : info.bodies.size();
                 Integer bodyCount = info.bodyCount;
-                boolean hasBodyCount = bodyCount != null && bodyCount > 0;
-                int returnedBodies = info.bodies.size();
+                boolean hasBodyCount = (bodyCount != null && bodyCount > 0);
 
-                // Purely EDSM-based bodyCount mismatch: EDSM says there should be N bodies,
-                // but it returned a different number.
+                // Mismatch if EDSM says there should be bodies, but the array size differs.
+                // This covers the "bodyCount 19, bodies []" case explicitly.
                 boolean bodyCountMismatch =
-                        hasBodyCount && returnedBodies > 0 && bodyCount.intValue() != returnedBodies;
+                        hasBodyCount && bodyCount.intValue() != returnedBodies;
 
-                if (bodyCountMismatch) {
-                    newStatus = visited
-                            ? ScanStatus.BODYCOUNT_MISMATCH_VISITED
-                            : ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
-                } else if (anyMissingDiscovery) {
-                    newStatus = visited
-                            ? ScanStatus.DISCOVERY_MISSING_VISITED
-                            : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
-                } else if (hasBodyCount && returnedBodies > 0 && bodiesWithDiscovery == returnedBodies) {
-                    // All bodies accounted for and each has a discovery.commander.
-                    newStatus = visited
-                            ? ScanStatus.FULLY_DISCOVERED_VISITED
-                            : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+                if (returnedBodies > 0 && !hasBodyCount) {
+                	newStatus = v ? ScanStatus.DISCOVERY_MISSING_VISITED : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
+                } else if (bodyCountMismatch) {
+                    newStatus = v ? ScanStatus.BODYCOUNT_MISMATCH_VISITED : ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
+                } else if (returnedBodies > 0) {
+                    // We have bodies and bodyCount (if present) matches the array size.
+                    newStatus = v? ScanStatus.FULLY_DISCOVERED_VISITED : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
                 } else {
+                    // No bodies and no usable bodyCount info: leave as UNKNOWN.
                     newStatus = ScanStatus.UNKNOWN;
                 }
             }
@@ -385,7 +373,7 @@ public class RouteTabPanel extends JPanel {
             entry.status = newStatus;
             SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
         } catch (Exception e) {
-            // Network / API errors – leave status as UNKNOWN / previous value.
+            // Network / API errors – leave status as UNKNOWN
             e.printStackTrace();
         }
     }
@@ -415,6 +403,9 @@ public class RouteTabPanel extends JPanel {
         if (entry == null) {
             return false;
         }
+        
+
+        
 
         // Look up cached system by address/name (same pattern as SystemTabPanel)
         SystemCache cache = SystemCache.getInstance();
