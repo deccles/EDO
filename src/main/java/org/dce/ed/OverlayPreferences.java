@@ -12,6 +12,7 @@ import java.util.prefs.Preferences;
  */
 public final class OverlayPreferences {
 
+    private static final String KEY_IS_OVERLAY_TRANSPARENT = "overlay.transparent";
     private static final String KEY_LOG_AUTO = "log.autoDetect";
     private static final String KEY_LOG_CUSTOM_DIR = "log.customDir";
 
@@ -21,6 +22,15 @@ public final class OverlayPreferences {
     private OverlayPreferences() {
     }
 
+    public static boolean isOverlayTransparent() {
+        boolean b = PREFS.getBoolean(KEY_IS_OVERLAY_TRANSPARENT, true);	
+        System.out.println("transparent=" + b);
+        return b;
+    }
+    public static void setOverlayTransparent(boolean transparent) {
+    	System.out.println("setting transparent=" + transparent);
+        PREFS.putBoolean(KEY_IS_OVERLAY_TRANSPARENT, transparent);	
+    }
     public static boolean isAutoLogDir() {
         return PREFS.getBoolean(KEY_LOG_AUTO, true);
     }

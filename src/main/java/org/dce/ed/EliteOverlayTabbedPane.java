@@ -51,11 +51,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 
     public EliteOverlayTabbedPane() {
         super(new BorderLayout());
-        setOpaque(false);
+        
+        boolean opaque = !OverlayPreferences.isOverlayTransparent();
+        
+        setOpaque(opaque);
 
         // ----- Tab bar (row of buttons) -----
         JPanel tabBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
-        tabBar.setOpaque(false);
+        tabBar.setOpaque(opaque);
 
         ButtonGroup group = new ButtonGroup();
 
@@ -77,7 +80,8 @@ public class EliteOverlayTabbedPane extends JPanel {
         // ----- Card area with the actual tab contents -----
         cardLayout = new CardLayout();
         cardPanel = new JPanel(cardLayout);
-        cardPanel.setOpaque(false);
+        cardPanel.setOpaque(opaque);
+        cardPanel.setBackground(Color.black);
         cardPanel.setPreferredSize(new Dimension(400, 1000));
 
         // Create tab content panels
@@ -192,7 +196,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         button.setFocusable(false);
         button.setFont(button.getFont().deriveFont(Font.BOLD, 11f));
         // Slightly translucent dark background so tabs are legible but not huge blocks
-        button.setOpaque(true);
+        button.setOpaque(!OverlayPreferences.isOverlayTransparent());
         button.setBackground(new Color(50, 50, 50, 220));
         button.setForeground(Color.WHITE);
         return button;

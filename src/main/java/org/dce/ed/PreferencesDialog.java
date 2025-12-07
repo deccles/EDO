@@ -1,7 +1,6 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
@@ -17,13 +16,15 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 
 /**
  * Preferences dialog for the overlay.
  */
 public class PreferencesDialog extends JDialog {
+
+    // Overlay-tab fields so OK can read them
+    private JCheckBox overlayTransparentCheckBox;
 
     // Logging-tab fields so OK can read them
     private JCheckBox autoDetectCheckBox;
@@ -87,8 +88,18 @@ public class PreferencesDialog extends JDialog {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.insets = new Insets(4, 4, 4, 4);
 
-        JLabel dummyLabel = new JLabel("Overlay options (stub, to be expanded later).");
-        content.add(dummyLabel, gbc);
+        // Transparency toggle
+        JLabel transparencyLabel = new JLabel("Make overlay mouse-click transparent:");
+        overlayTransparentCheckBox = new JCheckBox();
+        overlayTransparentCheckBox.setOpaque(false);
+
+        // Load current transparency preference
+        boolean transparent = OverlayPreferences.isOverlayTransparent();
+        overlayTransparentCheckBox.setSelected(transparent);
+
+        content.add(transparencyLabel, gbc);
+        gbc.gridx = 1;
+        content.add(overlayTransparentCheckBox, gbc);
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
@@ -193,6 +204,12 @@ public class PreferencesDialog extends JDialog {
     }
 
     private void applyAndSavePreferences() {
+        // Overlay tab
+        if (overlayTransparentCheckBox != null) {
+            OverlayPreferences.setOverlayTransparent(overlayTransparentCheckBox.isSelected());
+        }
+
+        // Logging tab
         if (autoDetectCheckBox != null && customPathField != null) {
             boolean auto = autoDetectCheckBox.isSelected();
             OverlayPreferences.setAutoLogDir(auto);
