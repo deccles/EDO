@@ -12,8 +12,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;       // NEW
 
+import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 
@@ -43,7 +43,7 @@ public final class SystemCache {
     private final Map<String, CachedSystem> byName = new HashMap<>();
 
     private boolean loaded = false;
-
+    
     private SystemCache() {
         this.gson = new GsonBuilder()
                 .setPrettyPrinting()
@@ -275,4 +275,111 @@ public final class SystemCache {
             // ignore; cache is best-effort
         }
     }
+    
+    /**
+     * Merge discovery information (from EDSM or other sources) into the
+     * current SystemState, keyed by full body name.
+     *
+     * If a body already has a discoveryCommander set, we leave it alone.
+     * If EDSM says "this body has some discovery commander", we set a
+     * placeholder so that downstream logic can treat it as "discovered".
+     */
+    public void mergeDiscoveryFlags(SystemState state, Map<String, Boolean> discoveryFlagsByBodyName) {
+        if (state == null || discoveryFlagsByBodyName == null || discoveryFlagsByBodyName.isEmpty()) {
+            return;
+        }
+
+        for (BodyInfo b : state.getBodies().values()) {
+            Boolean has = discoveryFlagsByBodyName.get(b.getName());
+            if (has == null || !has.booleanValue()) {
+                continue;
+            }
+
+            String existing = b.getDiscoveryCommander();
+            if (existing == null || existing.isEmpty()) {
+                // We don't know the actual name from EDSM and don't care;
+                // we just need "some discovery commander exists".
+                b.setDiscoveryCommander("EDSM");
+            }
+        }
+    }
+
+    
+    
+    
+    
+    /**
+     * Merge EDSM bodies/discovery info into the current SystemState.
+     *
+     * Currently EdsmClient.BodiesScanInfo only exposes:
+     *   - bodyCount
+     *   - per-body name
+     *   - per-body hasDiscoveryCommander
+     *
+     * So we:
+     *   - fill state.totalBodies from EDSM when missing
+     *   - for any existing BodyInfo with the same name, if it has no
+     *     discoveryCommander yet and EDSM says there is one, mark it "EDSM".
+     */
+    public void mergeEdsmBodies(SystemState state, EdsmClient.BodiesScanInfo edsmInfo) {
+        if (state == null || edsmInfo == null) {
+            return;
+        }
+
+        // Use EDSM bodyCount if we don't already know it
+        if (state.getTotalBodies() == null && edsmInfo.bodyCount != null) {
+            state.setTotalBodies(edsmInfo.bodyCount);
+        }
+
+        if (edsmInfo.bodies == null || edsmInfo.bodies.isEmpty()) {
+            return;
+        }
+
+        Map<Integer, BodyInfo> bodies = state.getBodies();
+        if (bodies == null || bodies.isEmpty()) {
+            // Right now we only decorate existing bodies; we don't invent new
+            // BodyInfo instances because we don't have IDs or physical data.
+            return;
+        }
+
+        for (BodyInfo local : bodies.values()) {
+            String localName = local.getName();
+            if (localName == null || localName.isEmpty()) {
+                continue;
+            }
+
+            boolean hasDiscovery = false;
+            for (EdsmClient.BodyDiscoveryInfo edsmBody : edsmInfo.bodies) {
+                if (localName.equals(edsmBody.name)) {
+                    hasDiscovery = edsmBody.hasDiscoveryCommander;
+                    break;
+                }
+            }
+
+            if (hasDiscovery) {
+                String existingCmdr = local.getDiscoveryCommander();
+                if (existingCmdr == null || existingCmdr.isEmpty()) {
+                    local.setDiscoveryCommander("EDSM");
+                }
+            }
+        }
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }
