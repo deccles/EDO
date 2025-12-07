@@ -21,6 +21,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -82,17 +83,27 @@ public class RouteTabPanel extends JPanel {
             new StatusCircleIcon(STATUS_GRAY, "?");
 
     // Column indexes
-    private static final int COL_INDEX    = 0;
-    private static final int COL_SYSTEM   = 1;
-    private static final int COL_CLASS    = 2;
-    private static final int COL_STATUS   = 3;
-    private static final int COL_DISTANCE = 4;
+    private static final int COL_MARKER    = 0;
+    private static final int COL_INDEX    = 1;
+    private static final int COL_SYSTEM   = 2;
+    private static final int COL_CLASS    = 3;
+    private static final int COL_STATUS   = 4;
+    private static final int COL_DISTANCE = 5;
 
     private final JLabel headerLabel;
-    private final JTable table;
+    private JTable table=null;
     private final RouteTableModel tableModel;
     private final EdsmClient edsmClient;
 
+    private String currentSystemName = null;
+    private String pendingJumpSystemName = null;
+    private boolean jumpFlashOn = true;
+    private final Timer jumpFlashTimer = new Timer(500, e -> {
+        jumpFlashOn = !jumpFlashOn;
+        table.repaint();
+    });
+
+    
     public RouteTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
@@ -157,6 +168,10 @@ public class RouteTabPanel extends JPanel {
         };
         table.setDefaultRenderer(Object.class, defaultRenderer);
 
+        table.getColumnModel().getColumn(COL_MARKER).setCellRenderer(new MarkerRenderer());
+        table.getColumnModel().getColumn(COL_MARKER).setMaxWidth(20);
+        table.getColumnModel().getColumn(COL_MARKER).setPreferredWidth(20);
+        
         // Status column uses a special renderer for the check / ? glyphs
         table.getColumnModel()
              .getColumn(COL_STATUS)
@@ -216,6 +231,14 @@ public class RouteTabPanel extends JPanel {
         add(headerLabel, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
 
+        SwingUtilities.invokeLater(() -> {
+            TableColumnModel cols = table.getColumnModel();
+            cols.getColumn(COL_MARKER).setMinWidth(20);
+            cols.getColumn(COL_MARKER).setMaxWidth(20);
+            cols.getColumn(COL_MARKER).setPreferredWidth(20);
+        });
+
+        
         reloadFromNavRouteFile();
     }
 
@@ -236,6 +259,23 @@ public class RouteTabPanel extends JPanel {
             || event instanceof NavRouteClearEvent) {
             reloadFromNavRouteFile();
         }
+        
+        if (event instanceof EliteLogEvent.LocationEvent loc) {
+            currentSystemName = loc.getStarSystem();
+            pendingJumpSystemName = null;
+        }
+
+        if (event instanceof EliteLogEvent.FsdJumpEvent jump) {
+            currentSystemName = jump.getStarSystem();
+            pendingJumpSystemName = null;
+        }
+
+        if (event instanceof EliteLogEvent.StartJumpEvent sj) {
+        	System.out.println("Start jump event!");
+            pendingJumpSystemName = sj.getStarSystem();
+            jumpFlashTimer.start();
+        }
+
     }
 
     private void reloadFromNavRouteFile() {
@@ -518,12 +558,14 @@ public class RouteTabPanel extends JPanel {
 
         @Override
         public int getColumnCount() {
-            return 5;
+            return 6; // +1 for marker column
         }
 
         @Override
         public String getColumnName(int column) {
             switch (column) {
+            	case COL_MARKER: 
+            		return "";
                 case COL_INDEX:
                     return "#";
                 case COL_SYSTEM:
@@ -543,6 +585,8 @@ public class RouteTabPanel extends JPanel {
         public Object getValueAt(int rowIndex, int columnIndex) {
             RouteEntry e = entries.get(rowIndex);
             switch (columnIndex) {
+            	case COL_MARKER:
+            		return null;
                 case COL_INDEX:
                     return Integer.valueOf(e.index);
                 case COL_SYSTEM:
@@ -692,6 +736,49 @@ public class RouteTabPanel extends JPanel {
 
 
             return label;
+        }
+    }
+    private class MarkerRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table, Object value, boolean isSelected,
+                boolean hasFocus, int row, int column) {
+
+            JLabel l = (JLabel) super.getTableCellRendererComponent(
+                    table, "", false, false, row, column);
+            l.setHorizontalAlignment(SwingConstants.CENTER);
+
+            String system = (String) table.getValueAt(row, 2); // YOUR system column
+
+            Icon icon = null;
+
+            if (system != null) {
+                if (system.equals(currentSystemName)) {
+                    icon = new TriangleIcon(Color.ORANGE, 10, 10);
+                } else if (system.equals(pendingJumpSystemName) && jumpFlashOn) {
+                    icon = new TriangleIcon(Color.ORANGE, 10, 10);
+                }
+            }
+
+            l.setIcon(icon);
+            return l;
+        }
+    }
+    private static class TriangleIcon implements Icon {
+        private final Color color;
+        private final int w, h;
+
+        TriangleIcon(Color c, int w, int h) { this.color = c; this.w = w; this.h = h; }
+
+        public int getIconWidth() { return w; }
+        public int getIconHeight() { return h; }
+
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setColor(color);
+            int[] xs = { x, x, x + w };
+            int[] ys = { y, y + h, y + h/2 };
+            g2.fillPolygon(xs, ys, 3);
         }
     }
 
