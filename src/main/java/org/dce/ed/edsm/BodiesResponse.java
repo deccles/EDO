@@ -16,6 +16,10 @@ public class BodiesResponse {
     /** List of celestial bodies (stars, planets, moons, etc.) */
     public List<Body> bodies;
 
+    public static class Discovery {
+    	public String commander;
+    	String date;
+    }
     public static class Body {
         public long id;
         public String name;
@@ -24,7 +28,13 @@ public class BodiesResponse {
         public String type;          // "Star" or "Planet"
         public String subType;       // e.g. "B (Blue-White) Star", "High metal content world"
 
-        public String discoveryCommander;
+//		"discovery": {
+//			"commander": "Azotox",
+//			"date": "2025-01-14 14:58:02"
+//		},
+        
+        public Discovery discovery;
+        
         public Double distanceToArrival;
         public Boolean isMainStar;
         public Boolean isScoopable;
@@ -60,6 +70,7 @@ public class BodiesResponse {
 
         // Rings if present
         public List<Ring> rings;
+		public Double surfaceGravity;
 
         public static class Ring {
             public String name;

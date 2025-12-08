@@ -29,14 +29,13 @@ import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
+import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
-import org.dce.ed.edsm.EdsmClient.BodiesScanInfo;
-import org.dce.ed.edsm.EdsmClient.BodyDiscoveryInfo;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdTargetEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
-import org.dce.ed.logreader.EliteLogFileLocator;
+import org.dce.ed.logreader.EliteLogEvent.StatusEvent;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 
@@ -270,10 +269,14 @@ public class RouteTabPanel extends JPanel {
             pendingJumpSystemName = null;
         }
 
-        if (event instanceof EliteLogEvent.StartJumpEvent sj) {
-        	System.out.println("Start jump event!");
-            pendingJumpSystemName = sj.getStarSystem();
-            jumpFlashTimer.start();
+        if (event instanceof EliteLogEvent.StatusEvent sj) {
+        	StatusEvent se = (StatusEvent)sj;
+        	
+        	if (se.isFsdCharging()) {
+        		System.out.println("Start jump event!");
+        		pendingJumpSystemName = se.getDestinationName();
+        		jumpFlashTimer.start();
+        	}
         }
 
     }
@@ -374,38 +377,55 @@ public class RouteTabPanel extends JPanel {
             return;
         }
         boolean v = isVisited(entry);
+
         // First check local cache (if you wire this up)
         if (isLocallyFullyScanned(entry)) {
-            entry.status = v ? ScanStatus.FULLY_DISCOVERED_VISITED : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+            entry.status = v
+                    ? ScanStatus.FULLY_DISCOVERED_VISITED
+                    : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
             SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
             return;
         }
 
         try {
-            BodiesScanInfo info = edsmClient.fetchBodiesScanInfo(entry.systemName);
+            BodiesResponse bodies = edsmClient.showBodies(entry.systemName);
 
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
+            if (entry.systemName.equals("Ploea Eurl EK-J c24-1")) {
+            	System.out.println("Found it");
+            }
+            if (bodies != null && bodies.bodies != null) {
+                int returnedBodies = bodies.bodies.size();
+                boolean hasBodies = returnedBodies > 0;
 
-            if (info != null) {
-                int returnedBodies = (info.bodies == null) ? 0 : info.bodies.size();
-                Integer bodyCount = info.bodyCount;
-                boolean hasBodyCount = (bodyCount != null && bodyCount > 0);
+                boolean anyMissingDiscovery = false;
+                if (hasBodies) {
+                    for (BodiesResponse.Body b : bodies.bodies) {
+                        String commander = null;
+                        
+                        if (b.discovery != null && b.discovery.commander != null) {
+                        	commander = b.discovery.commander;
+                        }
+                        if (commander == null || commander.isBlank()) {
+                            anyMissingDiscovery = true;
+                            break;
+                        }
+                    }
+                }
 
-                // Mismatch if EDSM says there should be bodies, but the array size differs.
-                // This covers the "bodyCount 19, bodies []" case explicitly.
-                boolean bodyCountMismatch =
-                        hasBodyCount && bodyCount.intValue() != returnedBodies;
-
-                if (returnedBodies > 0 && !hasBodyCount) {
-                	newStatus = v ? ScanStatus.DISCOVERY_MISSING_VISITED : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
-                } else if (bodyCountMismatch) {
-                    newStatus = v ? ScanStatus.BODYCOUNT_MISMATCH_VISITED : ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
-                } else if (returnedBodies > 0) {
-                    // We have bodies and bodyCount (if present) matches the array size.
-                    newStatus = v? ScanStatus.FULLY_DISCOVERED_VISITED : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+                if (hasBodies) {
+                    if (anyMissingDiscovery) {
+                        newStatus = v
+                                ? ScanStatus.DISCOVERY_MISSING_VISITED
+                                : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
+                    } else {
+                        newStatus = v
+                                ? ScanStatus.FULLY_DISCOVERED_VISITED
+                                : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+                    }
                 } else {
-                    // No bodies and no usable bodyCount info: leave as UNKNOWN.
+                    // No bodies at all: leave as UNKNOWN
                     newStatus = ScanStatus.UNKNOWN;
                 }
             }

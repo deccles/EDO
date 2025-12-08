@@ -1,6 +1,5 @@
 package org.dce.ed.state;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +40,8 @@ public class BodyInfo {
     private Double surfaceTempK;
     private String volcanism;
 
+    Double axialTilt;
+    Double radius;
     // Derived biological prediction data
     private List<ExobiologyData.BioCandidate> predictions;
 
@@ -305,6 +306,14 @@ public class BodyInfo {
 
 	public boolean isHasGeo() {
 		return hasGeo;
+	}
+
+	public void setAxialTilt(Double axialTilt) {
+		this.axialTilt = axialTilt;
+	}
+
+	public void setRadius(Double radius) {
+		this.radius = radius;
 	}
 
 }

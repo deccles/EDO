@@ -27,6 +27,7 @@ import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
 import org.dce.ed.logreader.EliteLogEvent.StartJumpEvent;
+import org.dce.ed.logreader.EliteLogEvent.StatusEvent;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -141,13 +142,19 @@ public class EliteOverlayTabbedPane extends JPanel {
         
         // Hook live journal monitoring into System tab (existing behavior)
         try {
-            org.dce.ed.logreader.LiveJournalMonitor monitor =
-                    org.dce.ed.logreader.LiveJournalMonitor.getInstance();
+            org.dce.ed.logreader.LiveJournalMonitor monitor = org.dce.ed.logreader.LiveJournalMonitor.getInstance();
 
             monitor.addListener(event -> {
             	
             	this.handleLogEvent(event);
             	
+                if (event instanceof StatusEvent) {
+                	StatusEvent flagEvent = (StatusEvent)event;
+                	
+                	System.out.println("FSD Charging: " + flagEvent.isFsdHyperdriveCharging() + " " + flagEvent.isFsdCharging());
+                	showRouteTabFromStatusWatcher();
+                }
+                
                 // Log tab (if you added a live handler there)
                  logTab.handleLogEvent(event);
 

@@ -257,12 +257,67 @@ public class EliteLogParser {
         String legalState = getString(obj, "LegalState");
         long balance = obj.has("Balance") ? obj.get("Balance").getAsLong() : 0L;
 
+        // Extra Status.json fields
+        Double latitude = obj.has("Latitude") && !obj.get("Latitude").isJsonNull()
+                ? obj.get("Latitude").getAsDouble()
+                : null;
+        Double longitude = obj.has("Longitude") && !obj.get("Longitude").isJsonNull()
+                ? obj.get("Longitude").getAsDouble()
+                : null;
+        Double altitude = obj.has("Altitude") && !obj.get("Altitude").isJsonNull()
+                ? obj.get("Altitude").getAsDouble()
+                : null;
+        Double heading = obj.has("Heading") && !obj.get("Heading").isJsonNull()
+                ? obj.get("Heading").getAsDouble()
+                : null;
+        String bodyName = getString(obj, "BodyName");
+        Double planetRadius = obj.has("PlanetRadius") && !obj.get("PlanetRadius").isJsonNull()
+                ? obj.get("PlanetRadius").getAsDouble()
+                : null;
+
+        // Destination
+        Long destSystem = null;
+        Integer destBody = null;
+        String destName = null;
+        if (obj.has("Destination") && obj.get("Destination").isJsonObject()) {
+            JsonObject dest = obj.getAsJsonObject("Destination");
+            if (dest.has("System") && !dest.get("System").isJsonNull()) {
+                try {
+                    destSystem = dest.get("System").getAsLong();
+                } catch (Exception ignored) { }
+            }
+            if (dest.has("Body") && !dest.get("Body").isJsonNull()) {
+                try {
+                    destBody = dest.get("Body").getAsInt();
+                } catch (Exception ignored) { }
+            }
+            if (dest.has("Name") && !dest.get("Name").isJsonNull()) {
+                destName = dest.get("Name").getAsString();
+            }
+        }
+
         return new EliteLogEvent.StatusEvent(
-                ts, obj,
-                flags, flags2,
-                pips, fireGroup, guiFocus,
-                fuelMain, fuelReservoir,
-                cargo, legalState, balance
+                ts,
+                obj,
+                flags,
+                flags2,
+                pips,
+                fireGroup,
+                guiFocus,
+                fuelMain,
+                fuelReservoir,
+                cargo,
+                legalState,
+                balance,
+                latitude,
+                longitude,
+                altitude,
+                heading,
+                bodyName,
+                planetRadius,
+                destSystem,
+                destBody,
+                destName
         );
     }
     private EliteLogEvent.ScanOrganicEvent parseScanOrganic(Instant ts, JsonObject json) {

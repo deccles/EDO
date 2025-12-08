@@ -9,10 +9,8 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 import javax.swing.JLabel;
@@ -32,6 +30,7 @@ import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
+import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteJournalReader;
@@ -241,6 +240,8 @@ public class SystemTabPanel extends JPanel {
             	loadSystem(e.getStarSystem(), e.getSystemAddress());
             	rebuildTable();
             }
+
+            rebuildTable();
             persistIfPossible();
         }
     }
@@ -282,33 +283,32 @@ public class SystemTabPanel extends JPanel {
         SystemCache cache = SystemCache.getInstance();
         CachedSystem cs = cache.get(systemAddress, systemName);
 
+        // Start from a clean state for this system.
+        state.setSystemName(systemName);
+        state.setSystemAddress(systemAddress);
+        state.resetBodies();
+        state.setTotalBodies(null);
+        state.setNonBodyCount(null);
+        state.setFssProgress(null);
+        state.setAllBodiesFound(null);
+
+        // 1) Load from cache if we have it
         if (cs != null) {
-            // Loads systemName, address, bodies, totals, etc.
             cache.loadInto(state, cs);
-        } else {
-            // No cache entry yet – start with a clean state for this system
-            state.setSystemName(systemName);
-            state.setSystemAddress(systemAddress);
-            state.resetBodies();
-            state.setTotalBodies(null);
-            state.setNonBodyCount(null);
-            state.setFssProgress(null);
-            state.setAllBodiesFound(null);
         }
 
-        // Always try to enrich with EDSM data, whether or not we had cache
+        // 2) Always try to enrich with EDSM via a single bodies call
         try {
-            EdsmClient.BodiesScanInfo edsmInfo =
-                    edsmClient.fetchBodiesScanInfo(systemName);
-
-            if (edsmInfo != null) {
-                cache.mergeEdsmBodies(state, edsmInfo);
+            BodiesResponse edsmBodies = edsmClient.showBodies(systemName);
+            if (edsmBodies != null) {
+                edsmClient.mergeBodiesFromEdsm(state, edsmBodies);
             }
         } catch (Exception ex) {
-            // EDSM is best-effort; don't break the overlay if it fails
+            // EDSM is best-effort; overlay should still work from cache/logs.
             ex.printStackTrace();
         }
 
+        // 3) Refresh UI and persist merged result
         rebuildTable();
         persistIfPossible();
     }
@@ -497,39 +497,6 @@ public class SystemTabPanel extends JPanel {
         }
 
         tableModel.setRows(rows);
-    }
-
-    /**
-     * When a system is loaded from the cache, pull discovery info from EDSM
-     * and merge "has discovery commander" flags into our SystemState.
-     */
-    private void mergeEdsmDiscovery(String systemName) {
-        if (systemName == null || systemName.isBlank()) {
-            return;
-        }
-
-        try {
-            EdsmClient.BodiesScanInfo bodiesScanInfo = edsmClient.fetchBodiesScanInfo(systemName);
-
-            if (bodiesScanInfo == null || bodiesScanInfo.bodies == null
-                    || bodiesScanInfo.bodies.isEmpty()) {
-                return;
-            }
-
-            Map<String, Boolean> discoveryMap = new HashMap<>();
-            for (EdsmClient.BodyDiscoveryInfo info : bodiesScanInfo.bodies) {
-                if (info.name != null && !info.name.isEmpty()) {
-                    discoveryMap.put(info.name, info.hasDiscoveryCommander);
-                }
-            }
-
-            if (!discoveryMap.isEmpty()) {
-                SystemCache.getInstance().mergeDiscoveryFlags(state, discoveryMap);
-            }
-        } catch (Exception ex) {
-            // EDSM is best-effort; if it fails we still have the cached data
-            ex.printStackTrace();
-        }
     }
 
     public static String firstWord(String s) {

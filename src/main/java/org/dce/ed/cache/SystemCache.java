@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
@@ -196,6 +197,90 @@ public final class SystemCache {
             state.getBodies().put(info.getBodyId(), info);
         }
     }
+    /**
+     * Merge EDSM bodies information into the current SystemState.
+     *
+     * We treat BodiesResponse as the single source of truth for what EDSM
+     * knows about this system and enrich our local SystemState where we
+     * have gaps (bodyCount, discovery commander, some physical attributes).
+     *
+     * This does NOT create new BodyInfo entries yet; it only decorates
+     * bodies that already exist in the SystemState and matches by name.
+     */
+    public void mergeBodiesFromEdsm(SystemState state, BodiesResponse edsm) {
+        if (state == null || edsm == null) {
+            return;
+        }
+
+        // If we don't already know how many bodies there are, use EDSM's list size.
+        if (state.getTotalBodies() == null && edsm.bodies != null) {
+            state.setTotalBodies(edsm.bodies.size());
+        }
+
+        if (edsm.bodies == null || edsm.bodies.isEmpty()) {
+            return;
+        }
+
+        Map<Integer, BodyInfo> localBodies = state.getBodies();
+        if (localBodies == null || localBodies.isEmpty()) {
+            // For now we only enrich existing bodies (from logs/cache).
+            return;
+        }
+
+        for (BodyInfo local : localBodies.values()) {
+            String localName = local.getName();
+            if (localName == null || localName.isEmpty()) {
+                continue;
+            }
+
+            BodiesResponse.Body remote = null;
+            for (BodiesResponse.Body b : edsm.bodies) {
+                if (localName.equals(b.name)) {
+                    remote = b;
+                    break;
+                }
+            }
+            if (remote == null) {
+                continue;
+            }
+
+            // ----- Discovery commander -----
+            String existingCmdr = local.getDiscoveryCommander();
+            if ((existingCmdr == null || existingCmdr.isEmpty())
+                    && remote.discovery.commander != null
+                    && !remote.discovery.commander.isEmpty()) {
+                local.setDiscoveryCommander(remote.discovery.commander);
+            }
+
+            // ----- Distance to arrival (Ls) -----
+//            if (local.getDistanceLs() == null && remote.distanceToArrival != null) {
+                local.setDistanceLs(remote.distanceToArrival);
+//            }
+
+            // ----- Surface temperature (K) -----
+            if (local.getSurfaceTempK() == null && remote.surfaceTemperature != null) {
+                local.setSurfaceTempK(remote.surfaceTemperature);
+            }
+
+            // ----- Volcanism string -----
+            if (local.getVolcanism() == null
+                    && remote.volcanismType != null
+                    && !remote.volcanismType.isEmpty()) {
+                local.setVolcanism(remote.volcanismType);
+            }
+
+            // ----- Atmosphere description -----
+            if (local.getAtmosphere() == null
+                    && remote.atmosphereType != null
+                    && !remote.atmosphereType.isEmpty()) {
+                local.setAtmosphere(remote.atmosphereType);
+            }
+
+            // NOTE: we intentionally do NOT touch landable / gravity / etc yet,
+            // because BodyInfo may already be populated from logs and we don't
+            // have a clear "unknown" sentinel. Easy to extend later if you want.
+        }
+    }
 
     public void storeSystem(SystemState state) {
         if (state == null || state.getSystemName() == null || state.getSystemAddress() == 0L) {
@@ -304,65 +389,5 @@ public final class SystemCache {
         }
     }
 
-    
-    
-    
-    
-    /**
-     * Merge EDSM bodies/discovery info into the current SystemState.
-     *
-     * Currently EdsmClient.BodiesScanInfo only exposes:
-     *   - bodyCount
-     *   - per-body name
-     *   - per-body hasDiscoveryCommander
-     *
-     * So we:
-     *   - fill state.totalBodies from EDSM when missing
-     *   - for any existing BodyInfo with the same name, if it has no
-     *     discoveryCommander yet and EDSM says there is one, mark it "EDSM".
-     */
-    public void mergeEdsmBodies(SystemState state, EdsmClient.BodiesScanInfo edsmInfo) {
-        if (state == null || edsmInfo == null) {
-            return;
-        }
-
-        // Use EDSM bodyCount if we don't already know it
-        if (state.getTotalBodies() == null && edsmInfo.bodyCount != null) {
-            state.setTotalBodies(edsmInfo.bodyCount);
-        }
-
-        if (edsmInfo.bodies == null || edsmInfo.bodies.isEmpty()) {
-            return;
-        }
-
-        Map<Integer, BodyInfo> bodies = state.getBodies();
-        if (bodies == null || bodies.isEmpty()) {
-            // Right now we only decorate existing bodies; we don't invent new
-            // BodyInfo instances because we don't have IDs or physical data.
-            return;
-        }
-
-        for (BodyInfo local : bodies.values()) {
-            String localName = local.getName();
-            if (localName == null || localName.isEmpty()) {
-                continue;
-            }
-
-            boolean hasDiscovery = false;
-            for (EdsmClient.BodyDiscoveryInfo edsmBody : edsmInfo.bodies) {
-                if (localName.equals(edsmBody.name)) {
-                    hasDiscovery = edsmBody.hasDiscoveryCommander;
-                    break;
-                }
-            }
-
-            if (hasDiscovery) {
-                String existingCmdr = local.getDiscoveryCommander();
-                if (existingCmdr == null || existingCmdr.isEmpty()) {
-                    local.setDiscoveryCommander("EDSM");
-                }
-            }
-        }
-    }
     
 }

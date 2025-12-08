@@ -1,7 +1,5 @@
 package org.dce.ed.logreader;
 
-import java.io.IOException;
-import java.nio.file.Path;
 import java.util.List;
 
 public class LogPrinter {

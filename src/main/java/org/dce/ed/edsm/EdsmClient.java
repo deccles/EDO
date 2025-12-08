@@ -9,7 +9,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
+import org.dce.ed.state.BodyInfo;
+import org.dce.ed.state.SystemState;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -42,6 +47,13 @@ public class EdsmClient {
         return lastRawJson;
     }
 
+    public static void main(String args[]) throws IOException, InterruptedException {
+    	EdsmClient client = new EdsmClient();
+    	
+    	BodiesResponse showBodies = client.showBodies("Ploea Eurl PA-Z b45-0");
+    	
+    	System.out.println(showBodies);
+    }
 
     private <T> T get(String url, Class<T> clazz) throws IOException, InterruptedException {
         HttpRequest req = HttpRequest.newBuilder()
@@ -143,134 +155,6 @@ public class EdsmClient {
         		+ "&showInformation=1";
         return get(url, BodiesResponse.class);
     }
-
-    /**
-     * Lightweight summary of EDSM body discovery for a system.
-     * Parses bodyCount and discovery.commander flags from the /bodies endpoint.
-     *
-     * NOTE: This does not try to decide *who* the commander is – only whether the
-     * discovery.commander field is present and non-empty.
-     */
-    /**
-     * Lightweight summary of EDSM body discovery for a system.
-     * Parses bodyCount and discovery.commander flags from the /bodies endpoint.
-     *
-     * NOTE: This does not try to decide *who* the commander is – only whether the
-     * discovery.commander field is present and non-empty.
-     */
-    public static final class BodiesScanInfo {
-        public final Integer bodyCount;
-        public final java.util.List<BodyDiscoveryInfo> bodies;
-
-        public BodiesScanInfo(Integer bodyCount, java.util.List<BodyDiscoveryInfo> bodies) {
-            this.bodyCount = bodyCount;
-            this.bodies = bodies;
-        }
-    }
-
-    public static final class BodyDiscoveryInfo {
-        public final String name;
-        public final boolean hasDiscoveryCommander;
-
-        public BodyDiscoveryInfo(String name, boolean hasDiscoveryCommander) {
-            this.name = name;
-            this.hasDiscoveryCommander = hasDiscoveryCommander;
-        }
-    }
-
-    /**
-     * Fetches EDSM bodyCount and per-body discovery.commander presence for a system
-     * identified by name. Bodies are matched by name, not ID.
-     */
-    public BodiesScanInfo fetchBodiesScanInfo(String systemName) throws IOException, InterruptedException {
-        if (systemName == null || systemName.isEmpty()) {
-            return null;
-        }
-
-        String url = BASE_URL + "/api-system-v1/bodies?systemName=" + encode(systemName)
-                + "&showInformation=1";
-
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "EDO-Tool")
-                .GET()
-                .build();
-
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        String body = resp.body();
-
-        // Remember the raw JSON for the query tool
-        lastRawJson = body;
-
-        if (body == null || body.isEmpty()) {
-            return null;
-        }
-
-        JsonElement root = JsonParser.parseString(body);
-        if (!root.isJsonObject()) {
-            return null;
-        }
-
-        JsonObject obj = root.getAsJsonObject();
-
-        Integer bodyCount = null;
-        if (obj.has("bodyCount") && !obj.get("bodyCount").isJsonNull()) {
-            try {
-                bodyCount = obj.get("bodyCount").getAsInt();
-            } catch (Exception ex) {
-                // leave as null if not an integer
-            }
-        }
-
-        java.util.List<BodyDiscoveryInfo> result = new java.util.ArrayList<>();
-
-        JsonArray bodiesArr = obj.getAsJsonArray("bodies");
-        if (bodiesArr != null) {
-            for (JsonElement el : bodiesArr) {
-                if (!el.isJsonObject()) {
-                    continue;
-                }
-                JsonObject bo = el.getAsJsonObject();
-
-                String name = null;
-                JsonElement nameEl = bo.get("name");
-                if (nameEl != null && !nameEl.isJsonNull()) {
-                    try {
-                        name = nameEl.getAsString();
-                    } catch (Exception ex) {
-                        // ignore badly-typed names
-                    }
-                }
-                if (name == null) {
-                    // We need the name to be able to match bodies by name.
-                    continue;
-                }
-
-                boolean hasDiscoveryCommander = false;
-                JsonElement discoveryEl = bo.get("discovery");
-                if (discoveryEl != null && discoveryEl.isJsonObject()) {
-                    JsonObject disc = discoveryEl.getAsJsonObject();
-                    JsonElement cmdEl = disc.get("commander");
-                    if (cmdEl != null && !cmdEl.isJsonNull()) {
-                        try {
-                            String commander = cmdEl.getAsString();
-                            if (commander != null && !commander.isBlank()) {
-                                hasDiscoveryCommander = true;
-                            }
-                        } catch (Exception ex) {
-                            // ignore if commander isn't a string
-                        }
-                    }
-                }
-
-                result.add(new BodyDiscoveryInfo(name, hasDiscoveryCommander));
-            }
-        }
-
-        return new BodiesScanInfo(bodyCount, result);
-    }
-
-
 
     // ----------------- Stations (new) -----------------
 
@@ -599,5 +483,152 @@ public class EdsmClient {
 
         return gson.fromJson(arr.get(0), SystemResponse.class);
     }
+
+    /**
+     * Merge EDSM bodies information into the current SystemState.
+     *
+     * We treat BodiesResponse as the single source of truth for what EDSM
+     * knows about this system and enrich our local SystemState where we
+     * have gaps (bodyCount, discovery commander, and physical attributes).
+     *
+     * This WILL create new BodyInfo entries for bodies that only exist in
+     * EDSM. Those are given synthetic negative bodyIds to avoid clashing
+     * with Journal BodyIDs.
+     */
+    public void mergeBodiesFromEdsm(SystemState state, BodiesResponse edsm) {
+        if (state == null || edsm == null || edsm.bodies == null || edsm.bodies.isEmpty()) {
+            return;
+        }
+
+        // Update total body count if unknown
+        if (state.getTotalBodies() == null) {
+            state.setTotalBodies(edsm.bodies.size());
+        }
+
+        Map<Integer, BodyInfo> localBodies = state.getBodies();
+        if (localBodies == null) {
+            return;
+        }
+
+        // Build quick access by ID and name
+        Map<Integer, BodyInfo> byId = new HashMap<>();
+        Map<String, BodyInfo> byName = new HashMap<>();
+
+        for (BodyInfo bi : localBodies.values()) {
+//            if (bi.getBodyId() != null) {
+                byId.put(bi.getBodyId(), bi);
+//            }
+
+            if (bi.getName() != null && !bi.getName().isEmpty()) {
+                byName.put(strip(bi.getName()), bi);
+            }
+        }
+
+        // Determine next synthetic ID
+        int nextSyntheticId = -1;
+        for (Integer id : localBodies.keySet()) {
+            if (id != null && id < nextSyntheticId) {
+                nextSyntheticId = id;
+            }
+        }
+        if (nextSyntheticId > -1) {
+            nextSyntheticId = -1;
+        } else {
+            nextSyntheticId = nextSyntheticId - 1;
+        }
+
+        // ----- MAIN MERGE LOOP -----
+        for (BodiesResponse.Body remote : edsm.bodies) {
+            if (remote == null) continue;
+
+            BodyInfo local = null;
+
+            // 1) BEST: match by EDSM body ID
+            if ( byId.containsKey(remote.id)) {
+                local = byId.get(remote.id);
+            }
+
+            // 2) FALLBACK: match by normalized name
+            if (local == null && remote.name != null) {
+                String rn = strip(remote.name);
+                if (byName.containsKey(rn)) {
+                    local = byName.get(rn);
+                }
+            }
+
+            // 3) If still null → create new BodyInfo
+            if (local == null) {
+                local = new BodyInfo();
+                local.setBodyId(nextSyntheticId);
+                local.setName(remote.name);  // EDSM names are canonical
+                localBodies.put(nextSyntheticId, local);
+                byId.put(nextSyntheticId, local);
+                byName.put(strip(remote.name), local);
+                nextSyntheticId--;
+            }
+
+            // ---------- MERGE FIELDS ----------
+
+            // Discovery commander
+            if ((local.getDiscoveryCommander() == null || local.getDiscoveryCommander().isEmpty()) &&
+                remote.discovery!= null && remote.discovery.commander != null
+                && remote.discovery.commander.length() > 0) {
+
+                local.setDiscoveryCommander(remote.discovery.commander);
+            }
+
+            // Distance to arrival (ls)
+            if (remote.distanceToArrival != null) {
+                local.setDistanceLs(remote.distanceToArrival);
+            }
+
+            // Landable
+            if (remote.isLandable != null) {
+                local.setLandable(remote.isLandable);
+            }
+
+            // Gravity
+            if (remote.surfaceGravity != null) {
+                local.setGravityMS(remote.surfaceGravity);
+            }
+
+            // Surface temperature
+            if (remote.surfaceTemperature != null) {
+                local.setSurfaceTempK(remote.surfaceTemperature);
+            }
+
+            // Atmosphere description
+            if (remote.atmosphereType != null && !remote.atmosphereType.isEmpty()) {
+                local.setAtmosphere(remote.atmosphereType);
+            }
+
+            // Volcanism / geology
+            if (remote.volcanismType != null && !remote.volcanismType.isEmpty()) {
+                local.setVolcanism(remote.volcanismType);
+            }
+
+            // Axial tilt
+            if (remote.axialTilt != null) {
+                local.setAxialTilt(remote.axialTilt);
+            }
+
+            // Radius (if your BodyInfo stores radius)
+            if (remote.radius != null) {
+                local.setRadius(remote.radius);
+            }
+
+            // Rings (if desired)
+            // if (remote.rings != null) {
+            //     local.setRings(remote.rings);
+            // }
+        }
+    }
+
+    /** Utility to normalize names */
+    private static String strip(String s) {
+        return s == null ? "" : s.replaceAll("\\s+", "").toLowerCase();
+    }
+
+
 
 }
