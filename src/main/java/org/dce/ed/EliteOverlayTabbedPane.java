@@ -151,8 +151,8 @@ public class EliteOverlayTabbedPane extends JPanel {
                 if (event instanceof StatusEvent) {
                 	StatusEvent flagEvent = (StatusEvent)event;
                 	
-                	System.out.println("FSD Charging: " + flagEvent.isFsdHyperdriveCharging() + " " + flagEvent.isFsdCharging());
-                	showRouteTabFromStatusWatcher();
+                	if (flagEvent.isFsdCharging())
+                		showRouteTabFromStatusWatcher();
                 }
                 
                 // Log tab (if you added a live handler there)

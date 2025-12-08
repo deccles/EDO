@@ -176,7 +176,7 @@ public final class LiveJournalMonitor {
                 lastStatusTimestamp = ts;
                 return;
             }
-
+        	
             // Pips: [sys, eng, wep]
             int[] pips = new int[] { 0, 0, 0 };
             JsonElement pipsEl = root.get("Pips");
@@ -316,9 +316,9 @@ public final class LiveJournalMonitor {
                             && event.getDestinationSystem() != null
                             && event.getDestinationSystem() != 0L;
 
-            if (isHyperjumpCharging) {
+//            if (isHyperjumpCharging) {
                 dispatch(event);
-            }
+//            }
 
             lastStatusTimestamp = ts;
             lastStatusFlags = flags;

@@ -209,10 +209,7 @@ public class RouteTabPanel extends JPanel {
              .getColumn(COL_DISTANCE)
              .setCellRenderer(distanceRenderer);
 
-        // Copy-to-clipboard behavior on hover for the system name column,
-        // consistent with SystemTabPanel.
-        SystemTableHoverCopyManager systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM);
-        systemTableHoverCopyManager.start();
+
 
         // Column widths
         TableColumnModel columns = table.getColumnModel();
@@ -236,7 +233,10 @@ public class RouteTabPanel extends JPanel {
             cols.getColumn(COL_MARKER).setMaxWidth(20);
             cols.getColumn(COL_MARKER).setPreferredWidth(20);
         });
-
+        // Copy-to-clipboard behavior on hover for the system name column,
+        // consistent with SystemTabPanel.
+        SystemTableHoverCopyManager systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM);
+        systemTableHoverCopyManager.start();
         
         reloadFromNavRouteFile();
     }
@@ -267,15 +267,23 @@ public class RouteTabPanel extends JPanel {
         if (event instanceof EliteLogEvent.FsdJumpEvent jump) {
             currentSystemName = jump.getStarSystem();
             pendingJumpSystemName = null;
+            
+            if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
+    			System.out.println("Stop jump event!");
+    			jumpFlashTimer.stop();
+    			jumpFlashOn = false;
+    		}
         }
 
         if (event instanceof EliteLogEvent.StatusEvent sj) {
         	StatusEvent se = (StatusEvent)sj;
         	
-        	if (se.isFsdCharging()) {
-        		System.out.println("Start jump event!");
+        	if (se.isFsdHyperdriveCharging() && !jumpFlashTimer.isRunning()) {
+        		System.out.println("Start jump event! " + se.isFsdCharging() + " " + se.isFsdHyperdriveCharging());
         		pendingJumpSystemName = se.getDestinationName();
         		jumpFlashTimer.start();
+        	} else if (se.isFsdHyperdriveCharging() && jumpFlashTimer.isRunning() ){
+        		
         	}
         }
 
@@ -392,7 +400,7 @@ public class RouteTabPanel extends JPanel {
 
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
-            if (entry.systemName.equals("Ploea Eurl EK-J c24-1")) {
+            if (entry.systemName.equals("Ploea Eurl BJ-U c18-1")) {
             	System.out.println("Found it");
             }
             if (bodies != null && bodies.bodies != null) {
