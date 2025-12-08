@@ -67,8 +67,17 @@ public class BodiesResponse {
         public Double rotationalPeriod;
         public Boolean rotationalPeriodTidallyLocked;
         public Double axialTilt;
+        private Double surfacePressure;
 
-        // Rings if present
+        public Double getSurfacePressure() {
+			return surfacePressure;
+		}
+
+		public void setSurfacePressure(Double surfacePressure) {
+			this.surfacePressure = surfacePressure;
+		}
+
+		// Rings if present
         public List<Ring> rings;
 		public Double surfaceGravity;
 
