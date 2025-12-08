@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -124,6 +125,24 @@ public final class ExobiologyData {
      *  - volcanism:  ANY
      *  - lists/maps: empty => no restriction (until you choose to use them)
      */
+    /**
+     * One ruleset row for a given {genus, species}, mapped from the Python
+     * rulesets entry.
+     *
+     * Missing dimensions in the source ruleset are represented as:
+     *  - gravity:   [0, 100] (effectively "no constraint")
+     *  - temp:      [0, 1_000_000]
+     *  - pressure:  [0, 1_000_000]
+     *  - atmospheres: empty set  => no restriction
+     *  - bodyTypes:  empty set   => no restriction
+     *  - volcanism:  ANY
+     *
+     * Additional fields (orbital period, distance, regions, guardian, nebula,
+     * parentStars, starClasses, tuberTargets, atmosphereComponents, bodies)
+     * are stored on the rule but are not currently enforced in {@link #matches}
+     * because {@link BodyAttributes} does not yet expose matching data. They
+     * are present so the full ruleset can be represented and used later.
+     */
     public static final class SpeciesRule {
 
         public final double minGravity;
@@ -140,28 +159,28 @@ public final class ExobiologyData {
         /** Optional detailed atmosphere components (e.g. {"CO2": 0.8}). */
         public final Map<String, Double> atmosphereComponents;
 
-        /** Optional host body types / names (for Brain Trees etc.). */
+        /** Specific host body names, when the ruleset targets named bodies. */
         public final List<String> bodies;
 
-        /** Optional maximum orbital period constraint. */
+        /** Optional maximum orbital period (units as in the source ruleset). */
         public final Double maxOrbitalPeriod;
 
-        /** Optional distance constraint (meaning as defined in rulesets). */
+        /** Optional distance constraint (units as in the source ruleset). */
         public final Double distance;
 
-        /** Optional Guardian-space flag constraint. */
+        /** Optional guardian-only constraint (true = guardian only, false = explicitly non-guardian). */
         public final Boolean guardian;
 
-        /** Optional nebula name / flag. */
+        /** Optional nebula constraint (e.g. "all", "!orion-cygnus-core"). */
         public final String nebula;
 
-        /** Optional parent star constraints. */
+        /** Optional list of allowed parent star categories. */
         public final List<String> parentStars;
 
-        /** Optional galactic region constraints. */
+        /** Optional galactic-region constraints. */
         public final List<String> regions;
 
-        /** Optional host star class constraints (e.g. "B IV"). */
+        /** Optional allowed star classes (e.g. "B IV", "O"). */
         public final List<String> starClasses;
 
         /** Optional “tuber” anchor constraints. */
@@ -193,13 +212,10 @@ public final class ExobiologyData {
             this.maxGravity = maxGravity;
             this.minTempK = minTempK;
             this.maxTempK = maxTempK;
-
             this.minPressure = minPressure;
             this.maxPressure = maxPressure;
-
             this.atmospheres = atmospheres;
             this.bodyTypes = bodyTypes;
-
             this.atmosphereComponents = atmosphereComponents;
             this.bodies = bodies;
             this.maxOrbitalPeriod = maxOrbitalPeriod;
@@ -210,7 +226,6 @@ public final class ExobiologyData {
             this.regions = regions;
             this.starClasses = starClasses;
             this.tuberTargets = tuberTargets;
-
             this.volcanismRequirement = volcanismRequirement;
         }
 
@@ -229,29 +244,33 @@ public final class ExobiologyData {
                 return false;
             }
 
-            // Planet type constraint
-            if (bodyTypes != null && !bodyTypes.isEmpty()
-                    && !bodyTypes.contains(body.planetType)) {
+            // Planet type restriction (empty = no restriction)
+            if (!bodyTypes.isEmpty() && (body.planetType == null || !bodyTypes.contains(body.planetType))) {
                 return false;
             }
 
-            // Atmosphere constraint
-            if (atmospheres != null && !atmospheres.isEmpty()
-                    && !atmospheres.contains(body.atmosphere)) {
+            // Atmosphere restriction (empty = no restriction)
+            if (!atmospheres.isEmpty()) {
+                AtmosphereType at = body.atmosphere != null ? body.atmosphere : AtmosphereType.UNKNOWN;
+                if (!atmospheres.contains(at)) {
+                    return false;
+                }
+            }
+
+            // Gravity range
+            double g = body.gravity;
+            if (g < minGravity || g > maxGravity) {
                 return false;
             }
 
-            // Gravity constraint
-            if (body.gravity < minGravity || body.gravity > maxGravity) {
+            // Temperature: require overlap between body's [min,max] and rule's [min,max]
+            double bodyMinT = body.tempKMin;
+            double bodyMaxT = body.tempKMax;
+            if (bodyMaxT < minTempK || bodyMinT > maxTempK) {
                 return false;
             }
 
-            // Temperature: any overlap between [body.min, body.max] and [rule.min, rule.max]
-            if (body.tempKMax < minTempK || body.tempKMin > maxTempK) {
-                return false;
-            }
-
-            // Volcanism (coarse)
+            // Volcanism requirement
             switch (volcanismRequirement) {
                 case NO_VOLCANISM:
                     if (body.hasVolcanism) {
@@ -265,14 +284,201 @@ public final class ExobiologyData {
                     break;
                 case ANY:
                 default:
+                    // no constraint
                     break;
             }
 
-            // NOTE: pressure / regions / guardian / nebula / starClasses /
-            // parentStars / tuberTargets / atmosphereComponents / bodies /
-            // maxOrbitalPeriod / distance are not enforced yet.
-
+            // Pressure and the advanced fields are currently ignored in the matcher.
             return true;
+        }
+
+        /**
+         * Builder for SpeciesRule so that the generated Java from the Python
+         * rulesets can stay readable and only specify the fields that matter
+         * for a given rule.
+         */
+        public static final class SpeciesRuleBuilder {
+
+            private Double minGravity, maxGravity;
+            private Double minTemp, maxTemp;
+            private Double minPressure, maxPressure;
+
+            private final Set<AtmosphereType> atmos = new HashSet<>();
+            private final Set<PlanetType> planets = new HashSet<>();
+
+            private Map<String, Double> atmosphereComponents;
+            private List<String> bodies;
+            private Double maxOrbitalPeriod;
+            private Double distance;
+            private Boolean guardian;
+            private String nebula;
+            private List<String> parentStars;
+            private List<String> regions;
+            private List<String> stars;
+            private List<String> tubers;
+
+            private VolcanismRequirement volc;
+
+            public static SpeciesRuleBuilder create() {
+                return new SpeciesRuleBuilder();
+            }
+
+            public SpeciesRuleBuilder gravity(double min, double max) {
+                this.minGravity = min;
+                this.maxGravity = max;
+                return this;
+            }
+
+            public SpeciesRuleBuilder temperature(double minK, double maxK) {
+                this.minTemp = minK;
+                this.maxTemp = maxK;
+                return this;
+            }
+
+            public SpeciesRuleBuilder pressure(double min, double max) {
+                this.minPressure = min;
+                this.maxPressure = max;
+                return this;
+            }
+
+            public SpeciesRuleBuilder atmospheres(AtmosphereType... types) {
+                if (types != null && types.length > 0) {
+                    atmos.addAll(Arrays.asList(types));
+                }
+                return this;
+            }
+
+            public SpeciesRuleBuilder planetTypes(PlanetType... types) {
+                if (types != null && types.length > 0) {
+                    planets.addAll(Arrays.asList(types));
+                }
+                return this;
+            }
+
+            public SpeciesRuleBuilder atmosphereComponents(Map<String, Double> components) {
+                this.atmosphereComponents = components;
+                return this;
+            }
+
+            public SpeciesRuleBuilder bodies(List<String> bodies) {
+                this.bodies = bodies;
+                return this;
+            }
+
+            public SpeciesRuleBuilder maxOrbitalPeriod(Double maxOrbitalPeriod) {
+                this.maxOrbitalPeriod = maxOrbitalPeriod;
+                return this;
+            }
+
+            public SpeciesRuleBuilder distance(Double distance) {
+                this.distance = distance;
+                return this;
+            }
+
+            public SpeciesRuleBuilder guardian(Boolean guardian) {
+                this.guardian = guardian;
+                return this;
+            }
+
+            public SpeciesRuleBuilder nebula(String nebula) {
+                this.nebula = nebula;
+                return this;
+            }
+
+            public SpeciesRuleBuilder parentStars(List<String> parentStars) {
+                this.parentStars = parentStars;
+                return this;
+            }
+
+            public SpeciesRuleBuilder regions(List<String> regions) {
+                this.regions = regions;
+                return this;
+            }
+
+            public SpeciesRuleBuilder stars(List<String> stars) {
+                this.stars = stars;
+                return this;
+            }
+
+            public SpeciesRuleBuilder tubers(List<String> tubers) {
+                this.tubers = tubers;
+                return this;
+            }
+
+            public SpeciesRuleBuilder volcanism(VolcanismRequirement requirement) {
+                this.volc = requirement;
+                return this;
+            }
+
+            public SpeciesRule build() {
+                double minG = minGravity != null ? minGravity : 0.0;
+                double maxG = maxGravity != null ? maxGravity : 100.0;
+
+                double minT = minTemp != null ? minTemp : 0.0;
+                double maxT = maxTemp != null ? maxTemp : 1_000_000.0;
+
+                double minP = minPressure != null ? minPressure : 0.0;
+                double maxP = maxPressure != null ? maxPressure : 1_000_000.0;
+
+                Set<AtmosphereType> atmoSet =
+                        atmos.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(new HashSet<>(atmos));
+                Set<PlanetType> bodySet =
+                        planets.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(new HashSet<>(planets));
+
+                VolcanismRequirement v = volc != null ? volc : VolcanismRequirement.ANY;
+
+                Map<String, Double> ac =
+                        atmosphereComponents == null
+                                ? Collections.<String, Double>emptyMap()
+                                : Collections.unmodifiableMap(new LinkedHashMap<>(atmosphereComponents));
+
+                List<String> bodiesList =
+                        bodies == null
+                                ? Collections.<String>emptyList()
+                                : Collections.unmodifiableList(new ArrayList<>(bodies));
+
+                List<String> parentStarList =
+                        parentStars == null
+                                ? Collections.<String>emptyList()
+                                : Collections.unmodifiableList(new ArrayList<>(parentStars));
+
+                List<String> regionList =
+                        regions == null
+                                ? Collections.<String>emptyList()
+                                : Collections.unmodifiableList(new ArrayList<>(regions));
+
+                List<String> starClassList =
+                        stars == null
+                                ? Collections.<String>emptyList()
+                                : Collections.unmodifiableList(new ArrayList<>(stars));
+
+                List<String> tuberList =
+                        tubers == null
+                                ? Collections.<String>emptyList()
+                                : Collections.unmodifiableList(new ArrayList<>(tubers));
+
+                return new SpeciesRule(
+                        minG,
+                        maxG,
+                        minT,
+                        maxT,
+                        minP,
+                        maxP,
+                        atmoSet,
+                        bodySet,
+                        ac,
+                        bodiesList,
+                        maxOrbitalPeriod,
+                        distance,
+                        guardian,
+                        nebula,
+                        parentStarList,
+                        regionList,
+                        starClassList,
+                        tuberList,
+                        v
+                );
+            }
         }
     }
 

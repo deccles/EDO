@@ -129,7 +129,8 @@ public class EdsmQueryTool extends JFrame {
         tabs.addTab("Bodies", createBodiesTab());
         tabs.addTab("Traffic / Logs", createTrafficTab());
         tabs.addTab("Commander", createCommanderTab());
-
+        tabs.addTab("Exobiology", new ExobiologyPanel(client));
+        
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.add(headerPanel, BorderLayout.NORTH);
         topPanel.add(tabs, BorderLayout.CENTER);
