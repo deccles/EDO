@@ -320,11 +320,7 @@ public class RouteTabPanel extends JPanel {
 		if (event instanceof FssAllBodiesFoundEvent) {
 			FssAllBodiesFoundEvent fss = (FssAllBodiesFoundEvent)event;
 			
-    		int row = getRowForSystem(fss.getSystemName());
-            final RouteEntry entry = tableModel.entries.get(row);
-            
-            if (row != -1)
-            	updateStatusFromEdsm(entry, row);
+			reloadFromNavRouteFile();
 		}
         if (event instanceof EliteLogEvent.StatusEvent sj) {
         	StatusEvent se = (StatusEvent)sj;
@@ -595,7 +591,7 @@ public class RouteTabPanel extends JPanel {
 //        }
 
         int knownBodies = tmp.getBodies().size();
-        if (knownBodies < totalBodies) {
+        if (totalBodies != null && knownBodies < totalBodies) {
             // We've seen some bodies but not all → not fully scanned.
             return false;
         }
