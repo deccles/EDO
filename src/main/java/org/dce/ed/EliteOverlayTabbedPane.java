@@ -6,6 +6,10 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.MouseInfo;
+import java.awt.Point;
+import java.awt.PointerInfo;
+import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
@@ -15,6 +19,8 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -194,10 +200,115 @@ public class EliteOverlayTabbedPane extends JPanel {
      * the button for the given delay, the action is invoked on the EDT.
      */
     private static void installHoverSwitch(JButton button, int delayMs, Runnable action) {
-        HoverSwitchHandler handler = new HoverSwitchHandler(delayMs, action);
-        button.addMouseListener(handler);
+        TabHoverPoller.register(button, delayMs, action);
     }
-    
+    /**
+     * Global tab hover poller: periodically polls the global mouse position and,
+     * if it is resting on any registered tab button longer than the configured
+     * delay, invokes that tab's action (typically button.doClick()).
+     *
+     * This works even when the overlay is in OS pass-through mode because it
+     * does not depend on Swing mouse events.
+     */
+    private static class TabHoverPoller implements ActionListener {
+
+        private static final int POLL_INTERVAL_MS = 40;
+
+        private static final List<Entry> entries = new ArrayList<>();
+        private static final Timer pollTimer;
+
+        static {
+            TabHoverPoller listener = new TabHoverPoller();
+            pollTimer = new Timer(POLL_INTERVAL_MS, listener);
+            pollTimer.start();
+        }
+
+        private static class Entry {
+            final JButton button;
+            final int delayMs;
+            final Runnable action;
+
+            long hoverStartMs = -1L;
+            boolean firedForCurrentHover = false;
+
+            Entry(JButton button, int delayMs, Runnable action) {
+                this.button = button;
+                this.delayMs = delayMs;
+                this.action = action;
+            }
+        }
+
+        static void register(JButton button, int delayMs, Runnable action) {
+            entries.add(new Entry(button, delayMs, action));
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (entries.isEmpty()) {
+                return;
+            }
+
+            PointerInfo pointerInfo = MouseInfo.getPointerInfo();
+            if (pointerInfo == null) {
+                resetAll();
+                return;
+            }
+
+            Point mouseOnScreen = pointerInfo.getLocation();
+            long now = System.currentTimeMillis();
+
+            for (Entry entry : entries) {
+                JButton button = entry.button;
+                if (button == null || !button.isShowing()) {
+                    entry.hoverStartMs = -1L;
+                    entry.firedForCurrentHover = false;
+                    continue;
+                }
+
+                Point buttonLoc;
+                try {
+                    buttonLoc = button.getLocationOnScreen();
+                } catch (IllegalStateException ex) {
+                    // Component not yet realized
+                    entry.hoverStartMs = -1L;
+                    entry.firedForCurrentHover = false;
+                    continue;
+                }
+
+                Rectangle bounds = new Rectangle(
+                        buttonLoc.x,
+                        buttonLoc.y,
+                        button.getWidth(),
+                        button.getHeight()
+                );
+
+                if (bounds.contains(mouseOnScreen)) {
+                    if (entry.hoverStartMs < 0L) {
+                        // Just started hovering this button
+                        entry.hoverStartMs = now;
+                        entry.firedForCurrentHover = false;
+                    } else if (!entry.firedForCurrentHover && now - entry.hoverStartMs >= entry.delayMs) {
+                        // Hover delay satisfied – perform action once per hover
+                        if (entry.action != null) {
+                            SwingUtilities.invokeLater(entry.action);
+                        }
+                        entry.firedForCurrentHover = true;
+                    }
+                } else {
+                    // Mouse is somewhere else
+                    entry.hoverStartMs = -1L;
+                    entry.firedForCurrentHover = false;
+                }
+            }
+        }
+
+        private static void resetAll() {
+            for (Entry entry : entries) {
+                entry.hoverStartMs = -1L;
+                entry.firedForCurrentHover = false;
+            }
+        }
+    }
     private JButton createTabButton(String text) {
         JButton button = new JButton(text);
         button.setFocusable(false);
@@ -300,38 +411,47 @@ public class EliteOverlayTabbedPane extends JPanel {
      * a component for a configured delay. Can be reused for other hover-based
      * behaviors.
      */
-    private static class HoverSwitchHandler extends MouseAdapter implements ActionListener {
+    /**
+     * Generic hover handler that runs a callback after the mouse rests over
+     * a component for a configured delay. Can be reused for other hover-based
+     * behaviors.
+     */
+    private static class HoverSwitchHandler extends MouseAdapter {
 
-        private final Timer timer;
+        private final Timer hoverTimer;
         private final Runnable action;
 
         HoverSwitchHandler(int delayMs, Runnable action) {
             this.action = action;
-            this.timer = new Timer(delayMs, this);
-            this.timer.setRepeats(false);
+            this.hoverTimer = new Timer(delayMs, e -> {
+                if (this.action != null) {
+                    this.action.run();
+                }
+            });
+            this.hoverTimer.setRepeats(false);
         }
 
         @Override
         public void mouseEntered(MouseEvent e) {
-            timer.restart();
+            // Still helps in non pass-through mode
+            hoverTimer.restart();
+        }
+
+        @Override
+        public void mouseMoved(MouseEvent e) {
+            // Key for pass-through mode: same idea as LongHoverCopyHandler
+            hoverTimer.restart();
         }
 
         @Override
         public void mouseExited(MouseEvent e) {
-            timer.stop();
+            hoverTimer.stop();
         }
 
         @Override
         public void mousePressed(MouseEvent e) {
-            timer.stop();
-        }
-
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            if (action != null) {
-                action.run();
-            }
+            hoverTimer.stop();
         }
     }
-    
+
 }

@@ -55,6 +55,7 @@ public class RouteTabPanel extends JPanel {
     private static final long serialVersionUID = 1L;
 
     private static final Color ED_ORANGE = new Color(255, 140, 0);
+    private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
     private static final Color STATUS_GRAY = new Color(210, 210, 210);
     private static final Color STATUS_BLUE = new Color(100, 149, 237);
     private static final Color STATUS_YELLOW = new Color(255, 215, 0);
@@ -125,12 +126,12 @@ public class RouteTabPanel extends JPanel {
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
-        table.setRowHeight(20);
+        table.setRowHeight(26);
         table.setForeground(ED_ORANGE);
         table.setBackground(new Color(0, 0, 0, 0));
         table.setSelectionForeground(Color.BLACK);
         table.setSelectionBackground(new Color(255, 255, 255, 64));
-        table.setFont(new Font("Dialog", Font.PLAIN, 12));
+        table.setFont(new Font("Noto Sans", Font.BOLD, 16));
         table.getTableHeader().setReorderingAllowed(false);
         table.getTableHeader().setResizingAllowed(true);
         table.getTableHeader().setForeground(ED_ORANGE);
@@ -158,11 +159,31 @@ public class RouteTabPanel extends JPanel {
                                                                   false,
                                                                   row,
                                                                   column);
-                c.setForeground(ED_ORANGE);
+
                 if (c instanceof JLabel) {
-                    ((JLabel) c).setBorder(new EmptyBorder(0, 4, 0, 4));
+                    c.setForeground(ED_ORANGE);
+                    // Add a bit of vertical padding for readability
+                    ((JLabel) c).setBorder(new EmptyBorder(3, 4, 3, 4));
                 }
                 return c;
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                    RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                    RenderingHints.VALUE_ANTIALIAS_ON);
+
+                super.paintComponent(g2);
+
+                // ED_ORANGE separator line at the bottom of each row
+                g2.setColor(ED_ORANGE_TRANS);
+                int y = getHeight() - 1;
+                g2.drawLine(0, y, getWidth(), y);
+
+                g2.dispose();
             }
         };
         table.setDefaultRenderer(Object.class, defaultRenderer);
@@ -200,9 +221,27 @@ public class RouteTabPanel extends JPanel {
                                                                   column);
                 c.setForeground(ED_ORANGE);
                 if (c instanceof JLabel) {
-                    ((JLabel) c).setBorder(new EmptyBorder(0, 4, 0, 8));
+                    // Slight right padding for numbers
+                    ((JLabel) c).setBorder(new EmptyBorder(3, 4, 3, 8));
                 }
                 return c;
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                    RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                    RenderingHints.VALUE_ANTIALIAS_ON);
+
+                super.paintComponent(g2);
+
+                g2.setColor(ED_ORANGE_TRANS);
+                int y = getHeight() - 1;
+                g2.drawLine(0, y, getWidth(), y);
+
+                g2.dispose();
             }
         };
         table.getColumnModel()
@@ -655,7 +694,7 @@ public class RouteTabPanel extends JPanel {
         private final String symbol;
 
         StatusCircleIcon(Color circleColor, String symbol) {
-            this(circleColor, symbol, 14);
+            this(circleColor, symbol, 18);
         }
 
         StatusCircleIcon(Color circleColor, String symbol, int size) {
@@ -691,8 +730,8 @@ public class RouteTabPanel extends JPanel {
                 if (symbol != null && !symbol.isEmpty()) {
                     Font font = c.getFont();
                     if (font != null) {
-                        font = font.deriveFont(Font.BOLD,
-                                               Math.max(10f, font.getSize2D()));
+                        font = new Font("Noto Sans", Font.BOLD, 16);//font.deriveFont(Font.BOLD,
+//                                               Math.max(10f, font.getSize2D()));
                         g2.setFont(font);
                     }
                     java.awt.FontMetrics fm = g2.getFontMetrics();
@@ -730,7 +769,7 @@ public class RouteTabPanel extends JPanel {
                                                                         false,
                                                                         row,
                                                                         column);
-            label.setBorder(new EmptyBorder(0, 0, 0, 0));
+            label.setBorder(new EmptyBorder(3, 0, 3, 0));
             label.setText("");
             label.setIcon(null);
             
@@ -765,6 +804,24 @@ public class RouteTabPanel extends JPanel {
 
             return label;
         }
+
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                RenderingHints.VALUE_ANTIALIAS_ON);
+
+            super.paintComponent(g2);
+
+            g2.setColor(ED_ORANGE_TRANS);
+            int y = getHeight() - 1;
+            g2.drawLine(0, y, getWidth(), y);
+
+            g2.dispose();
+        }
     }
     private class MarkerRenderer extends DefaultTableCellRenderer {
         @Override
@@ -775,6 +832,8 @@ public class RouteTabPanel extends JPanel {
             JLabel l = (JLabel) super.getTableCellRendererComponent(
                     table, "", false, false, row, column);
             l.setHorizontalAlignment(SwingConstants.CENTER);
+
+            l.setBorder(new EmptyBorder(3, 0, 3, 0));
 
             String system = (String) table.getValueAt(row, 2); // YOUR system column
 
@@ -790,6 +849,24 @@ public class RouteTabPanel extends JPanel {
 
             l.setIcon(icon);
             return l;
+        }
+
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                RenderingHints.VALUE_ANTIALIAS_ON);
+
+            super.paintComponent(g2);
+
+            g2.setColor(ED_ORANGE_TRANS);
+            int y = getHeight() - 1;
+            g2.drawLine(0, y, getWidth(), y);
+
+            g2.dispose();
         }
     }
     private static class TriangleIcon implements Icon {

@@ -1,10 +1,18 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
+import java.awt.IllegalComponentStateException;
+import java.awt.MouseInfo;
+import java.awt.Point;
+import java.awt.PointerInfo;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
@@ -14,6 +22,7 @@ import java.util.prefs.Preferences;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.LineBorder;
 
 import com.sun.jna.Native;
@@ -44,6 +53,10 @@ public class OverlayFrame extends JFrame {
 
     private final TitleBarPanel titleBar;
 
+    // Crosshair overlay and timer to show mouse position in pass-through mode
+    private final CrosshairOverlay crosshairOverlay = new CrosshairOverlay();
+    private final Timer crosshairTimer;
+ 
     public OverlayFrame() {
         super("Elite Dangerous Overlay");
 
@@ -58,6 +71,14 @@ public class OverlayFrame extends JFrame {
             System.err.println("WARNING: Per-pixel translucency not supported on this device.");
         }
 
+        // Install crosshair overlay as glass pane (draw-only, no mouse handling)
+        setGlassPane(crosshairOverlay);
+        crosshairOverlay.setVisible(false); // off until we detect pass-through + hover
+
+        // Poll global mouse position and update crosshair
+        crosshairTimer = new Timer(40, e -> updateCrosshair());
+        crosshairTimer.start();
+        
         // Transparent window background
         setBackground(new java.awt.Color(0, 0, 0, 0));
 
@@ -389,6 +410,92 @@ public class OverlayFrame extends JFrame {
             } else {
                 return Cursor.DEFAULT_CURSOR;
             }
+        }
+    }
+    private void updateCrosshair() {
+        // If window isn't showing, don't bother
+        if (!isShowing()) {
+            crosshairOverlay.setVisible(false);
+            return;
+        }
+
+        // Only show crosshair when pass-through is enabled
+        if (!passThroughEnabled) {
+            crosshairOverlay.setVisible(false);
+            return;
+        }
+
+        PointerInfo pi = MouseInfo.getPointerInfo();
+        if (pi == null) {
+            crosshairOverlay.setVisible(false);
+            return;
+        }
+
+        Point mouseOnScreen = pi.getLocation();
+        Point frameOnScreen;
+        try {
+            frameOnScreen = getLocationOnScreen();
+        } catch (IllegalComponentStateException ex) {
+            crosshairOverlay.setVisible(false);
+            return;
+        }
+
+        int relX = mouseOnScreen.x - frameOnScreen.x;
+        int relY = mouseOnScreen.y - frameOnScreen.y;
+
+        // Inside the overlay bounds?
+        if (relX >= 0 && relY >= 0 && relX < getWidth() && relY < getHeight()) {
+            crosshairOverlay.setCrosshairPoint(new Point(relX, relY));
+            if (!crosshairOverlay.isVisible()) {
+                crosshairOverlay.setVisible(true);
+            }
+        } else {
+            crosshairOverlay.setVisible(false);
+        }
+    }
+    private static class CrosshairOverlay extends JComponent {
+
+        private Point crosshairPoint;
+
+        CrosshairOverlay() {
+            setOpaque(false);
+        }
+
+        void setCrosshairPoint(Point p) {
+            this.crosshairPoint = p;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (crosshairPoint == null) {
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                // ED-style orange with some transparency
+                g2.setColor(new Color(255, 140, 0, 200));
+
+                int x = crosshairPoint.x;
+                int y = crosshairPoint.y;
+
+                // Vertical line
+                g2.drawLine(x, 0, x, getHeight());
+                // Horizontal line
+                g2.drawLine(0, y, getWidth(), y);
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public boolean contains(int x, int y) {
+            // Critical: don't intercept mouse events when overlay is not in OS pass-through mode.
+            return false;
         }
     }
 
