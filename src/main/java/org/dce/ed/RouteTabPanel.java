@@ -32,8 +32,10 @@ import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdTargetEvent;
 import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
 import org.dce.ed.logreader.EliteLogEvent.StatusEvent;
@@ -299,13 +301,13 @@ public class RouteTabPanel extends JPanel {
             reloadFromNavRouteFile();
         }
         
-        if (event instanceof EliteLogEvent.LocationEvent loc) {
-            currentSystemName = loc.getStarSystem();
+        if (event instanceof LocationEvent loc) {
+            setCurrentSystemName(loc.getStarSystem());
             pendingJumpSystemName = null;
         }
 
-        if (event instanceof EliteLogEvent.FsdJumpEvent jump) {
-            currentSystemName = jump.getStarSystem();
+        if (event instanceof FsdJumpEvent jump) {
+            setCurrentSystemName(jump.getStarSystem());
             Long currentSystemAddress = jump.getSystemAddress();
             
             pendingJumpSystemName = null;
@@ -315,22 +317,26 @@ public class RouteTabPanel extends JPanel {
     			jumpFlashTimer.stop();
     			jumpFlashOn = false;
     		}
-            setCurrentSystemIfEmpty(currentSystemName, currentSystemAddress);
+            setCurrentSystemIfEmpty(getCurrentSystemName(), currentSystemAddress);
         }
 		if (event instanceof FssAllBodiesFoundEvent) {
 			FssAllBodiesFoundEvent fss = (FssAllBodiesFoundEvent)event;
 			
 			reloadFromNavRouteFile();
 		}
-        if (event instanceof EliteLogEvent.StatusEvent sj) {
+        if (event instanceof StatusEvent sj) {
         	StatusEvent se = (StatusEvent)sj;
+        	boolean hyperdriveCharging = se.isFsdHyperdriveCharging();
+        	boolean timerRunning = jumpFlashTimer.isRunning();
         	
-        	if (se.isFsdHyperdriveCharging() && !jumpFlashTimer.isRunning()) {
+        	if (hyperdriveCharging && !timerRunning) {
         		System.out.println("Start jump event! " + se.isFsdCharging() + " " + se.isFsdHyperdriveCharging());
         		pendingJumpSystemName = se.getDestinationName();
         		jumpFlashTimer.start();
-        	} else if (se.isFsdHyperdriveCharging() && jumpFlashTimer.isRunning() ){
-
+        	} 
+        	if (!hyperdriveCharging && timerRunning ){
+        		jumpFlashTimer.stop();
+        		jumpFlashOn = false;
         	}
         }
 
@@ -369,7 +375,7 @@ public class RouteTabPanel extends JPanel {
     int getRowForSystem(String systemName) {
     	for (int row=0; row < table.getModel().getRowCount(); row++) {
     		String system = (String) table.getValueAt(row, COL_SYSTEM); // YOUR system column
-    		if (system.equals(currentSystemName)) {
+    		if (system.equals(getCurrentSystemName())) {
     			return row;
     		}
     	}
@@ -635,7 +641,19 @@ public class RouteTabPanel extends JPanel {
     }
 
     
-    // ---------------------------------------------------------------------
+    private String getCurrentSystemName() {
+		return currentSystemName;
+	}
+
+	private void setCurrentSystemName(String currentSystemName) {
+		if (currentSystemName == null)
+			System.out.println("WHY is system name NULL???");
+		else
+			this.currentSystemName = currentSystemName;
+	}
+
+
+	// ---------------------------------------------------------------------
     // Model + table
     // ---------------------------------------------------------------------
     enum ScanStatus {
@@ -905,10 +923,10 @@ public class RouteTabPanel extends JPanel {
             Icon icon = null;
 
             if (system != null) {
-                if (system.equals(currentSystemName)) {
-                    icon = new TriangleIcon(Color.ORANGE, 10, 10);
+                if (system.equals(getCurrentSystemName())) {
+                    icon = new TriangleIcon(ED_ORANGE, 10, 10);
                 } else if (system.equals(pendingJumpSystemName) && jumpFlashOn) {
-                    icon = new TriangleIcon(Color.ORANGE, 10, 10);
+                    icon = new TriangleIcon(ED_ORANGE, 10, 10);
                 }
             }
 
