@@ -33,6 +33,7 @@ import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.FsdTargetEvent;
+import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
 import org.dce.ed.logreader.EliteLogEvent.StatusEvent;
@@ -313,7 +314,15 @@ public class RouteTabPanel extends JPanel {
     			jumpFlashOn = false;
     		}
         }
-
+		if (event instanceof FssAllBodiesFoundEvent) {
+			FssAllBodiesFoundEvent fss = (FssAllBodiesFoundEvent)event;
+			
+    		int row = getRowForSystem(fss.getSystemName());
+            final RouteEntry entry = tableModel.entries.get(row);
+            
+            if (row != -1)
+            	updateStatusFromEdsm(entry, row);
+		}
         if (event instanceof EliteLogEvent.StatusEvent sj) {
         	StatusEvent se = (StatusEvent)sj;
         	
@@ -322,11 +331,22 @@ public class RouteTabPanel extends JPanel {
         		pendingJumpSystemName = se.getDestinationName();
         		jumpFlashTimer.start();
         	} else if (se.isFsdHyperdriveCharging() && jumpFlashTimer.isRunning() ){
-        		
+
         	}
         }
 
     }
+
+    int getRowForSystem(String systemName) {
+    	for (int row=0; row < table.getModel().getRowCount(); row++) {
+    		String system = (String) table.getValueAt(row, COL_SYSTEM); // YOUR system column
+    		if (system.equals(currentSystemName)) {
+    			return row;
+    		}
+    	}
+    	return -1;
+    }
+
 
     private void reloadFromNavRouteFile() {
         Path dir = OverlayPreferences.resolveJournalDirectory();
@@ -679,7 +699,9 @@ public class RouteTabPanel extends JPanel {
             }
             fireTableDataChanged();
         }
-
+        RouteEntry getEntries(int row) {
+        	return entries.get(row);
+        }
         void fireRowChanged(int row) {
             if (row >= 0 && row < entries.size()) {
                 fireTableRowsUpdated(row, row);
