@@ -306,6 +306,8 @@ public class RouteTabPanel extends JPanel {
 
         if (event instanceof EliteLogEvent.FsdJumpEvent jump) {
             currentSystemName = jump.getStarSystem();
+            Long currentSystemAddress = jump.getSystemAddress();
+            
             pendingJumpSystemName = null;
             
             if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
@@ -313,6 +315,7 @@ public class RouteTabPanel extends JPanel {
     			jumpFlashTimer.stop();
     			jumpFlashOn = false;
     		}
+            setCurrentSystemIfEmpty(currentSystemName, currentSystemAddress);
         }
 		if (event instanceof FssAllBodiesFoundEvent) {
 			FssAllBodiesFoundEvent fss = (FssAllBodiesFoundEvent)event;
@@ -337,6 +340,36 @@ public class RouteTabPanel extends JPanel {
 
     }
 
+    private void setCurrentSystemIfEmpty(String systemName, long systemAddress) {
+
+        if (tableModel.getRowCount() > 0) {
+            return; // route exists, nothing to do
+        }
+        RouteEntry entry = new RouteEntry(
+                0,                    // index
+                systemName,
+                systemAddress,
+                "?",                  // class until EDSM loads
+                0.0,                   // Ly
+                ScanStatus.UNKNOWN       // use whatever your enum is
+
+        );
+//        int index;
+//        String systemName;
+//        long systemAddress;
+//        String starClass;
+//        Double distanceLy;
+//        ScanStatus status;
+        
+        
+        List<RouteEntry> list = new ArrayList<>();
+        list.add(entry);
+
+        tableModel.setEntries(list);
+        tableModel.fireTableDataChanged();
+    }
+
+    
     int getRowForSystem(String systemName) {
     	for (int row=0; row < table.getModel().getRowCount(); row++) {
     		String system = (String) table.getValueAt(row, COL_SYSTEM); // YOUR system column
@@ -459,7 +492,7 @@ public class RouteTabPanel extends JPanel {
 
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
-            if (entry.systemName.equals("Ploea Eurl BJ-U c18-1")) {
+            if (entry.systemName.equals("Ploea Eurl EJ-U c18-2")) {
             	System.out.println("Found it");
             }
             if (bodies != null && bodies.bodies != null) {
@@ -482,7 +515,12 @@ public class RouteTabPanel extends JPanel {
                 }
 
                 if (hasBodies) {
-                    if (anyMissingDiscovery) {
+                	if (bodies.bodyCount != returnedBodies) {
+                		newStatus = v
+                				? ScanStatus.BODYCOUNT_MISMATCH_VISITED
+                						: ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
+                	}
+                	else if (anyMissingDiscovery) {
                         newStatus = v
                                 ? ScanStatus.DISCOVERY_MISSING_VISITED
                                 : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
@@ -530,9 +568,6 @@ public class RouteTabPanel extends JPanel {
         if (entry == null) {
             return false;
         }
-        
-
-        
 
         // Look up cached system by address/name (same pattern as SystemTabPanel)
         SystemCache cache = SystemCache.getInstance();
@@ -552,12 +587,12 @@ public class RouteTabPanel extends JPanel {
             return true;
         }
 
-        // 2) Otherwise, fall back to counts / progress.
+//        // 2) Otherwise, fall back to counts / progress.
         Integer totalBodies = tmp.getTotalBodies();
-        if (totalBodies == null || totalBodies == 0) {
-            // We don't know how many bodies there should be; can't claim "fully scanned".
-            return false;
-        }
+//        if (totalBodies == null || totalBodies == 0) {
+//            // We don't know how many bodies there should be; can't claim "fully scanned".
+//            return false;
+//        }
 
         int knownBodies = tmp.getBodies().size();
         if (knownBodies < totalBodies) {
@@ -567,12 +602,12 @@ public class RouteTabPanel extends JPanel {
 
         // If FSS progress exists, require it to be ~100%.
         Double progress = tmp.getFssProgress();
-        if (progress != null && progress < 0.999) {
-            return false;
+        if (progress != null && progress == 1.0) {// 0.999) {
+            return true;
         }
 
-        // At this point, cache says we know all bodies and FSS is effectively complete.
-        return true;
+//         At this point, cache says we know all bodies and FSS is effectively complete.
+        return false;
     }
 
 
@@ -625,7 +660,19 @@ public class RouteTabPanel extends JPanel {
     }
 
     private static final class RouteEntry {
-        int index;
+    	public RouteEntry() {
+    		
+    	}
+    	
+        public RouteEntry(int i, String systemNameIn, long systemAddressIn, String starClassIn, double dLy, ScanStatus scanStatusIn) {
+        	index = i;
+        	systemName = systemNameIn;
+        	systemAddress = systemAddressIn;
+        	starClass = starClassIn;
+        	distanceLy = dLy;
+        	status = scanStatusIn;
+        }
+		int index;
         String systemName;
         long systemAddress;
         String starClass;
