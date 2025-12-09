@@ -13,6 +13,8 @@ public class BodiesResponse {
     /** Optional id64 if present */
     public Long id64;
 
+    public int bodyCount;
+    
     /** List of celestial bodies (stars, planets, moons, etc.) */
     public List<Body> bodies;
 
