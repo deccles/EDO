@@ -186,8 +186,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
     private void handleLogEvent(EliteLogEvent event) {
     	if (event instanceof FsdJumpEvent
-    		|| event instanceof FssDiscoveryScanEvent
-    		|| event instanceof ScanEvent) {
+    		|| event instanceof FssDiscoveryScanEvent) {
     		showSystemTabFromStatusWatcher();
     	}
     	if (event instanceof StartJumpEvent) {
