@@ -11,10 +11,10 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.dce.ed.edsm.BodiesResponse;
-import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 
@@ -30,6 +30,9 @@ import com.google.gson.reflect.TypeToken;
  * Data is persisted as JSON in the user's home directory so that
  * previously scanned systems can be shown immediately on future runs.
  */
+
+
+
 public final class SystemCache {
     private CachedSystem lastLoadedSystem;
 
@@ -94,7 +97,7 @@ public final class SystemCache {
                     byAddress.put(cs.systemAddress, cs);
                 }
                 if (cs.systemName != null && !cs.systemName.isEmpty()) {
-                    byName.put(cs.systemName, cs);
+                    byName.put(canonicalName(cs.systemName), cs);
                 }
                 lastLoadedSystem = cs;
             }
@@ -103,6 +106,10 @@ public final class SystemCache {
         }
     }
 
+    private static String canonicalName(String name) {
+        return (name == null) ? null : name.toLowerCase(Locale.ROOT);
+    }
+    
     public synchronized CachedSystem get(long systemAddress, String systemName) {
         ensureLoaded();
 
@@ -111,7 +118,7 @@ public final class SystemCache {
             cs = byAddress.get(systemAddress);
         }
         if (cs == null && systemName != null && !systemName.isEmpty()) {
-            cs = byName.get(systemName);
+            cs = byName.get(canonicalName(systemName));
         }
         return cs;
     }
@@ -163,6 +170,9 @@ public final class SystemCache {
                     }
                 }
                 if (!merged) {
+                	if (newBody.bodyId == -1) {
+                		new Throwable().printStackTrace();
+                	}
                     cs.bodies.add(newBody);
                 }
             }
@@ -172,7 +182,7 @@ public final class SystemCache {
             byAddress.put(systemAddress, cs);
         }
         if (systemName != null && !systemName.isEmpty()) {
-            byName.put(systemName, cs);
+            byName.put(canonicalName(systemName), cs);
         }
 
         save();

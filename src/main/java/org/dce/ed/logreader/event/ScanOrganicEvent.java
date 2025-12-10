@@ -33,6 +33,7 @@ public final class ScanOrganicEvent extends EliteLogEvent {
                             String species,
                             String speciesLocalised) {
         super(timestamp, EliteEventType.SCAN_ORGANIC, rawJson);
+        
         this.systemAddress = systemAddress;
         this.bodyName = bodyName;
         this.bodyId = bodyId;

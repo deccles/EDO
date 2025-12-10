@@ -72,6 +72,8 @@ public class SystemTabPanel extends JPanel {
     private final SystemEventProcessor processor = new SystemEventProcessor(state);
 
     private final EdsmClient edsmClient = new EdsmClient();
+
+	private JLabel headerSummaryLabel;
     
     public SystemTabPanel() {
         super(new BorderLayout());
@@ -80,36 +82,40 @@ public class SystemTabPanel extends JPanel {
         // Header label
         headerLabel = new JTextField("Waiting for system data…");
         headerLabel.addKeyListener(new KeyListener() {
-
-            @Override
-            public void keyTyped(KeyEvent e) {
-                // TODO Auto-generated method stub
-                
-            }
-
+            public void keyTyped(KeyEvent e) {}
+            public void keyReleased(KeyEvent e) {}
+            
             @Override
             public void keyPressed(KeyEvent e) {
-                if (e.getKeyChar() == KeyEvent.VK_ENTER) {
-                    System.out.println("User hit enter");
-                    state.setSystemName(headerLabel.getText());
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    String text = headerLabel.getText();
+                    if (text == null) {
+                        return;
+                    }
+//PLOEA EURL mn-j d9-22
+//PLOEA EURL ZP-T C18-0
+                    
+                    System.out.println("User hit enter for system: '" + text + "'");
+
+                    // User is specifying by name; let loadSystem resolve address
+                    state.setSystemName(text);
                     state.setSystemAddress(0L);
-                    
-                    loadSystem(state.getSystemName(), state.getSystemAddress());
-                    rebuildTable();
-                    
+
+                    loadSystem(text, 0L);
                 }
             }
-
-            @Override
-            public void keyReleased(KeyEvent e) {
-                
-            }
-            
         });
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        headerLabel.setOpaque(false);
         headerLabel.setFont(ED_FONT.deriveFont(Font.BOLD));
 
+        headerSummaryLabel = new JLabel();
+        headerSummaryLabel.setForeground(ED_ORANGE);
+        headerSummaryLabel.setFont(ED_FONT.deriveFont(Font.BOLD));
+        headerSummaryLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        headerSummaryLabel.setOpaque(false);
+        
         // Table setup
         tableModel = new SystemBodiesTableModel();
         table = new SystemBodiesTable(tableModel);
@@ -241,7 +247,12 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
         setBorder(new EmptyBorder(4, 4, 4, 4));
-        add(headerLabel, BorderLayout.NORTH);
+        
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setOpaque(false);
+        headerPanel.add(headerLabel, BorderLayout.WEST);
+        headerPanel.add(headerSummaryLabel, BorderLayout.CENTER);
+        add(headerPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
         // Column widths preserved
@@ -370,30 +381,29 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
                 continue;
             }
 
-            // Start from whatever predictions the state has already computed.
+            // 1) Start from whatever predictions we already have
             List<ExobiologyData.BioCandidate> preds = b.getPredictions();
 
             // If there are no predictions yet, try a one-shot calculation here
-            // so the GUI can still show something useful.
             if (preds == null || preds.isEmpty()) {
                 ExobiologyData.BodyAttributes attrs = b.buildBodyAttributes();
                 if (attrs != null) {
                     List<ExobiologyData.BioCandidate> base = ExobiologyData.predict(attrs);
                     if (base != null && !base.isEmpty()) {
-                        // If we know which genera are present, narrow to those.
-                        java.util.Set<String> genusPrefixes = b.getObservedGenusPrefixes();
+                        // If we know which genera are present, narrow to those
+                        Set<String> genusPrefixes = b.getObservedGenusPrefixes();
                         if (genusPrefixes != null && !genusPrefixes.isEmpty()) {
-                            java.util.Set<String> lower = new java.util.HashSet<>();
+                            Set<String> lower = new java.util.HashSet<>();
                             for (String g : genusPrefixes) {
                                 if (g != null && !g.isEmpty()) {
-                                    lower.add(g.toLowerCase(java.util.Locale.ROOT));
+                                    lower.add(g.toLowerCase(Locale.ROOT));
                                 }
                             }
 
                             List<ExobiologyData.BioCandidate> filtered = new ArrayList<>();
                             for (ExobiologyData.BioCandidate cand : base) {
                                 String nameLower = cand.getDisplayName()
-                                        .toLowerCase(java.util.Locale.ROOT);
+                                                       .toLowerCase(Locale.ROOT);
                                 boolean matches = false;
                                 for (String prefix : lower) {
                                     if (nameLower.startsWith(prefix + " ")
@@ -407,11 +417,7 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
                                 }
                             }
 
-                            if (!filtered.isEmpty()) {
-                                preds = filtered;
-                            } else {
-                                preds = base;
-                            }
+                            preds = filtered.isEmpty() ? base : filtered;
                         } else {
                             preds = base;
                         }
@@ -419,34 +425,27 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
                 }
             }
 
-            // Build the final list of display names:
-            //  1) Observed names (truth from ScanOrganic / DSS)
-            //  2) Any predicted names we don't already have
-            List<String> displayNames = new ArrayList<>();
+            Set<String> genusPrefixes = b.getObservedGenusPrefixes();
+            Set<String> observedNamesRaw = b.getObservedBioDisplayNames();
 
-            java.util.Set<String> existing = new java.util.LinkedHashSet<>(displayNames);
+            boolean hasGenusPrefixes = genusPrefixes != null && !genusPrefixes.isEmpty();
+            boolean hasObservedNames = observedNamesRaw != null && !observedNamesRaw.isEmpty();
+            boolean hasPreds = preds != null && !preds.isEmpty();
 
-            Set<String> observed = b.getObservedBioDisplayNames();
-            if (observed != null && !observed.isEmpty()) {
-                displayNames.addAll(observed);
-                
-                for (String o : observed) {
-                    existing.add(firstWord(o).toLowerCase());
-                }
-            } 
-
-            if (preds != null && !preds.isEmpty()) {
-                for (ExobiologyData.BioCandidate cand : preds) {
-                    String name = cand.getDisplayName();
-                    if (!existing.contains(firstWord(name).toLowerCase())) {
-                        displayNames.add(name);
-                        existing.add(name);
-                    }
-                }
+            // If literally nothing but "hasBio", show a generic message
+            if (!hasGenusPrefixes && !hasObservedNames && !hasPreds) {
+                rows.add(Row.bio(b.getBodyId(),
+                        "Biological signals detected",
+                        ""));
+                continue;
             }
 
-            if (!displayNames.isEmpty()) {
-                // Collect bio rows with their credit values so we can group
+            //
+            // CASE A: Predictions only, no genus info from scan yet.
+            //   -> collapse by genus: "Genus (n)" with max value.
+            //
+            if (!hasGenusPrefixes && !hasObservedNames) {
+
                 class BioRowData {
                     final String name;
                     final Long cr;
@@ -459,60 +458,46 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
 
                 List<BioRowData> bioRows = new ArrayList<>();
 
-                for (String name : displayNames) {
-                    Long cr = null;
-                    if (preds != null && !preds.isEmpty()) {
-                        for (ExobiologyData.BioCandidate cand : preds) {
-                            if (name.equals(cand.getDisplayName())) {
-                                cr = cand.getEstimatedPayout(true);
-                                break;
-                            }
-                        }
+                if (preds != null) {
+                    for (ExobiologyData.BioCandidate cand : preds) {
+                        String name = canonicalBioName(cand.getDisplayName());
+                        Long cr = cand.getEstimatedPayout(true);
+                        bioRows.add(new BioRowData(name, cr));
                     }
-
-                    bioRows.add(new BioRowData(name, cr));
                 }
 
-                // Sort:
-                //   1) Genus (first word) ascending
-                //   2) Value numerically (credits) descending
-                //   3) Full name ascending as tie-breaker
+                if (bioRows.isEmpty()) {
+                    rows.add(Row.bio(b.getBodyId(),
+                            "Biological signals detected",
+                            ""));
+                    continue;
+                }
+
+                // Sort by value desc, then genus, then full name
                 bioRows.sort((a, bRow) -> {
                     String aName = (a.name != null) ? a.name : "";
                     String bName = (bRow.name != null) ? bRow.name : "";
 
-                    // Genus = first word before space
-                    String aGenus = aName;
-                    String bGenus = bName;
+                    String aGenus = firstWord(aName);
+                    String bGenus = firstWord(bName);
 
-                    int aSpace = aName.indexOf(' ');
-                    if (aSpace > 0) {
-                        aGenus = aName.substring(0, aSpace);
-                    }
-                    int bSpace = bName.indexOf(' ');
-                    if (bSpace > 0) {
-                        bGenus = bName.substring(0, bSpace);
-                    }
+                    long aVal = (a.cr != null) ? a.cr : Long.MIN_VALUE;
+                    long bVal = (bRow.cr != null) ? bRow.cr : Long.MIN_VALUE;
 
-                    // 1) Value descending (higher first)
-                    long aVal = (a.cr != null) ? a.cr.longValue() : Long.MIN_VALUE;
-                    long bVal = (bRow.cr != null) ? bRow.cr.longValue() : Long.MIN_VALUE;
                     int cmp = Long.compare(bVal, aVal);
                     if (cmp != 0) {
                         return cmp;
                     }
 
-                    // 2) Genus ascending
                     cmp = aGenus.compareToIgnoreCase(bGenus);
                     if (cmp != 0) {
                         return cmp;
                     }
 
-                    // 3) Full name ascending
                     return aName.compareToIgnoreCase(bName);
                 });
 
-                // NEW: compress by genus: "Genus (n)" with max credit value
+                // Collapse by genus: "Genus (n)" with max CR
                 class GenusSummary {
                     int count = 0;
                     Long maxCr = null;
@@ -545,23 +530,197 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
 
                     String valueText = "";
                     if (summary.maxCr != null) {
-                        long millions = Math.round(summary.maxCr.longValue() / 1_000_000.0);
+                        long millions = Math.round(summary.maxCr / 1_000_000.0);
                         valueText = String.format(Locale.US, "%dM Cr", millions);
                     }
 
                     rows.add(Row.bio(b.getBodyId(), label, valueText));
                 }
 
-            } else {
-                rows.add(Row.bio(
-                        b.getBodyId(),
+                continue;
+            }
+
+            //
+            // CASE B: We have genus info and/or observed species.
+            //   -> Expand by genus, then species.
+            //   Rules:
+            //     - For a genus with confirmed species: show ONLY confirmed species rows
+            //       (truth replaces predictions for that genus).
+            //     - For a genus with no confirmed species: show predicted species.
+            //
+
+            // Predictions indexed by canonical name and genus
+            Map<String, ExobiologyData.BioCandidate> predictedByCanonName = new LinkedHashMap<>();
+            Map<String, List<ExobiologyData.BioCandidate>> predictedByGenus = new LinkedHashMap<>();
+            if (preds != null) {
+                for (ExobiologyData.BioCandidate cand : preds) {
+                    String canon = canonicalBioName(cand.getDisplayName());
+                    predictedByCanonName.put(canon, cand);
+                    String genusKey = firstWord(canon).toLowerCase(Locale.ROOT);
+                    predictedByGenus
+                            .computeIfAbsent(genusKey, g -> new ArrayList<>())
+                            .add(cand);
+                }
+            }
+
+            // Confirmed species, grouped by genus, using canonical names
+            Map<String, List<String>> confirmedByGenus = new LinkedHashMap<>();
+            if (observedNamesRaw != null) {
+                for (String rawName : observedNamesRaw) {
+                    if (rawName == null || rawName.isEmpty()) {
+                        continue;
+                    }
+                    String canon = canonicalBioName(rawName);
+                    String genusKey = firstWord(canon).toLowerCase(Locale.ROOT);
+                    confirmedByGenus
+                            .computeIfAbsent(genusKey, g -> new ArrayList<>())
+                            .add(canon);
+                }
+            }
+
+            // Build genus order:
+            //  - first: order from observed genus prefixes
+            //  - then any extra genera we only have from predictions / confirmed species
+            List<String> genusOrder = new ArrayList<>();
+            if (genusPrefixes != null) {
+                for (String gp : genusPrefixes) {
+                    if (gp == null || gp.isEmpty()) {
+                        continue;
+                    }
+                    String key = gp.toLowerCase(Locale.ROOT);
+                    if (!genusOrder.contains(key)) {
+                        genusOrder.add(key);
+                    }
+                }
+            }
+            for (String key : predictedByGenus.keySet()) {
+                if (!genusOrder.contains(key)) {
+                    genusOrder.add(key);
+                }
+            }
+            for (String key : confirmedByGenus.keySet()) {
+                if (!genusOrder.contains(key)) {
+                    genusOrder.add(key);
+                }
+            }
+
+            if (genusOrder.isEmpty()) {
+                // Should be rare, but fall back to generic message
+                rows.add(Row.bio(b.getBodyId(),
                         "Biological signals detected",
                         ""));
+                continue;
+            }
+
+            for (String genusKey : genusOrder) {
+                List<ExobiologyData.BioCandidate> predictedForGenus = predictedByGenus.get(genusKey);
+                List<String> confirmedForGenus = confirmedByGenus.get(genusKey);
+
+                String displayGenus;
+                if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
+                    displayGenus = firstWord(
+                            canonicalBioName(predictedForGenus.get(0).getDisplayName()));
+                } else if (confirmedForGenus != null && !confirmedForGenus.isEmpty()) {
+                    displayGenus = firstWord(confirmedForGenus.get(0));
+                } else {
+                    // Fall back to capitalized key
+                    if (genusKey.isEmpty()) {
+                        displayGenus = genusKey;
+                    } else {
+                        displayGenus = Character.toUpperCase(genusKey.charAt(0))
+                                + genusKey.substring(1);
+                    }
+                }
+
+                // Genus header row
+                rows.add(Row.bio(b.getBodyId(), displayGenus, ""));
+
+                // If we have confirmed species for this genus, they REPLACE predictions.
+                if (confirmedForGenus != null && !confirmedForGenus.isEmpty()) {
+                    class SpeciesRow {
+                        final String name;
+                        final Long cr;
+
+                        SpeciesRow(String name, Long cr) {
+                            this.name = name;
+                            this.cr = cr;
+                        }
+                    }
+
+                    List<SpeciesRow> speciesRows = new ArrayList<>();
+                    for (String canonName : confirmedForGenus) {
+                        ExobiologyData.BioCandidate cand = predictedByCanonName.get(canonName);
+                        Long cr = (cand != null) ? cand.getEstimatedPayout(true) : null;
+                        speciesRows.add(new SpeciesRow(canonName, cr));
+                    }
+
+                    speciesRows.sort((a, bRow) -> {
+                        long aVal = (a.cr != null) ? a.cr : Long.MIN_VALUE;
+                        long bVal = (bRow.cr != null) ? bRow.cr : Long.MIN_VALUE;
+                        int cmp = Long.compare(bVal, aVal);
+                        if (cmp != 0) {
+                            return cmp;
+                        }
+                        return a.name.compareToIgnoreCase(bRow.name);
+                    });
+
+                    for (SpeciesRow sr : speciesRows) {
+                        String valueText = "";
+                        if (sr.cr != null) {
+                            long millions = Math.round(sr.cr / 1_000_000.0);
+                            valueText = String.format(Locale.US, "%dM Cr", millions);
+                        }
+                        rows.add(Row.bio(b.getBodyId(), sr.name, valueText));
+                    }
+                } else if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
+                    // No confirmed species for this genus -> show predicted species
+                    predictedForGenus.sort((c1, c2) -> {
+                        long v1 = c1.getEstimatedPayout(true);
+                        long v2 = c2.getEstimatedPayout(true);
+                        int cmp = Long.compare(v2, v1);
+                        if (cmp != 0) {
+                            return cmp;
+                        }
+                        String n1 = canonicalBioName(c1.getDisplayName());
+                        String n2 = canonicalBioName(c2.getDisplayName());
+                        return n1.compareToIgnoreCase(n2);
+                    });
+
+                    for (ExobiologyData.BioCandidate cand : predictedForGenus) {
+                        String name = canonicalBioName(cand.getDisplayName());
+                        long cr = cand.getEstimatedPayout(true);
+                        long millions = Math.round(cr / 1_000_000.0);
+                        String valueText = String.format(Locale.US, "%dM Cr", millions);
+                        rows.add(Row.bio(b.getBodyId(), name, valueText));
+                    }
+                }
             }
         }
 
         tableModel.setRows(rows);
     }
+    private static String canonicalBioName(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        if (s.isEmpty()) {
+            return s;
+        }
+
+        String[] parts = s.split("\\s+");
+        // Collapse "Genus Genus Species..." -> "Genus Species..."
+        if (parts.length >= 3 && parts[0].equalsIgnoreCase(parts[1])) {
+            StringBuilder sb = new StringBuilder(parts[0]);
+            for (int i = 2; i < parts.length; i++) {
+                sb.append(' ').append(parts[i]);
+            }
+            return sb.toString();
+        }
+
+        return s;
+    }
+
 
     public static String firstWord(String s) {
         if (s == null) return "";
@@ -570,14 +729,10 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
     }
 
     private void updateHeaderLabel() {
-        String name = state.getSystemName();
+        String systemName = state.getSystemName();
+        headerLabel.setText(systemName != null ? systemName : "");
+        
         StringBuilder sb = new StringBuilder();
-
-        if (name != null && !name.isEmpty()) {
-            sb.append(name);
-        } else {
-            sb.append("Current system");
-        }
 
         if (state.getTotalBodies() != null) {
             int scanned = state.getBodies().size();
@@ -595,7 +750,7 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
             sb.append("  |  Non-bodies: ").append(state.getNonBodyCount());
         }
 
-        headerLabel.setText(sb.toString());
+        headerSummaryLabel.setText(sb.toString());
     }
 
     private void persistIfPossible() {

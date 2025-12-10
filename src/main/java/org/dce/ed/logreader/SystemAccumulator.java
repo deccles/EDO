@@ -26,7 +26,7 @@ public class SystemAccumulator {
     Double fssProgress;
     Boolean allBodiesFound;
 
-    final Map<Integer, BodyInfo> bodies = new HashMap<>();
+    private final Map<Integer, BodyInfo> bodies = new HashMap<>();
 
     SystemAccumulator(String systemName, long systemAddress) {
         this.systemName = systemName;
@@ -334,4 +334,8 @@ public class SystemAccumulator {
         }
         return list;
     }
+
+	public boolean bodiesIsEmpty() {
+		return bodies.isEmpty();
+	}
 }

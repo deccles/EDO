@@ -269,7 +269,7 @@ public class RescanJournalsMain {
         int bodyCount = 0;
 
         for (SystemAccumulator acc : systems.values()) {
-            if (acc.bodies.isEmpty()) {
+            if (acc.bodiesIsEmpty()) {
                 continue;
             }
             List<CachedBody> bodies = acc.toCachedBodies();
