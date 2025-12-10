@@ -5,27 +5,20 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import org.dce.ed.cache.CachedBody;
 import org.dce.ed.cache.SystemCache;
-import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssBodySignalsEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
-import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
-import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent.Genus;
-import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent.Signal;
-import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
-import org.dce.ed.state.BodyInfo;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.event.FssBodySignalsEvent;
+import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.SaasignalsFoundEvent;
+import org.dce.ed.logreader.event.ScanEvent;
+import org.dce.ed.logreader.event.ScanOrganicEvent;
 
 /**
  * Standalone utility with a main() that scans all Elite Dangerous journal files

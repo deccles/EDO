@@ -1,11 +1,11 @@
 package org.dce.ed;
 
-import org.dce.ed.logreader.EliteLogFileLocator;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.prefs.Preferences;
+
+import org.dce.ed.logreader.EliteLogFileLocator;
 
 /**
  * Centralized preferences for the overlay, including log directory selection.

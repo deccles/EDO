@@ -44,6 +44,16 @@ import javax.swing.table.TableRowSorter;
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.event.CommanderEvent;
+import org.dce.ed.logreader.event.FileheaderEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FsdTargetEvent;
+import org.dce.ed.logreader.event.LoadGameEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.ReceiveTextEvent;
+import org.dce.ed.logreader.event.SaasignalsFoundEvent;
+import org.dce.ed.logreader.event.StartJumpEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -509,19 +519,19 @@ public class LogTabPanel extends JPanel {
         EliteEventType type = e.getType();
         switch (type) {
             case FILEHEADER: {
-                EliteLogEvent.FileheaderEvent fe = (EliteLogEvent.FileheaderEvent) e;
+                FileheaderEvent fe = (FileheaderEvent) e;
                 return "part=" + fe.getPart()
                         + ", odyssey=" + fe.isOdyssey()
                         + ", gameVersion=" + safe(fe.getGameVersion())
                         + ", build=" + safe(fe.getBuild());
             }
             case COMMANDER: {
-                EliteLogEvent.CommanderEvent ce = (EliteLogEvent.CommanderEvent) e;
+                CommanderEvent ce = (CommanderEvent) e;
                 return "name=" + safe(ce.getName())
                         + ", fid=" + safe(ce.getFid());
             }
             case LOAD_GAME: {
-                EliteLogEvent.LoadGameEvent lg = (EliteLogEvent.LoadGameEvent) e;
+                LoadGameEvent lg = (LoadGameEvent) e;
                 return "commander=" + safe(lg.getCommander())
                         + ", ship=" + safe(lg.getShip())
                         + ", shipName=" + safe(lg.getShipName())
@@ -530,7 +540,7 @@ public class LogTabPanel extends JPanel {
                         + ", credits=" + lg.getCredits();
             }
             case LOCATION: {
-                EliteLogEvent.LocationEvent le = (EliteLogEvent.LocationEvent) e;
+                LocationEvent le = (LocationEvent) e;
                 return "system=" + safe(le.getStarSystem())
                         + ", body=" + safe(le.getBody())
                         + ", bodyType=" + safe(le.getBodyType())
@@ -539,14 +549,14 @@ public class LogTabPanel extends JPanel {
                         + ", multicrew=" + le.isMulticrew();
             }
             case START_JUMP: {
-                EliteLogEvent.StartJumpEvent sj = (EliteLogEvent.StartJumpEvent) e;
+                StartJumpEvent sj = (StartJumpEvent) e;
                 return "type=" + safe(sj.getJumpType())
                         + ", system=" + safe(sj.getStarSystem())
                         + ", starClass=" + safe(sj.getStarClass())
                         + ", taxi=" + sj.isTaxi();
             }
             case FSD_JUMP: {
-                EliteLogEvent.FsdJumpEvent fj = (EliteLogEvent.FsdJumpEvent) e;
+                FsdJumpEvent fj = (FsdJumpEvent) e;
                 return "system=" + safe(fj.getStarSystem())
                         + ", body=" + safe(fj.getBody())
                         + ", bodyType=" + safe(fj.getBodyType())
@@ -555,20 +565,20 @@ public class LogTabPanel extends JPanel {
                         + ", fuelLevel=" + fj.getFuelLevel();
             }
             case FSD_TARGET: {
-                EliteLogEvent.FsdTargetEvent ft = (EliteLogEvent.FsdTargetEvent) e;
+                FsdTargetEvent ft = (FsdTargetEvent) e;
                 return "name=" + safe(ft.getName())
                         + ", starClass=" + safe(ft.getStarClass())
                         + ", remainingJumps=" + ft.getRemainingJumpsInRoute();
             }
             case SAASIGNALS_FOUND: {
-                EliteLogEvent.SaasignalsFoundEvent sa = (EliteLogEvent.SaasignalsFoundEvent) e;
+                SaasignalsFoundEvent sa = (SaasignalsFoundEvent) e;
                 StringBuilder sb = new StringBuilder();
                 sb.append("body=").append(safe(sa.getBodyName()));
 
                 if (sa.getSignals() != null && !sa.getSignals().isEmpty()) {
                     sb.append(", signals=");
                     boolean first = true;
-                    for (EliteLogEvent.SaasignalsFoundEvent.Signal s : sa.getSignals()) {
+                    for (SaasignalsFoundEvent.Signal s : sa.getSignals()) {
                         if (!first) {
                             sb.append("; ");
                         }
@@ -580,7 +590,7 @@ public class LogTabPanel extends JPanel {
                 if (sa.getGenuses() != null && !sa.getGenuses().isEmpty()) {
                     sb.append(", genuses=");
                     boolean first = true;
-                    for (EliteLogEvent.SaasignalsFoundEvent.Genus g : sa.getGenuses()) {
+                    for (SaasignalsFoundEvent.Genus g : sa.getGenuses()) {
                         if (!first) {
                             sb.append("; ");
                         }
@@ -595,7 +605,7 @@ public class LogTabPanel extends JPanel {
                 return sb.toString();
             }
             case STATUS: {
-                EliteLogEvent.StatusEvent st = (EliteLogEvent.StatusEvent) e;
+                StatusEvent st = (StatusEvent) e;
                 StringBuilder sb = new StringBuilder();
                 sb.append("flags=").append(st.getFlags())
                         .append(", flags2=").append(st.getFlags2())
@@ -615,7 +625,7 @@ public class LogTabPanel extends JPanel {
                 return sb.toString();
             }
             case RECEIVE_TEXT: {
-                EliteLogEvent.ReceiveTextEvent rt = (EliteLogEvent.ReceiveTextEvent) e;
+                ReceiveTextEvent rt = (ReceiveTextEvent) e;
                 String msg = rt.getMessageLocalised() != null
                         ? rt.getMessageLocalised()
                         : rt.getMessage();

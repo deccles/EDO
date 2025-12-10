@@ -32,13 +32,13 @@ import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.logreader.EliteLogEvent;
-import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.FsdTargetEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
-import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
-import org.dce.ed.logreader.EliteLogEvent.StatusEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FsdTargetEvent;
+import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 

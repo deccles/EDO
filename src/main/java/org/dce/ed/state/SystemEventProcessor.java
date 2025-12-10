@@ -3,17 +3,16 @@ package org.dce.ed.state;
 import java.util.List;
 import java.util.Locale;
 
-import org.dce.ed.cache.SystemCache;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteLogEvent;
-import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssBodySignalsEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
-import org.dce.ed.logreader.EliteLogEvent.SaasignalsFoundEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.event.FssBodySignalsEvent;
+import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.SaasignalsFoundEvent;
+import org.dce.ed.logreader.event.ScanEvent;
+import org.dce.ed.logreader.event.ScanOrganicEvent;
 
 /**
  * Consumes Elite Dangerous journal events and mutates a SystemState.
@@ -240,7 +239,7 @@ public class SystemEventProcessor {
     // ScanOrganic – the most important exobiology event
     // ---------------------------------------------------------------------
 
-    private void handleScanOrganic(EliteLogEvent.ScanOrganicEvent e) {
+    private void handleScanOrganic(ScanOrganicEvent e) {
     	// Tighten system address if needed
         if (e.getSystemAddress() != 0L && state.getSystemAddress() == 0L) {
             state.setSystemAddress(e.getSystemAddress());

@@ -22,11 +22,11 @@ import org.dce.ed.exobiology.ExobiologyData.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
-import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.LocationEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanOrganicEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.ScanEvent;
+import org.dce.ed.logreader.event.ScanOrganicEvent;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

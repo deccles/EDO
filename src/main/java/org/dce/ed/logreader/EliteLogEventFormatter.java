@@ -1,10 +1,21 @@
 package org.dce.ed.logreader;
 
-import com.google.gson.JsonObject;
-
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+
+import org.dce.ed.logreader.event.CommanderEvent;
+import org.dce.ed.logreader.event.FileheaderEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FsdTargetEvent;
+import org.dce.ed.logreader.event.LoadGameEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.ReceiveTextEvent;
+import org.dce.ed.logreader.event.SaasignalsFoundEvent;
+import org.dce.ed.logreader.event.StartJumpEvent;
+import org.dce.ed.logreader.event.StatusEvent;
+
+import com.google.gson.JsonObject;
 
 /**
  * Utility to format EliteLogEvent instances as human-readable log lines.
@@ -30,29 +41,29 @@ public final class EliteLogEventFormatter {
 
         switch (type) {
             case FILEHEADER:
-                return formatFileheader(ts, (EliteLogEvent.FileheaderEvent) event);
+                return formatFileheader(ts, (FileheaderEvent) event);
             case COMMANDER:
-                return formatCommander(ts, (EliteLogEvent.CommanderEvent) event);
+                return formatCommander(ts, (CommanderEvent) event);
             case LOAD_GAME:
-                return formatLoadGame(ts, (EliteLogEvent.LoadGameEvent) event);
+                return formatLoadGame(ts, (LoadGameEvent) event);
             case LOCATION:
-                return formatLocation(ts, (EliteLogEvent.LocationEvent) event);
+                return formatLocation(ts, (LocationEvent) event);
             case START_JUMP:
-                return formatStartJump(ts, (EliteLogEvent.StartJumpEvent) event);
+                return formatStartJump(ts, (StartJumpEvent) event);
             case FSD_JUMP:
-                return formatFsdJump(ts, (EliteLogEvent.FsdJumpEvent) event);
+                return formatFsdJump(ts, (FsdJumpEvent) event);
             case FSD_TARGET:
-                return formatFsdTarget(ts, (EliteLogEvent.FsdTargetEvent) event);
+                return formatFsdTarget(ts, (FsdTargetEvent) event);
             case SAASIGNALS_FOUND:
-                return formatSaaSignalsFound(ts, (EliteLogEvent.SaasignalsFoundEvent) event);
+                return formatSaaSignalsFound(ts, (SaasignalsFoundEvent) event);
             case NAV_ROUTE:
                 return ts + " [NAV_ROUTE] Nav route updated";
             case NAV_ROUTE_CLEAR:
                 return ts + " [NAV_ROUTE_CLEAR] Nav route cleared";
             case STATUS:
-                return formatStatus(ts, (EliteLogEvent.StatusEvent) event);
+                return formatStatus(ts, (StatusEvent) event);
             case RECEIVE_TEXT:
-                return formatReceiveText(ts, (EliteLogEvent.ReceiveTextEvent) event);
+                return formatReceiveText(ts, (ReceiveTextEvent) event);
             default:
                 // Generic / unknown events: show local timestamp + [eventName] + JSON minus timestamp/event
                 return formatGeneric(ts, event);
@@ -66,19 +77,19 @@ public final class EliteLogEventFormatter {
         return TS_FORMAT.format(instant);
     }
 
-    private static String formatFileheader(String ts, EliteLogEvent.FileheaderEvent e) {
+    private static String formatFileheader(String ts, FileheaderEvent e) {
         return ts + " [FILEHEADER] part=" + e.getPart()
                 + " odyssey=" + e.isOdyssey()
                 + " gameVersion=" + safe(e.getGameVersion())
                 + " build=" + safe(e.getBuild());
     }
 
-    private static String formatCommander(String ts, EliteLogEvent.CommanderEvent e) {
+    private static String formatCommander(String ts, CommanderEvent e) {
         return ts + " [COMMANDER] name=" + safe(e.getName())
                 + " fid=" + safe(e.getFid());
     }
 
-    private static String formatLoadGame(String ts, EliteLogEvent.LoadGameEvent e) {
+    private static String formatLoadGame(String ts, LoadGameEvent e) {
         return ts + " [LOAD_GAME] commander=" + safe(e.getCommander())
                 + " ship=" + safe(e.getShip())
                 + " shipName=" + safe(e.getShipName())
@@ -87,7 +98,7 @@ public final class EliteLogEventFormatter {
                 + " credits=" + e.getCredits();
     }
 
-    private static String formatLocation(String ts, EliteLogEvent.LocationEvent e) {
+    private static String formatLocation(String ts, LocationEvent e) {
         return ts + " [LOCATION] system=" + safe(e.getStarSystem())
                 + " body=" + safe(e.getBody())
                 + " bodyType=" + safe(e.getBodyType())
@@ -96,14 +107,14 @@ public final class EliteLogEventFormatter {
                 + " multicrew=" + e.isMulticrew();
     }
 
-    private static String formatStartJump(String ts, EliteLogEvent.StartJumpEvent e) {
+    private static String formatStartJump(String ts, StartJumpEvent e) {
         return ts + " [START_JUMP] type=" + safe(e.getJumpType())
                 + " system=" + safe(e.getStarSystem())
                 + " starClass=" + safe(e.getStarClass())
                 + " taxi=" + e.isTaxi();
     }
 
-    private static String formatFsdJump(String ts, EliteLogEvent.FsdJumpEvent e) {
+    private static String formatFsdJump(String ts, FsdJumpEvent e) {
         return ts + " [FSD_JUMP] system=" + safe(e.getStarSystem())
                 + " body=" + safe(e.getBody())
                 + " bodyType=" + safe(e.getBodyType())
@@ -112,13 +123,13 @@ public final class EliteLogEventFormatter {
                 + " fuelLevel=" + e.getFuelLevel();
     }
 
-    private static String formatFsdTarget(String ts, EliteLogEvent.FsdTargetEvent e) {
+    private static String formatFsdTarget(String ts, FsdTargetEvent e) {
         return ts + " [FSD_TARGET] name=" + safe(e.getName())
                 + " starClass=" + safe(e.getStarClass())
                 + " remainingJumps=" + e.getRemainingJumpsInRoute();
     }
 
-    private static String formatSaaSignalsFound(String ts, EliteLogEvent.SaasignalsFoundEvent e) {
+    private static String formatSaaSignalsFound(String ts, SaasignalsFoundEvent e) {
         StringBuilder sb = new StringBuilder();
         sb.append(ts)
           .append(" [SAASIGNALS_FOUND] body=")
@@ -127,7 +138,7 @@ public final class EliteLogEventFormatter {
         if (e.getSignals() != null && !e.getSignals().isEmpty()) {
             sb.append(" signals=");
             boolean first = true;
-            for (EliteLogEvent.SaasignalsFoundEvent.Signal s : e.getSignals()) {
+            for (SaasignalsFoundEvent.Signal s : e.getSignals()) {
                 if (!first) {
                     sb.append(", ");
                 }
@@ -140,7 +151,7 @@ public final class EliteLogEventFormatter {
         if (e.getGenuses() != null && !e.getGenuses().isEmpty()) {
             sb.append(" genuses=");
             boolean first = true;
-            for (EliteLogEvent.SaasignalsFoundEvent.Genus g : e.getGenuses()) {
+            for (SaasignalsFoundEvent.Genus g : e.getGenuses()) {
                 if (!first) {
                     sb.append(", ");
                 }
@@ -152,7 +163,7 @@ public final class EliteLogEventFormatter {
         return sb.toString();
     }
 
-    private static String formatStatus(String ts, EliteLogEvent.StatusEvent e) {
+    private static String formatStatus(String ts, StatusEvent e) {
         StringBuilder sb = new StringBuilder();
         sb.append(ts)
           .append(" [STATUS] flags=").append(e.getFlags())
@@ -175,7 +186,7 @@ public final class EliteLogEventFormatter {
         return sb.toString();
     }
 
-    private static String formatReceiveText(String ts, EliteLogEvent.ReceiveTextEvent e) {
+    private static String formatReceiveText(String ts, ReceiveTextEvent e) {
         return ts + " [RECEIVE_TEXT] from=" + safe(e.getFrom())
                 + " channel=" + safe(e.getChannel())
                 + " msg=" + safe(e.getMessageLocalised() != null

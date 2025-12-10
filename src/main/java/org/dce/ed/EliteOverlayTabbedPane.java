@@ -29,11 +29,10 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
 import org.dce.ed.logreader.EliteLogEvent;
-import org.dce.ed.logreader.EliteLogEvent.FsdJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.FssDiscoveryScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.ScanEvent;
-import org.dce.ed.logreader.EliteLogEvent.StartJumpEvent;
-import org.dce.ed.logreader.EliteLogEvent.StatusEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.StartJumpEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

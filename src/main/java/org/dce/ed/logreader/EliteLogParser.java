@@ -4,7 +4,24 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.dce.ed.logreader.EliteLogEvent.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.EliteLogEvent.GenericEvent;
+import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
+import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
+import org.dce.ed.logreader.event.CommanderEvent;
+import org.dce.ed.logreader.event.FileheaderEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.FsdTargetEvent;
+import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.event.FssBodySignalsEvent;
+import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.LoadGameEvent;
+import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.ReceiveTextEvent;
+import org.dce.ed.logreader.event.SaasignalsFoundEvent;
+import org.dce.ed.logreader.event.ScanEvent;
+import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.logreader.event.StartJumpEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -63,36 +80,36 @@ public class EliteLogParser {
                 return parseFssBodySignals(ts, obj);
 
             case NAV_ROUTE:
-                return new EliteLogEvent.NavRouteEvent(ts, obj);
+                return new NavRouteEvent(ts, obj);
             case NAV_ROUTE_CLEAR:
-                return new EliteLogEvent.NavRouteClearEvent(ts, obj);
+                return new NavRouteClearEvent(ts, obj);
             case RECEIVE_TEXT:
                 return parseReceiveText(ts, obj);
             case STATUS:
                 return parseStatus(ts, obj);
             default:
                 // For everything else, fall back to generic event.
-                return new EliteLogEvent.GenericEvent(ts, type, obj);
+                return new GenericEvent(ts, type, obj);
         }
     }
 
-    private EliteLogEvent.FileheaderEvent parseFileheader(Instant ts, JsonObject obj) {
+    private FileheaderEvent parseFileheader(Instant ts, JsonObject obj) {
         int part = obj.has("part") ? obj.get("part").getAsInt() : 0;
         String language = obj.has("language") ? obj.get("language").getAsString() : null;
         boolean odyssey = obj.has("Odyssey") && obj.get("Odyssey").getAsBoolean();
         String gameVersion = obj.has("gameversion") ? obj.get("gameversion").getAsString() : null;
         String build = obj.has("build") ? obj.get("build").getAsString() : null;
 
-        return new EliteLogEvent.FileheaderEvent(ts, obj, part, language, odyssey, gameVersion, build);
+        return new FileheaderEvent(ts, obj, part, language, odyssey, gameVersion, build);
     }
 
-    private EliteLogEvent.CommanderEvent parseCommander(Instant ts, JsonObject obj) {
+    private CommanderEvent parseCommander(Instant ts, JsonObject obj) {
         String fid = obj.has("FID") ? obj.get("FID").getAsString() : null;
         String name = obj.has("Name") ? obj.get("Name").getAsString() : null;
-        return new EliteLogEvent.CommanderEvent(ts, obj, fid, name);
+        return new CommanderEvent(ts, obj, fid, name);
     }
 
-    private EliteLogEvent.LoadGameEvent parseLoadGame(Instant ts, JsonObject obj) {
+    private LoadGameEvent parseLoadGame(Instant ts, JsonObject obj) {
         String commander = getString(obj, "Commander");
         String fid = getString(obj, "FID");
         String ship = getString(obj, "Ship");
@@ -104,7 +121,7 @@ public class EliteLogParser {
         String gameMode = getString(obj, "GameMode");
         long credits = obj.has("Credits") ? obj.get("Credits").getAsLong() : 0L;
 
-        return new EliteLogEvent.LoadGameEvent(
+        return new LoadGameEvent(
                 ts, obj,
                 commander, fid,
                 ship, shipId,
@@ -114,7 +131,7 @@ public class EliteLogParser {
         );
     }
 
-    private EliteLogEvent.LocationEvent parseLocation(Instant ts, JsonObject obj) {
+    private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         boolean docked = obj.has("Docked") && obj.get("Docked").getAsBoolean();
         boolean taxi = obj.has("Taxi") && obj.get("Taxi").getAsBoolean();
         boolean multicrew = obj.has("Multicrew") && obj.get("Multicrew").getAsBoolean();
@@ -137,7 +154,7 @@ public class EliteLogParser {
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;
         String bodyType = getString(obj, "BodyType");
 
-        return new EliteLogEvent.LocationEvent(
+        return new LocationEvent(
                 ts, obj,
                 docked, taxi, multicrew,
                 starSystem, systemAddress,
@@ -145,16 +162,16 @@ public class EliteLogParser {
         );
     }
 
-    private EliteLogEvent.StartJumpEvent parseStartJump(Instant ts, JsonObject obj) {
+    private StartJumpEvent parseStartJump(Instant ts, JsonObject obj) {
         String jumpType = getString(obj, "JumpType");
         boolean taxi = obj.has("Taxi") && obj.get("Taxi").getAsBoolean();
         String starSystem = getString(obj, "StarSystem");
         Long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : null;
         String starClass = getString(obj, "StarClass");
-        return new EliteLogEvent.StartJumpEvent(ts, obj, jumpType, taxi, starSystem, systemAddress, starClass);
+        return new StartJumpEvent(ts, obj, jumpType, taxi, starSystem, systemAddress, starClass);
     }
 
-    private EliteLogEvent.FsdJumpEvent parseFsdJump(Instant ts, JsonObject obj) {
+    private FsdJumpEvent parseFsdJump(Instant ts, JsonObject obj) {
         String starSystem = getString(obj, "StarSystem");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
 
@@ -177,7 +194,7 @@ public class EliteLogParser {
         double fuelUsed = obj.has("FuelUsed") ? obj.get("FuelUsed").getAsDouble() : 0.0;
         double fuelLevel = obj.has("FuelLevel") ? obj.get("FuelLevel").getAsDouble() : 0.0;
 
-        return new EliteLogEvent.FsdJumpEvent(
+        return new FsdJumpEvent(
                 ts, obj,
                 starSystem, systemAddress, starPos,
                 body, bodyId, bodyType,
@@ -185,52 +202,52 @@ public class EliteLogParser {
         );
     }
 
-    private EliteLogEvent.FsdTargetEvent parseFsdTarget(Instant ts, JsonObject obj) {
+    private FsdTargetEvent parseFsdTarget(Instant ts, JsonObject obj) {
         String name = getString(obj, "Name");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
         String starClass = getString(obj, "StarClass");
         int remaining = obj.has("RemainingJumpsInRoute") ? obj.get("RemainingJumpsInRoute").getAsInt() : 0;
-        return new EliteLogEvent.FsdTargetEvent(ts, obj, name, systemAddress, starClass, remaining);
+        return new FsdTargetEvent(ts, obj, name, systemAddress, starClass, remaining);
     }
 
-    private EliteLogEvent.SaasignalsFoundEvent parseSaaSignalsFound(Instant ts, JsonObject obj) {
+    private SaasignalsFoundEvent parseSaaSignalsFound(Instant ts, JsonObject obj) {
         String bodyName = getString(obj, "BodyName");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;
 
-        List<EliteLogEvent.SaasignalsFoundEvent.Signal> signals = new ArrayList<>();
+        List<SaasignalsFoundEvent.Signal> signals = new ArrayList<>();
         if (obj.has("Signals") && obj.get("Signals").isJsonArray()) {
             for (JsonElement e : obj.getAsJsonArray("Signals")) {
                 JsonObject so = e.getAsJsonObject();
                 String type = getString(so, "Type");
                 String typeLocalised = getString(so, "Type_Localised");
                 int count = so.has("Count") ? so.get("Count").getAsInt() : 0;
-                signals.add(new EliteLogEvent.SaasignalsFoundEvent.Signal(type, typeLocalised, count));
+                signals.add(new SaasignalsFoundEvent.Signal(type, typeLocalised, count));
             }
         }
 
-        List<EliteLogEvent.SaasignalsFoundEvent.Genus> genuses = new ArrayList<>();
+        List<SaasignalsFoundEvent.Genus> genuses = new ArrayList<>();
         if (obj.has("Genuses") && obj.get("Genuses").isJsonArray()) {
             for (JsonElement e : obj.getAsJsonArray("Genuses")) {
                 JsonObject go = e.getAsJsonObject();
                 String genus = getString(go, "Genus");
                 String genusLocalised = getString(go, "Genus_Localised");
-                genuses.add(new EliteLogEvent.SaasignalsFoundEvent.Genus(genus, genusLocalised));
+                genuses.add(new SaasignalsFoundEvent.Genus(genus, genusLocalised));
             }
         }
 
-        return new EliteLogEvent.SaasignalsFoundEvent(ts, obj, bodyName, systemAddress, bodyId, signals, genuses);
+        return new SaasignalsFoundEvent(ts, obj, bodyName, systemAddress, bodyId, signals, genuses);
     }
 
-    private EliteLogEvent.ReceiveTextEvent parseReceiveText(Instant ts, JsonObject obj) {
+    private ReceiveTextEvent parseReceiveText(Instant ts, JsonObject obj) {
         String from = getString(obj, "From");
         String msg = getString(obj, "Message");
         String msgLoc = getString(obj, "Message_Localised");
         String channel = getString(obj, "Channel");
-        return new EliteLogEvent.ReceiveTextEvent(ts, obj, from, msg, msgLoc, channel);
+        return new ReceiveTextEvent(ts, obj, from, msg, msgLoc, channel);
     }
 
-    private EliteLogEvent.StatusEvent parseStatus(Instant ts, JsonObject obj) {
+    private StatusEvent parseStatus(Instant ts, JsonObject obj) {
         int flags = obj.has("Flags") ? obj.get("Flags").getAsInt() : 0;
         int flags2 = obj.has("Flags2") ? obj.get("Flags2").getAsInt() : 0;
 
@@ -296,7 +313,7 @@ public class EliteLogParser {
             }
         }
 
-        return new EliteLogEvent.StatusEvent(
+        return new StatusEvent(
                 ts,
                 obj,
                 flags,
@@ -320,7 +337,7 @@ public class EliteLogParser {
                 destName
         );
     }
-    private EliteLogEvent.ScanOrganicEvent parseScanOrganic(Instant ts, JsonObject json) {
+    private ScanOrganicEvent parseScanOrganic(Instant ts, JsonObject json) {
         long systemAddress = json.has("SystemAddress")
                 ? json.get("SystemAddress").getAsLong()
                 : 0L;
@@ -338,7 +355,7 @@ public class EliteLogParser {
         // SystemTabPanel will already have the name from the Scan/FSS data.
         String bodyName = null;
 
-        return new EliteLogEvent.ScanOrganicEvent(
+        return new ScanOrganicEvent(
                 ts,
                 json,
                 systemAddress,
@@ -352,7 +369,7 @@ public class EliteLogParser {
         );
     }
 
-    private EliteLogEvent.ScanEvent parseScan(Instant ts, JsonObject obj) {
+    private ScanEvent parseScan(Instant ts, JsonObject obj) {
         String bodyName = getString(obj, "BodyName");
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
@@ -374,7 +391,7 @@ public class EliteLogParser {
         boolean wasMapped = obj.has("WasMapped") && obj.get("WasMapped").getAsBoolean();
         String starType = getString(obj, "StarType");
 
-        return new EliteLogEvent.ScanEvent(
+        return new ScanEvent(
                 ts,
                 obj,
                 bodyName,
@@ -394,14 +411,14 @@ public class EliteLogParser {
         );
     }
 
-    private EliteLogEvent.FssDiscoveryScanEvent parseFssDiscoveryScan(Instant ts, JsonObject obj) {
+    private FssDiscoveryScanEvent parseFssDiscoveryScan(Instant ts, JsonObject obj) {
         double progress = obj.has("Progress") ? obj.get("Progress").getAsDouble() : 0.0;
         int bodyCount = obj.has("BodyCount") ? obj.get("BodyCount").getAsInt() : 0;
         int nonBodyCount = obj.has("NonBodyCount") ? obj.get("NonBodyCount").getAsInt() : 0;
         String systemName = getString(obj, "SystemName");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
 
-        return new EliteLogEvent.FssDiscoveryScanEvent(
+        return new FssDiscoveryScanEvent(
                 ts,
                 obj,
                 progress,
@@ -413,23 +430,23 @@ public class EliteLogParser {
     }
 
 
-    private EliteLogEvent.FssBodySignalsEvent parseFssBodySignals(Instant ts, JsonObject obj) {
+    private FssBodySignalsEvent parseFssBodySignals(Instant ts, JsonObject obj) {
         String bodyName = getString(obj, "BodyName");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;
 
-        List<EliteLogEvent.SaasignalsFoundEvent.Signal> signals = new ArrayList<>();
+        List<SaasignalsFoundEvent.Signal> signals = new ArrayList<>();
         if (obj.has("Signals") && obj.get("Signals").isJsonArray()) {
             for (JsonElement e : obj.getAsJsonArray("Signals")) {
                 JsonObject so = e.getAsJsonObject();
                 String type = getString(so, "Type");
                 String typeLocalised = getString(so, "Type_Localised");
                 int count = so.has("Count") ? so.get("Count").getAsInt() : 0;
-                signals.add(new EliteLogEvent.SaasignalsFoundEvent.Signal(type, typeLocalised, count));
+                signals.add(new SaasignalsFoundEvent.Signal(type, typeLocalised, count));
             }
         }
 
-        return new EliteLogEvent.FssBodySignalsEvent(
+        return new FssBodySignalsEvent(
                 ts,
                 obj,
                 bodyName,

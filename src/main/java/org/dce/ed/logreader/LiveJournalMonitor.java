@@ -15,6 +15,8 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.dce.ed.logreader.event.StatusEvent;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -284,8 +286,8 @@ public final class LiveJournalMonitor {
             }
 
             // Build the StatusEvent using the extended constructor
-            EliteLogEvent.StatusEvent event =
-                    new EliteLogEvent.StatusEvent(
+            StatusEvent event =
+                    new StatusEvent(
                             ts,
                             root,
                             flags,
