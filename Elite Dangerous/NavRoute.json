@@ -1,18 +1,3 @@
-{ "timestamp":"2025-11-29T20:54:38Z", "event":"NavRoute", "Route":[ 
-{ "StarSystem":"Sifeae JU-Z b3-0", "SystemAddress":708000884257, "StarPos":[2760.65625,696.15625,299.37500], "StarClass":"M" }, 
-{ "StarSystem":"Sifeae PY-Z d2", "SystemAddress":79784200587, "StarPos":[2761.06250,717.37500,311.06250], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae KF-Y b4-0", "SystemAddress":707732514345, "StarPos":[2752.09375,717.68750,325.21875], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae JD-Y c2-1", "SystemAddress":363428647706, "StarPos":[2780.12500,711.09375,343.65625], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae JD-Y c2-3", "SystemAddress":913184461594, "StarPos":[2810.93750,717.46875,356.25000], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae MO-W c3-0", "SystemAddress":88617882402, "StarPos":[2818.81250,735.90625,376.87500], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae MO-W c3-1", "SystemAddress":363495789346, "StarPos":[2815.31250,737.56250,380.53125], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae UE-Y d1-4", "SystemAddress":148520454547, "StarPos":[2818.09375,751.93750,384.84375], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae YH-T b7-0", "SystemAddress":709343258177, "StarPos":[2855.15625,758.81250,380.93750], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae JI-Y c2-2", "SystemAddress":638440805146, "StarPos":[2868.25000,761.81250,374.50000], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae HN-Y c2-2", "SystemAddress":638440837914, "StarPos":[2870.50000,776.34375,356.68750], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae QY-Z d3", "SystemAddress":114160716171, "StarPos":[2891.68750,766.37500,348.87500], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae KI-Y c2-2", "SystemAddress":638507914010, "StarPos":[2905.68750,766.09375,357.31250], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae JN-Y c2-0", "SystemAddress":88819241754, "StarPos":[2937.28125,778.31250,346.62500], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae LI-Y c2-1", "SystemAddress":363697115930, "StarPos":[2960.06250,766.15625,372.75000], "StarClass":"K" }, 
-{ "StarSystem":"Sifeae CN-T b7-0", "SystemAddress":710953936449, "StarPos":[2980.06250,775.75000,377.62500], "StarClass":"M" }
+{ "timestamp":"2025-12-10T19:53:05Z", "event":"NavRouteClear", "Route":[ 
+
  ] }

@@ -1,4 +1,4 @@
-{ "timestamp":"2025-11-29T20:32:56Z", "event":"Shipyard", "MarketID":3714348544, "StationName":"JFZ-93T", "StarSystem":"Sifeae EX-Z c1-3", "Horizons":true, "AllowCobraMkIV":false, "PriceList":[ 
+{ "timestamp":"2025-12-09T22:52:23Z", "event":"Shipyard", "MarketID":3714348544, "StationName":"JFZ-93T", "StarSystem":"Ploea Eurl NH-W c17-1", "Horizons":true, "AllowCobraMkIV":false, "PriceList":[ 
 { "id":0, "ShipType":"mandalay", "ShipPrice":57862958 }, 
 { "id":0, "ShipType":"type9", "ShipType_Localised":"Type-9 Heavy", "ShipPrice":92821920 }
  ] }

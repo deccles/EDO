@@ -1,4 +1,4 @@
-{ "timestamp":"2025-11-28T23:44:29Z", "event":"ModuleInfo", "Modules":[ 
+{ "timestamp":"2025-12-09T23:14:38Z", "event":"ModuleInfo", "Modules":[ 
 { "Slot":"MainEngines", "Item":"int_engine_size4_class5", "Power":4.920000, "Priority":0 }, 
 { "Slot":"Slot04_Size4", "Item":"int_shieldgenerator_size3_class5", "Power":2.520000, "Priority":0 }, 
 { "Slot":"Slot02_Size5", "Item":"int_guardianfsdbooster_size5", "Power":2.140000, "Priority":0 }, 
