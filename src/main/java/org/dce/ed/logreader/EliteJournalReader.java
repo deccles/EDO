@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -71,6 +72,82 @@ public class EliteJournalReader {
         events.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
         return events;
     }
+    /**
+     * Read all events whose timestamp is strictly after the given Instant.
+     * <p>
+     * This is implemented on top of readEventsFromLastNJournalFiles(int),
+     * so we avoid re-reading the entire journal history when the cursor
+     * (since) is recent. We grow the number of files considered until
+     * we reach a file whose earliest event is at or before the cursor,
+     * or we hit all available files.
+     */
+    public List<EliteLogEvent> readEventsSince(Instant since) throws IOException {
+        if (since == null) {
+            // Fallback: same behavior as before; caller wants full history.
+            return readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
+        }
+
+        // Start with a small window of recent files and expand as needed.
+        int filesToRead = 4;
+        int maxFiles = Integer.MAX_VALUE;
+
+        List<EliteLogEvent> windowEvents = readEventsFromLastNJournalFiles(filesToRead);
+        if (windowEvents.isEmpty()) {
+            return windowEvents;
+        }
+
+        // Grow the window until the earliest event in it is <= since,
+        // or until we've pulled in all available files that method can see.
+        while (true) {
+            Instant earliest = windowEvents.stream()
+                    .map(EliteLogEvent::getTimestamp)
+                    .filter(Objects::nonNull)
+                    .min(Instant::compareTo)
+                    .orElse(null);
+
+            // If we have no timestamps at all, or the earliest is at/before the cursor,
+            // we've read far enough back in history.
+            if (earliest == null || !earliest.isAfter(since)) {
+                break;
+            }
+
+            // If we've already hit our max (or the read call is not returning more),
+            // don't loop forever; just use what we have.
+            if (filesToRead >= maxFiles) {
+                break;
+            }
+
+            int newFilesToRead = filesToRead * 2;
+            if (newFilesToRead < filesToRead) { // overflow guard
+                break;
+            }
+
+            // Expand the window.
+            filesToRead = newFilesToRead;
+            List<EliteLogEvent> expanded = readEventsFromLastNJournalFiles(filesToRead);
+            if (expanded.size() <= windowEvents.size()) {
+                // No additional events; we've hit the limit of what this method can provide.
+                break;
+            }
+            windowEvents = expanded;
+        }
+
+        // Now filter the window down to strictly-after-since.
+        List<EliteLogEvent> result = new ArrayList<>();
+        for (EliteLogEvent e : windowEvents) {
+            Instant ts = e.getTimestamp();
+            if (ts != null && ts.isAfter(since)) {
+                result.add(e);
+            }
+        }
+
+        // Keep them in chronological order just in case the reader didn't already.
+        result.sort(Comparator.comparing(EliteLogEvent::getTimestamp,
+                Comparator.nullsLast(Comparator.naturalOrder())));
+
+        return result;
+    }
+
 
     /**
      * Read only the latest journal file (by name).
@@ -184,80 +261,6 @@ public class EliteJournalReader {
 
         events.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
         return events;
-    }
-
-    /**
-     * Read all events whose timestamp is strictly after the given Instant.
-     * <p>
-     * This is intended for incremental cache rebuilds: provide the timestamp
-     * from the last processed event and only newer events will be returned.
-     */
-    public List<EliteLogEvent> readEventsSince(Instant since) throws IOException {
-        if (since == null) {
-            // Fallback to full history if no cursor is provided.
-            return readAllEvents();
-        }
-
-        List<Path> journalFiles = listJournalFiles();
-        if (journalFiles.isEmpty()) {
-            return List.of();
-        }
-
-        ZoneId zone = ZoneId.systemDefault();
-        LocalDate sinceDate = since.atZone(zone).toLocalDate();
-
-        List<EliteLogEvent> result = new ArrayList<>();
-
-        for (Path file : journalFiles) {
-            String name = file.getFileName().toString();
-
-            // Try to derive a LocalDate from the filename, which typically looks like:
-            //   Journal.2025-11-27T154101.01.log
-            LocalDate fileDate = null;
-            int firstDot = name.indexOf('.');
-            int tIndex = name.indexOf('T', firstDot + 1);
-            if (firstDot >= 0 && tIndex > firstDot + 1) {
-                String datePart = name.substring(firstDot + 1, tIndex);
-                try {
-                    fileDate = LocalDate.parse(datePart);
-                } catch (Exception ignored) {
-                    // If parsing fails we just fall back to timestamp filtering below.
-                }
-            }
-
-            // If we have a parsed date and it's strictly before the cursor date,
-            // we can safely skip this file entirely.
-            if (fileDate != null && fileDate.isBefore(sinceDate)) {
-                continue;
-            }
-
-            List<EliteLogEvent> fileEvents = new ArrayList<>();
-            readEventsFromFile(file, fileEvents);
-            if (fileEvents.isEmpty()) {
-                continue;
-            }
-
-            if (fileDate != null && fileDate.equals(sinceDate)) {
-                // Boundary day: keep only events strictly after the cursor.
-                for (EliteLogEvent e : fileEvents) {
-                    Instant ts = e.getTimestamp();
-                    if (ts != null && ts.isAfter(since)) {
-                        result.add(e);
-                    }
-                }
-            } else {
-                // Later days or unknown filename date: just filter by timestamp.
-                for (EliteLogEvent e : fileEvents) {
-                    Instant ts = e.getTimestamp();
-                    if (ts != null && ts.isAfter(since)) {
-                        result.add(e);
-                    }
-                }
-            }
-        }
-
-        result.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
-        return result;
     }
 
     /**

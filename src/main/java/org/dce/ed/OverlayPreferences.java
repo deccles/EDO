@@ -24,11 +24,9 @@ public final class OverlayPreferences {
 
     public static boolean isOverlayTransparent() {
         boolean b = PREFS.getBoolean(KEY_IS_OVERLAY_TRANSPARENT, true);	
-        System.out.println("transparent=" + b);
         return b;
     }
     public static void setOverlayTransparent(boolean transparent) {
-    	System.out.println("setting transparent=" + transparent);
         PREFS.putBoolean(KEY_IS_OVERLAY_TRANSPARENT, transparent);	
     }
     public static boolean isAutoLogDir() {

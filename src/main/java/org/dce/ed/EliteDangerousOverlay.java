@@ -2,11 +2,14 @@ package org.dce.ed;
 
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.util.prefs.Preferences;
+import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.prefs.Preferences;
 
 import javax.swing.SwingUtilities;
+
+import org.dce.ed.logreader.RescanJournalsMain;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
@@ -31,6 +34,12 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     public static void main(String[] args) {
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");
+    	
+    	try {
+			RescanJournalsMain.rescanJournals(false);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
     	
         SwingUtilities.invokeLater(() -> {
             EliteDangerousOverlay app = new EliteDangerousOverlay();
