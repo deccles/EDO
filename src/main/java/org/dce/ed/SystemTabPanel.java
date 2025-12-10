@@ -166,14 +166,26 @@ public class SystemTabPanel extends JPanel {
                 Component c = super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
 
-                c.setForeground(isSelected ? Color.BLACK : ED_ORANGE);
+                // Biological detail rows (bioText/bioValue) should be gray when not selected
+                Row r = tableModel.getRowAt(row);
+                boolean isBioRow = (r != null && r.detail && (r.bioText != null || r.bioValue != null));
+
+                if (isSelected) {
+                    c.setForeground(Color.BLACK);
+                } else if (isBioRow) {
+                    c.setForeground(new Color(180, 180, 180)); // gray for biologicals
+                } else {
+                    c.setForeground(ED_ORANGE);
+                }
+
                 return c;
             }
         };
 
         table.setDefaultRenderer(Object.class, cellRenderer);
 
-        DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
+
+DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
                 setForeground(ED_ORANGE);
@@ -194,7 +206,18 @@ public class SystemTabPanel extends JPanel {
                                                                   column);
 
                 setHorizontalAlignment(SwingConstants.RIGHT);
-                c.setForeground(isSelected ? Color.BLACK : ED_ORANGE);
+
+                // Biological detail rows should be gray in the Value column too
+                Row r = tableModel.getRowAt(row);
+                boolean isBioRow = (r != null && r.detail && (r.bioText != null || r.bioValue != null));
+
+                if (isSelected) {
+                    c.setForeground(Color.BLACK);
+                } else if (isBioRow) {
+                    c.setForeground(new Color(180, 180, 180));
+                } else {
+                    c.setForeground(ED_ORANGE);
+                }
 
                 return c;
             }
