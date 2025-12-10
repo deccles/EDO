@@ -471,16 +471,16 @@ public class SystemTabPanel extends JPanel {
                         bGenus = bName.substring(0, bSpace);
                     }
 
-                    // 1) Genus ascending
-                    int cmp = aGenus.compareToIgnoreCase(bGenus);
+                    // 1) Value descending (higher first)
+                    long aVal = (a.cr != null) ? a.cr.longValue() : Long.MIN_VALUE;
+                    long bVal = (bRow.cr != null) ? bRow.cr.longValue() : Long.MIN_VALUE;
+                    int cmp = Long.compare(bVal, aVal);
                     if (cmp != 0) {
                         return cmp;
                     }
 
-                    // 2) Value descending (higher first)
-                    long aVal = (a.cr != null) ? a.cr.longValue() : Long.MIN_VALUE;
-                    long bVal = (bRow.cr != null) ? bRow.cr.longValue() : Long.MIN_VALUE;
-                    cmp = Long.compare(bVal, aVal);
+                    // 2) Genus ascending
+                    cmp = aGenus.compareToIgnoreCase(bGenus);
                     if (cmp != 0) {
                         return cmp;
                     }
