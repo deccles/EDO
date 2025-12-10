@@ -27,11 +27,11 @@ public class EliteJournalReader {
     private final Path journalDirectory;
 
     /**
-     * Use auto-detected journal directory (via EliteLogFileLocator).
+     * Use auto-detected journal directory (via OverlayPreferences / EliteLogFileLocator).
      * @throws IllegalStateException if the directory cannot be located.
      */
     public EliteJournalReader() {
-    	this(OverlayPreferences.resolveJournalDirectory());
+        this(OverlayPreferences.resolveJournalDirectory());
     }
 
     /**
@@ -121,20 +121,25 @@ public class EliteJournalReader {
             }
         }
 
+        if (matchingFiles.isEmpty()) {
+            return List.of();
+        }
+
         List<EliteLogEvent> events = new ArrayList<>();
         for (Path file : matchingFiles) {
             readEventsFromFile(file, events);
         }
 
         ZoneId zone = ZoneId.systemDefault();
-        List<EliteLogEvent> filteredByDate = events.stream()
-                .filter(e -> {
-                    Instant ts = e.getTimestamp();
-                    LocalDate eventDate = ts.atZone(zone).toLocalDate();
-                    return eventDate.equals(date);
-                })
-                .sorted(Comparator.comparing(EliteLogEvent::getTimestamp))
-                .collect(Collectors.toList());
+        List<EliteLogEvent> filteredByDate =
+                events.stream()
+                        .filter(e -> {
+                            Instant ts = e.getTimestamp();
+                            LocalDate eventDate = ts.atZone(zone).toLocalDate();
+                            return eventDate.equals(date);
+                        })
+                        .sorted(Comparator.comparing(EliteLogEvent::getTimestamp))
+                        .collect(Collectors.toList());
 
         // Also consider Status.json if its timestamp matches the given date.
         Path status = EliteLogFileLocator.findStatusFile(journalDirectory);
@@ -181,10 +186,83 @@ public class EliteJournalReader {
         return events;
     }
 
-    
+    /**
+     * Read all events whose timestamp is strictly after the given Instant.
+     * <p>
+     * This is intended for incremental cache rebuilds: provide the timestamp
+     * from the last processed event and only newer events will be returned.
+     */
+    public List<EliteLogEvent> readEventsSince(Instant since) throws IOException {
+        if (since == null) {
+            // Fallback to full history if no cursor is provided.
+            return readAllEvents();
+        }
+
+        List<Path> journalFiles = listJournalFiles();
+        if (journalFiles.isEmpty()) {
+            return List.of();
+        }
+
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate sinceDate = since.atZone(zone).toLocalDate();
+
+        List<EliteLogEvent> result = new ArrayList<>();
+
+        for (Path file : journalFiles) {
+            String name = file.getFileName().toString();
+
+            // Try to derive a LocalDate from the filename, which typically looks like:
+            //   Journal.2025-11-27T154101.01.log
+            LocalDate fileDate = null;
+            int firstDot = name.indexOf('.');
+            int tIndex = name.indexOf('T', firstDot + 1);
+            if (firstDot >= 0 && tIndex > firstDot + 1) {
+                String datePart = name.substring(firstDot + 1, tIndex);
+                try {
+                    fileDate = LocalDate.parse(datePart);
+                } catch (Exception ignored) {
+                    // If parsing fails we just fall back to timestamp filtering below.
+                }
+            }
+
+            // If we have a parsed date and it's strictly before the cursor date,
+            // we can safely skip this file entirely.
+            if (fileDate != null && fileDate.isBefore(sinceDate)) {
+                continue;
+            }
+
+            List<EliteLogEvent> fileEvents = new ArrayList<>();
+            readEventsFromFile(file, fileEvents);
+            if (fileEvents.isEmpty()) {
+                continue;
+            }
+
+            if (fileDate != null && fileDate.equals(sinceDate)) {
+                // Boundary day: keep only events strictly after the cursor.
+                for (EliteLogEvent e : fileEvents) {
+                    Instant ts = e.getTimestamp();
+                    if (ts != null && ts.isAfter(since)) {
+                        result.add(e);
+                    }
+                }
+            } else {
+                // Later days or unknown filename date: just filter by timestamp.
+                for (EliteLogEvent e : fileEvents) {
+                    Instant ts = e.getTimestamp();
+                    if (ts != null && ts.isAfter(since)) {
+                        result.add(e);
+                    }
+                }
+            }
+        }
+
+        result.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
+        return result;
+    }
+
     /**
      * Return a sorted list of all local dates for which there is at least one
-     * Journal.*.log file in the journal directory.
+     * Journal.*.log
      *
      * The date is derived from the filename segment between "Journal." and "T",
      * e.g. Journal.2025-11-27T154101.01.log -> 2025-11-27.
@@ -205,8 +283,8 @@ public class EliteJournalReader {
             try {
                 LocalDate d = LocalDate.parse(datePart);
                 dates.add(d);
-            } catch (Exception ignored) {
-                // skip unparsable names
+            } catch (Exception ex) {
+                // ignore malformed names
             }
         }
 
@@ -215,7 +293,7 @@ public class EliteJournalReader {
         return list;
     }
 
-    /* package-private so tests can use it if desired */
+    /** package-private so tests can use it if desired */
     void readEventsFromFile(Path file, List<EliteLogEvent> sink) throws IOException {
         try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             String line;

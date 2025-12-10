@@ -143,7 +143,30 @@ public final class SystemCache {
         cs.nonBodyCount = nonBodyCount;
         cs.fssProgress = fssProgress;
         cs.allBodiesFound = allBodiesFound;
-        cs.bodies = (bodies != null) ? new ArrayList<CachedBody>(bodies) : new ArrayList<>();
+        if (cs.bodies == null) {
+            cs.bodies = new ArrayList<>();
+        }
+
+        if (bodies != null && !bodies.isEmpty()) {
+            for (CachedBody newBody : bodies) {
+                boolean merged = false;
+                for (int i = 0; i < cs.bodies.size(); i++) {
+                    CachedBody existing = cs.bodies.get(i);
+                    // Prefer matching by bodyId when available, otherwise fall back to name.
+                    boolean idMatch = (newBody.bodyId >= 0 && existing.bodyId >= 0 && newBody.bodyId == existing.bodyId);
+                    boolean nameMatch = (newBody.name != null && !newBody.name.isEmpty()
+                            && newBody.name.equals(existing.name));
+                    if (idMatch || nameMatch) {
+                        cs.bodies.set(i, newBody);
+                        merged = true;
+                        break;
+                    }
+                }
+                if (!merged) {
+                    cs.bodies.add(newBody);
+                }
+            }
+        }
 
         if (systemAddress != 0L) {
             byAddress.put(systemAddress, cs);
@@ -154,6 +177,9 @@ public final class SystemCache {
 
         save();
     }
+
+
+    
     public void loadInto(SystemState state, CachedSystem cs) {
         if (state == null || cs == null) {
             return;

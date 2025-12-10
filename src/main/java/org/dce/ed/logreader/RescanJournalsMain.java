@@ -1,6 +1,10 @@
 package org.dce.ed.logreader;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -27,14 +31,13 @@ import org.dce.ed.state.BodyInfo;
  * Standalone utility with a main() that scans all Elite Dangerous journal files
  * and populates the local SystemCache with every system/body it can reconstruct.
  *
- * Run this once (with the same JVM/Classpath as the overlay) to backfill the
- * cache from your entire journal history.
+ * Run this once (with the same JVM/Classpath as the overlay) 
+ * before starting the overlay, or periodically to refresh the local body cache.
  */
 public class RescanJournalsMain {
 
     /**
-     * Key used to group events by system.
-     * Prefer systemAddress when available, otherwise fall back to systemName.
+     * Compound key so we can index systems by (address, name).
      */
     private static final class SystemKey {
         final long systemAddress;
@@ -54,20 +57,10 @@ public class RescanJournalsMain {
                 return false;
             }
             SystemKey other = (SystemKey) o;
-
-            // If either side has a non-zero address, compare by address.
-            if (this.systemAddress != 0L || other.systemAddress != 0L) {
-                return this.systemAddress == other.systemAddress;
+            if (systemAddress != 0L && other.systemAddress != 0L) {
+                return systemAddress == other.systemAddress;
             }
-
-            // Otherwise fall back to name.
-            if (this.systemName == null && other.systemName == null) {
-                return true;
-            }
-            if (this.systemName == null || other.systemName == null) {
-                return false;
-            }
-            return this.systemName.equals(other.systemName);
+            return systemName != null && systemName.equals(other.systemName);
         }
 
         @Override
@@ -77,11 +70,16 @@ public class RescanJournalsMain {
             }
             return systemName != null ? systemName.hashCode() : 0;
         }
+
+        @Override
+        public String toString() {
+            return "SystemKey{" +
+                    "systemAddress=" + systemAddress +
+                    ", systemName='" + systemName + '\'' +
+                    '}';
+        }
     }
 
-    /**
-     * Accumulates events for a single system and converts them to CachedBody entries.
-     */
     private static final class SystemAccumulator {
         String systemName;
         long systemAddress;
@@ -126,6 +124,7 @@ public class RescanJournalsMain {
                 systemAddress = e.getSystemAddress();
             }
         }
+
         void applyFssAllBodiesFound(FssAllBodiesFoundEvent e) {
             // Prefer system info from the event if present
             if (e.getSystemName() != null && !e.getSystemName().isEmpty()) {
@@ -134,13 +133,9 @@ public class RescanJournalsMain {
             if (e.getSystemAddress() != 0L) {
                 systemAddress = e.getSystemAddress();
             }
-
-            // Count in this event is the total number of bodies in the system
             if (e.getBodyCount() > 0) {
                 totalBodies = e.getBodyCount();
             }
-
-            // Mark this system as fully scanned
             allBodiesFound = Boolean.TRUE;
         }
 
@@ -157,10 +152,16 @@ public class RescanJournalsMain {
             BodyInfo info = bodies.computeIfAbsent(id, ignored -> new BodyInfo());
             info.setBodyId(id);
             info.setName(bodyName);
+
+            // Distance / landability / gravity
             info.setDistanceLs(e.getDistanceFromArrivalLs());
             info.setLandable(e.isLandable());
             info.setGravityMS(e.getSurfaceGravity());
+
+            // Atmosphere / planet type used by prediction code
             info.setAtmoOrType(chooseAtmoOrType(e));
+
+            // High-value flag for ELW / WW / AW / terraformable HMC etc.
             info.setHighValue(isHighValue(e));
 
             // Prediction-related attributes
@@ -182,6 +183,7 @@ public class RescanJournalsMain {
             if (bodyId < 0 || signals == null || signals.isEmpty()) {
                 return;
             }
+
             BodyInfo info = bodies.computeIfAbsent(bodyId, ignored -> new BodyInfo());
             for (Signal s : signals) {
                 String type = toLower(s.getType());
@@ -225,7 +227,8 @@ public class RescanJournalsMain {
             info.setHasBio(true);
 
             // If the ScanOrganic has a body name and the scan body didn't, fill it in.
-            if (bodyName != null && !bodyName.isEmpty() && (info.getName() == null || info.getName().isEmpty())) {
+            if (bodyName != null && !bodyName.isEmpty()
+                    && (info.getName() == null || info.getName().isEmpty())) {
                 info.setName(bodyName);
             }
 
@@ -241,68 +244,38 @@ public class RescanJournalsMain {
                 info.getObservedGenusPrefixes().add(genusPrefix);
             }
 
-            // Full display name (truth row): "Bacterium Nebulus", etc.
-         // Full display name (truth row): "Tussock Serrati", "Bacterium Nebulus", etc.
+            // Full display name (truth row): "Tussock Serrati", "Bacterium Nebulus", etc.
             String genusDisp = firstNonEmpty(e.getGenusLocalised(), e.getGenus());
             String speciesDisp = firstNonEmpty(e.getSpeciesLocalised(), e.getSpecies());
             String displayName = buildDisplayName(genusDisp, speciesDisp);
 
-            if (!isEmpty(displayName)) {
+            if (displayName != null && !displayName.isEmpty()) {
                 if (info.getObservedBioDisplayNames() == null) {
                     info.setObservedBioDisplayNames(new HashSet<>());
                 }
                 info.getObservedBioDisplayNames().add(displayName);
             }
         }
-        private static String buildDisplayName(String genusDisp, String speciesDisp) {
-            // If we have nothing, return null
-            if (isEmpty(genusDisp) && isEmpty(speciesDisp)) {
-                return null;
-            }
-            // If only one side is present, just use that
-            if (isEmpty(genusDisp)) {
-                return speciesDisp;
-            }
-            if (isEmpty(speciesDisp)) {
-                return genusDisp;
-            }
-
-            String genusTrim = genusDisp.trim();
-            String speciesTrim = speciesDisp.trim();
-
-            // Species often already includes the genus, e.g. "Tussock Serrati" with genus "Tussock".
-            // In that case, drop the leading genus so we don't get "Tussock Tussock Serrati".
-            String[] parts = speciesTrim.split("\\s+");
-            if (parts.length > 0 && parts[0].equalsIgnoreCase(genusTrim)) {
-                if (parts.length == 1) {
-                    // Species was just "Tussock" – effectively only genus
-                    return genusTrim;
-                }
-                String epithets = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
-                return genusTrim + " " + epithets;
-            }
-
-            // Normal case: species is just the epithet, e.g. "Serrati"
-            return genusTrim + " " + speciesTrim;
-        }
 
         private BodyInfo findOrCreateBodyByIdOrName(int bodyId, String bodyName) {
-            if (bodyId >= 0) {
-                BodyInfo info = bodies.get(bodyId);
-                if (info == null) {
-                    info = new BodyInfo();
-                    info.setBodyId(bodyId);
-                    info.setName(bodyName);
-                    bodies.put(bodyId, info);
-                } else if (bodyName != null && !bodyName.isEmpty() && (info.getName() == null || info.getName().isEmpty())) {
+            if (bodyId > 0) {
+                BodyInfo existing = bodies.get(bodyId);
+                if (existing != null) {
+                    return existing;
+                }
+                BodyInfo info = new BodyInfo();
+                info.setBodyId(bodyId);
+                if (bodyName != null && !bodyName.isEmpty()) {
                     info.setName(bodyName);
                 }
+                bodies.put(bodyId, info);
                 return info;
             }
 
-            if (bodyName != null && !bodyName.isEmpty()) {
+            String name = bodyName != null ? bodyName.trim() : "";
+            if (!name.isEmpty()) {
                 for (BodyInfo b : bodies.values()) {
-                    if (bodyName.equals(b.getName())) {
+                    if (name.equals(b.getName())) {
                         return b;
                     }
                 }
@@ -335,10 +308,10 @@ public class RescanJournalsMain {
             if (pc.contains("earth-like")) {
                 return true;
             }
-            if (pc.contains("water world")) {
+            if (pc.contains("ammonia world")) {
                 return true;
             }
-            if (pc.contains("ammonia world")) {
+            if (pc.contains("water world")) {
                 return true;
             }
             if (tf.contains("terraformable")) {
@@ -375,6 +348,20 @@ public class RescanJournalsMain {
             return null;
         }
 
+        private static String buildDisplayName(String genusDisp, String speciesDisp) {
+            if ((genusDisp == null || genusDisp.isEmpty())
+                    && (speciesDisp == null || speciesDisp.isEmpty())) {
+                return null;
+            }
+            if (genusDisp == null || genusDisp.isEmpty()) {
+                return speciesDisp;
+            }
+            if (speciesDisp == null || speciesDisp.isEmpty()) {
+                return genusDisp;
+            }
+            return genusDisp + " " + speciesDisp;
+        }
+
         List<CachedBody> toCachedBodies() {
             List<CachedBody> list = new ArrayList<>();
             for (BodyInfo b : bodies.values()) {
@@ -394,12 +381,14 @@ public class RescanJournalsMain {
                 cb.surfaceTempK = b.getSurfaceTempK();
                 cb.volcanism = b.getVolcanism();
                 cb.discoveryCommander = b.getDiscoveryCommander();
-                
-                if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
+
+                if (b.getObservedGenusPrefixes() != null
+                        && !b.getObservedGenusPrefixes().isEmpty()) {
                     cb.observedGenusPrefixes = new HashSet<>(b.getObservedGenusPrefixes());
                 }
 
-                if (b.getObservedBioDisplayNames() != null && !b.getObservedBioDisplayNames().isEmpty()) {
+                if (b.getObservedBioDisplayNames() != null
+                        && !b.getObservedBioDisplayNames().isEmpty()) {
                     cb.observedBioDisplayNames = new HashSet<>(b.getObservedBioDisplayNames());
                 }
 
@@ -409,12 +398,82 @@ public class RescanJournalsMain {
         }
     }
 
+    private static final String LAST_IMPORT_FILENAME = "edo-cache.lastRescanTimestamp";
+
+    private static Instant readLastImportInstant(Path journalDirectory) {
+        if (journalDirectory == null) {
+            return null;
+        }
+        Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
+        if (!Files.isRegularFile(cursor)) {
+            return null;
+        }
+        try {
+            String text = Files.readString(cursor, StandardCharsets.UTF_8).trim();
+            if (text.isEmpty()) {
+                return null;
+            }
+            return Instant.parse(text);
+        } catch (Exception ex) {
+            System.err.println("Failed to read last import timestamp from " + cursor + ": " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private static void writeLastImportInstant(Path journalDirectory, Instant instant) {
+        if (journalDirectory == null || instant == null) {
+            return;
+        }
+        Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
+        try {
+            Files.writeString(cursor, instant.toString(), StandardCharsets.UTF_8);
+        } catch (Exception ex) {
+            System.err.println("Failed to write last import timestamp to " + cursor + ": " + ex.getMessage());
+        }
+    }
+
     public static void main(String[] args) throws IOException {
         System.out.println("Rescanning Elite Dangerous journals and rebuilding local system cache...");
 
         EliteJournalReader reader = new EliteJournalReader();
 
-        List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
+        boolean forceFull = false;
+        if (args != null) {
+            for (String arg : args) {
+                if ("--full".equalsIgnoreCase(arg)) {
+                    forceFull = true;
+                    break;
+                }
+            }
+        }
+
+        Path journalDirectory = reader.getJournalDirectory();
+        Instant lastImport = null;
+        if (!forceFull) {
+            lastImport = readLastImportInstant(journalDirectory);
+            if (lastImport == null) {
+                System.out.println("No previous journal import timestamp found; doing full rescan.");
+            } else {
+                System.out.println("Last journal import time (UTC): " + lastImport);
+            }
+        } else {
+            System.out.println("Forcing full rescan (--full). Ignoring any existing import timestamp.");
+        }
+
+        List<EliteLogEvent> allEvents = reader.readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
+        List<EliteLogEvent> events;
+        if (lastImport == null) {
+            events = allEvents;
+        } else {
+            events = new ArrayList<>();
+            for (EliteLogEvent e : allEvents) {
+                Instant ts = e.getTimestamp();
+                if (ts != null && ts.isAfter(lastImport)) {
+                    events.add(e);
+                }
+            }
+        }
+
         System.out.println("Loaded " + events.size() + " events from journal files.");
 
         Map<SystemKey, SystemAccumulator> systems = new HashMap<>();
@@ -422,7 +481,14 @@ public class RescanJournalsMain {
         String currentSystemName = null;
         long currentSystemAddress = 0L;
 
+        Instant newestEventTimestamp = lastImport;
+
         for (EliteLogEvent event : events) {
+            Instant ts = event.getTimestamp();
+            if (ts != null && (newestEventTimestamp == null || ts.isAfter(newestEventTimestamp))) {
+                newestEventTimestamp = ts;
+            }
+
             if (event instanceof LocationEvent) {
                 LocationEvent le = (LocationEvent) event;
                 currentSystemName = le.getStarSystem();
@@ -457,7 +523,8 @@ public class RescanJournalsMain {
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyFssDiscovery(fds);
-            } else if (event instanceof FssAllBodiesFoundEvent) {          // NEW
+
+            } else if (event instanceof FssAllBodiesFoundEvent) {
                 FssAllBodiesFoundEvent fab = (FssAllBodiesFoundEvent) event;
                 long addr = fab.getSystemAddress();
                 String name = fab.getSystemName();
@@ -484,19 +551,6 @@ public class RescanJournalsMain {
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyScan(se);
 
-            } else if (event instanceof SaasignalsFoundEvent) {
-                SaasignalsFoundEvent sf = (SaasignalsFoundEvent) event;
-                long addr = sf.getSystemAddress();
-                String name = currentSystemName;
-                if (addr == 0L) {
-                    addr = currentSystemAddress;
-                }
-                SystemKey key = new SystemKey(addr, name);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applySignals(sf.getBodyId(), sf.getSignals());
-                acc.applyGenuses(sf.getBodyId(), sf.getGenuses());
-
             } else if (event instanceof FssBodySignalsEvent) {
                 FssBodySignalsEvent fb = (FssBodySignalsEvent) event;
                 long addr = fb.getSystemAddress();
@@ -508,6 +562,18 @@ public class RescanJournalsMain {
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applySignals(fb.getBodyId(), fb.getSignals());
+
+            } else if (event instanceof SaasignalsFoundEvent) {
+                SaasignalsFoundEvent sf = (SaasignalsFoundEvent) event;
+                long addr = sf.getSystemAddress();
+                String name = currentSystemName;
+                if (addr == 0L) {
+                    addr = currentSystemAddress;
+                }
+                SystemKey key = new SystemKey(addr, name);
+                SystemAccumulator acc = systems.computeIfAbsent(
+                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
+                acc.applyGenuses(sf.getBodyId(), sf.getGenuses());
 
             } else if (event instanceof ScanOrganicEvent) {
                 ScanOrganicEvent so = (ScanOrganicEvent) event;
@@ -539,11 +605,16 @@ public class RescanJournalsMain {
                 acc.totalBodies,
                 acc.nonBodyCount,
                 acc.fssProgress,
-                acc.allBodiesFound,          // allBodiesFound (Rescan doesn’t compute this yet)
+                acc.allBodiesFound,
                 bodies
             );
             systemCount++;
             bodyCount += bodies.size();
+        }
+
+        if (journalDirectory != null && newestEventTimestamp != null) {
+            writeLastImportInstant(journalDirectory, newestEventTimestamp);
+            System.out.println("Updated last journal import time to: " + newestEventTimestamp);
         }
 
         System.out.println("Rescan complete. Cached " + bodyCount + " bodies in " + systemCount + " systems.");

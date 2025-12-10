@@ -5,12 +5,17 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import javax.swing.JLabel;
@@ -54,6 +59,10 @@ public class SystemTabPanel extends JPanel {
     private static final long serialVersionUID = 1L;
 
     private static final Color ED_ORANGE = new Color(255, 140, 0);
+    // NEW: semi-transparent orange for separators, similar to RouteTabPanel
+    private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
+    // NEW: shared ED font (similar to Route tab)
+    private static final Font ED_FONT = new Font("Segoe UI", Font.PLAIN, 17);
 
     private final JTable table;
     private final JTextField headerLabel;
@@ -72,49 +81,52 @@ public class SystemTabPanel extends JPanel {
         headerLabel = new JTextField("Waiting for system data…");
         headerLabel.addKeyListener(new KeyListener() {
 
-			@Override
-			public void keyTyped(KeyEvent e) {
-				// TODO Auto-generated method stub
-				
-			}
+            @Override
+            public void keyTyped(KeyEvent e) {
+                // TODO Auto-generated method stub
+                
+            }
 
-			@Override
-			public void keyPressed(KeyEvent e) {
-				if (e.getKeyChar() == KeyEvent.VK_ENTER) {
-					System.out.println("User hit enter");
-					state.setSystemName(headerLabel.getText());
-					state.setSystemAddress(0L);
-					
-	            	loadSystem(state.getSystemName(), state.getSystemAddress());
-	            	rebuildTable();
-					
-				}
-			}
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyChar() == KeyEvent.VK_ENTER) {
+                    System.out.println("User hit enter");
+                    state.setSystemName(headerLabel.getText());
+                    state.setSystemAddress(0L);
+                    
+                    loadSystem(state.getSystemName(), state.getSystemAddress());
+                    rebuildTable();
+                    
+                }
+            }
 
-			@Override
-			public void keyReleased(KeyEvent e) {
-				
-			}
-        	
+            @Override
+            public void keyReleased(KeyEvent e) {
+                
+            }
+            
         });
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
-        headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
+        headerLabel.setFont(ED_FONT.deriveFont(Font.BOLD));
 
         // Table setup
         tableModel = new SystemBodiesTableModel();
-        table = new JTable(tableModel);
+        table = new SystemBodiesTable(tableModel);
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
+        // NEW: apply ED font to table cells
+        table.setFont(ED_FONT);
+        table.setRowHeight(24);
 
         JTableHeader header = table.getTableHeader();
         header.setOpaque(true);
         header.setForeground(ED_ORANGE);
         header.setBackground(Color.BLACK);
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 11f));
+        header.setFont(ED_FONT.deriveFont(Font.BOLD));
 
         header.setDefaultRenderer(new DefaultTableCellRenderer() {
             @Override
@@ -130,7 +142,7 @@ public class SystemTabPanel extends JPanel {
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
                 label.setForeground(ED_ORANGE);
-                label.setFont(label.getFont().deriveFont(Font.BOLD));
+                label.setFont(ED_FONT.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
                 label.setBorder(new EmptyBorder(0, 4, 0, 4));
 
@@ -236,9 +248,9 @@ public class SystemTabPanel extends JPanel {
             processor.handleEvent(event);
             
             if (event instanceof FsdJumpEvent) {
-            	FsdJumpEvent e = (FsdJumpEvent)event;
-            	loadSystem(e.getStarSystem(), e.getSystemAddress());
-            	rebuildTable();
+                FsdJumpEvent e = (FsdJumpEvent)event;
+                loadSystem(e.getStarSystem(), e.getSystemAddress());
+                rebuildTable();
             }
 
             rebuildTable();
@@ -396,7 +408,7 @@ public class SystemTabPanel extends JPanel {
                 displayNames.addAll(observed);
                 
                 for (String o : observed) {
-                	existing.add(firstWord(o).toLowerCase());
+                    existing.add(firstWord(o).toLowerCase());
                 }
             } 
 
@@ -411,7 +423,7 @@ public class SystemTabPanel extends JPanel {
             }
 
             if (!displayNames.isEmpty()) {
-                // Collect bio rows with their credit values so we can sort
+                // Collect bio rows with their credit values so we can group
                 class BioRowData {
                     final String name;
                     final Long cr;
@@ -438,56 +450,85 @@ public class SystemTabPanel extends JPanel {
                     bioRows.add(new BioRowData(name, cr));
                 }
 
-             // Sort:
-           //   1) Genus (first word) ascending
-           //   2) Value numerically (credits) descending
-           //   3) Full name ascending as tie-breaker
-           bioRows.sort((a, bRow) -> {
-               String aName = (a.name != null) ? a.name : "";
-               String bName = (bRow.name != null) ? bRow.name : "";
+                // Sort:
+                //   1) Genus (first word) ascending
+                //   2) Value numerically (credits) descending
+                //   3) Full name ascending as tie-breaker
+                bioRows.sort((a, bRow) -> {
+                    String aName = (a.name != null) ? a.name : "";
+                    String bName = (bRow.name != null) ? bRow.name : "";
 
-               // Genus = first word before space
-               String aGenus = aName;
-               String bGenus = bName;
+                    // Genus = first word before space
+                    String aGenus = aName;
+                    String bGenus = bName;
 
-               int aSpace = aName.indexOf(' ');
-               if (aSpace > 0) {
-                   aGenus = aName.substring(0, aSpace);
-               }
-               int bSpace = bName.indexOf(' ');
-               if (bSpace > 0) {
-                   bGenus = bName.substring(0, bSpace);
-               }
+                    int aSpace = aName.indexOf(' ');
+                    if (aSpace > 0) {
+                        aGenus = aName.substring(0, aSpace);
+                    }
+                    int bSpace = bName.indexOf(' ');
+                    if (bSpace > 0) {
+                        bGenus = bName.substring(0, bSpace);
+                    }
 
-               // 1) Genus ascending
-               int cmp = aGenus.compareToIgnoreCase(bGenus);
-               if (cmp != 0) {
-                   return cmp;
-               }
+                    // 1) Genus ascending
+                    int cmp = aGenus.compareToIgnoreCase(bGenus);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
 
-               // 2) Value descending (higher first)
-               long aVal = (a.cr != null) ? a.cr.longValue() : Long.MIN_VALUE;
-               long bVal = (bRow.cr != null) ? bRow.cr.longValue() : Long.MIN_VALUE;
-               cmp = Long.compare(bVal, aVal);
-               if (cmp != 0) {
-                   return cmp;
-               }
+                    // 2) Value descending (higher first)
+                    long aVal = (a.cr != null) ? a.cr.longValue() : Long.MIN_VALUE;
+                    long bVal = (bRow.cr != null) ? bRow.cr.longValue() : Long.MIN_VALUE;
+                    cmp = Long.compare(bVal, aVal);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
 
-               // 3) Full name ascending
-               return aName.compareToIgnoreCase(bName);
-           });
+                    // 3) Full name ascending
+                    return aName.compareToIgnoreCase(bName);
+                });
 
+                // NEW: compress by genus: "Genus (n)" with max credit value
+                class GenusSummary {
+                    int count = 0;
+                    Long maxCr = null;
+                }
 
+                Map<String, GenusSummary> byGenus = new LinkedHashMap<>();
 
-                for (BioRowData data : bioRows) {
+                for (BioRowData br : bioRows) {
+                    String genus = firstWord(br.name);
+                    GenusSummary summary = byGenus.get(genus);
+                    if (summary == null) {
+                        summary = new GenusSummary();
+                        byGenus.put(genus, summary);
+                    }
+                    summary.count++;
+                    if (br.cr != null) {
+                        if (summary.maxCr == null || br.cr > summary.maxCr) {
+                            summary.maxCr = br.cr;
+                        }
+                    }
+                }
+
+                for (Map.Entry<String, GenusSummary> e : byGenus.entrySet()) {
+                    String genus = e.getKey();
+                    GenusSummary summary = e.getValue();
+
+                    String label = summary.count > 1
+                            ? genus + " (" + summary.count + ")"
+                            : genus;
+
                     String valueText = "";
-                    if (data.cr != null) {
-                        long millions = Math.round(data.cr.longValue() / 1_000_000.0);
+                    if (summary.maxCr != null) {
+                        long millions = Math.round(summary.maxCr.longValue() / 1_000_000.0);
                         valueText = String.format(Locale.US, "%dM Cr", millions);
                     }
 
-                    rows.add(Row.bio(b.getBodyId(), data.name, valueText));
+                    rows.add(Row.bio(b.getBodyId(), label, valueText));
                 }
+
             } else {
                 rows.add(Row.bio(
                         b.getBodyId(),
@@ -504,6 +545,7 @@ public class SystemTabPanel extends JPanel {
         String[] parts = s.trim().split("\\s+");
         return parts.length > 0 ? parts[0] : "";
     }
+
     private void updateHeaderLabel() {
         String name = state.getSystemName();
         StringBuilder sb = new StringBuilder();
@@ -574,6 +616,43 @@ public class SystemTabPanel extends JPanel {
         }
     }
 
+    // NEW: custom JTable to draw separators only between systems
+    private class SystemBodiesTable extends JTable {
+
+        SystemBodiesTable(SystemBodiesTableModel model) {
+            super(model);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setColor(ED_ORANGE_TRANS);
+
+                int rowCount = tableModel.getRowCount();
+                boolean firstBodySeen = false;
+
+                for (int row = 0; row < rowCount; row++) {
+                    Row r = tableModel.getRowAt(row);
+                    if (!r.detail) { // body row
+                        if (firstBodySeen) {
+                            Rectangle rect = getCellRect(row, 0, true);
+                            int y = rect.y;
+                            g2.setColor(ED_ORANGE_TRANS);
+                            g2.drawLine(0, y, getWidth(), y);
+                        } else {
+                            firstBodySeen = true;
+                        }
+                    }
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
+    }
+
     class SystemBodiesTableModel extends AbstractTableModel {
 
         private final String[] columns = {
@@ -594,6 +673,11 @@ public class SystemTabPanel extends JPanel {
                 rows.addAll(newRows);
             }
             fireTableDataChanged();
+        }
+
+        // NEW: allow table to inspect rows (for separators)
+        Row getRowAt(int index) {
+            return rows.get(index);
         }
 
         @Override
@@ -634,8 +718,8 @@ public class SystemTabPanel extends JPanel {
                 case 2:
                     return b.getAtmoOrType() != null ? b.getAtmoOrType() : "";
                 case 3:
+                    // CHANGED: remove bare "Bio" label – only show Geo / Bio+Geo
                     if (b.hasBio() && b.hasGeo()) return "Bio + Geo";
-                    if (b.hasBio()) return "Bio";
                     if (b.hasGeo()) return "Geo";
                     return "";
                 case 4:
