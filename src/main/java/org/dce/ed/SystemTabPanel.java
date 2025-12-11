@@ -179,6 +179,9 @@ public class SystemTabPanel extends JPanel {
                 if (isSelected) {
                     c.setForeground(Color.BLACK);
                 } else if (isBioRow) {
+                	if (r.isObservedGenusHeader()) {
+                		c.setForeground(Color.green);
+                	}else 
                     c.setForeground(new Color(180, 180, 180)); // gray for biologicals
                 } else {
                     c.setForeground(ED_ORANGE);
@@ -191,7 +194,7 @@ public class SystemTabPanel extends JPanel {
         table.setDefaultRenderer(Object.class, cellRenderer);
 
 
-DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
+        DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
                 setForeground(ED_ORANGE);
@@ -428,6 +431,15 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
             Set<String> genusPrefixes = b.getObservedGenusPrefixes();
             Set<String> observedNamesRaw = b.getObservedBioDisplayNames();
 
+            Set<String> observedGenusLower = new java.util.HashSet<>();
+            if (genusPrefixes != null) {
+                for (String gp : genusPrefixes) {
+                    if (gp != null && !gp.isEmpty()) {
+                        observedGenusLower.add(gp.toLowerCase(Locale.ROOT));
+                    }
+                }
+            }
+
             boolean hasGenusPrefixes = genusPrefixes != null && !genusPrefixes.isEmpty();
             boolean hasObservedNames = observedNamesRaw != null && !observedNamesRaw.isEmpty();
             boolean hasPreds = preds != null && !preds.isEmpty();
@@ -616,24 +628,28 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
                 List<ExobiologyData.BioCandidate> predictedForGenus = predictedByGenus.get(genusKey);
                 List<String> confirmedForGenus = confirmedByGenus.get(genusKey);
 
-                String displayGenus;
-                if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
-                    displayGenus = firstWord(
-                            canonicalBioName(predictedForGenus.get(0).getDisplayName()));
-                } else if (confirmedForGenus != null && !confirmedForGenus.isEmpty()) {
-                    displayGenus = firstWord(confirmedForGenus.get(0));
-                } else {
-                    // Fall back to capitalized key
+                boolean hasAnySpecies =
+                        (confirmedForGenus != null && !confirmedForGenus.isEmpty()) ||
+                        (predictedForGenus != null && !predictedForGenus.isEmpty());
+
+                // If we *only* know the genus name and have no species/predictions,
+                // keep the old behavior and show a single genus row.
+                if (!hasAnySpecies) {
+                    String displayGenus;
+                    // Fall back to capitalized key (since we have no examples)
                     if (genusKey.isEmpty()) {
                         displayGenus = genusKey;
                     } else {
                         displayGenus = Character.toUpperCase(genusKey.charAt(0))
                                 + genusKey.substring(1);
                     }
+                    rows.add(Row.bio(b.getBodyId(), displayGenus, ""));
+                    continue;
                 }
 
-                // Genus header row
-                rows.add(Row.bio(b.getBodyId(), displayGenus, ""));
+                // From here on, we have at least one species (predicted or confirmed),
+                // so we do NOT add a genus-only header line. This removes the
+                // "Bacterium" header in stages 2 and 3.
 
                 // If we have confirmed species for this genus, they REPLACE predictions.
                 if (confirmedForGenus != null && !confirmedForGenus.isEmpty()) {
@@ -670,7 +686,11 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
                             long millions = Math.round(sr.cr / 1_000_000.0);
                             valueText = String.format(Locale.US, "%dM Cr", millions);
                         }
-                        rows.add(Row.bio(b.getBodyId(), sr.name, valueText));
+
+                        Row bio = Row.bio(b.getBodyId(), sr.name, valueText);
+                        // This flag keeps the green styling you like.
+                        bio.setObservedGenusHeader(true);
+                        rows.add(bio);
                     }
                 } else if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
                     // No confirmed species for this genus -> show predicted species
@@ -752,12 +772,24 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
 
         headerSummaryLabel.setText(sb.toString());
     }
-
+    public static boolean bodyIssues = false;
     private void persistIfPossible() {
         if (state.getSystemName() != null
                 && state.getSystemAddress() != 0L
                 && !state.getBodies().isEmpty()) {
 
+        	boolean usedToHaveBodyIssues = bodyIssues;
+        	for (BodyInfo x : state.getBodies().values()) {
+        		if (x.getBodyId() == -1) {
+        			System.out.println("Can't save yet");
+        			bodyIssues = false;
+
+        			return;
+        		}
+    			usedToHaveBodyIssues = true;
+        	}
+        	if (usedToHaveBodyIssues)
+        		System.out.println("Yes we can");
             SystemCache.getInstance().storeSystem(state);
         }
     }
@@ -766,13 +798,21 @@ DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
     // Table model
     // ---------------------------------------------------------------------
 
-    private static class Row {
+    public static class Row {
         final BodyInfo body;
         final boolean detail;
         final int parentId;
         final String bioText;
         final String bioValue;
+        private boolean observedGenusHeader;
 
+        boolean isObservedGenusHeader() {
+            return observedGenusHeader;
+        }
+
+        void setObservedGenusHeader(boolean observedGenusHeader) {
+            this.observedGenusHeader = observedGenusHeader;
+        }
         private Row(BodyInfo body,
                     boolean detail,
                     int parentId,
