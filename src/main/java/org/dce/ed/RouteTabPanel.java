@@ -381,7 +381,13 @@ public class RouteTabPanel extends JPanel {
     	}
     	return -1;
     }
+    public void setDistanceSumMode(boolean sum) {
+        tableModel.setSumDistances(sum);
+    }
 
+    public boolean isDistanceSumMode() {
+        return tableModel.isSumDistances();
+    }
 
     private void reloadFromNavRouteFile() {
         Path dir = OverlayPreferences.resolveJournalDirectory();
@@ -699,6 +705,19 @@ public class RouteTabPanel extends JPanel {
 
         private final List<RouteEntry> entries = new ArrayList<>();
 
+        private boolean sumDistances = true;
+
+        void setSumDistances(boolean sumDistances) {
+            if (this.sumDistances != sumDistances) {
+                this.sumDistances = sumDistances;
+                fireTableDataChanged();
+            }
+        }
+
+        boolean isSumDistances() {
+            return sumDistances;
+        }
+
         @Override
         public int getRowCount() {
             return entries.size();
@@ -744,10 +763,21 @@ public class RouteTabPanel extends JPanel {
                 case COL_STATUS:
                     return e.status;
                 case COL_DISTANCE:
-                    if (e.distanceLy == null) {
-                        return "";
-                    }
-                    return String.format("%.2f Ly", e.distanceLy.doubleValue());
+                	 if (e.distanceLy == null) {
+                         return "";
+                     }
+                     double value = e.distanceLy.doubleValue();
+                     if (sumDistances) {
+                         double total = 0.0;
+                         for (int i = 0; i <= rowIndex && i < entries.size(); i++) {
+                             Double d = entries.get(i).distanceLy;
+                             if (d != null) {
+                                 total += d.doubleValue();
+                             }
+                         }
+                         value = total;
+                     }
+                     return String.format("%.2f Ly", value);
                 default:
                     return "";
             }
