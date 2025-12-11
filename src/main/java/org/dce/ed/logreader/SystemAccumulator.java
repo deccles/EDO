@@ -87,7 +87,7 @@ public class SystemAccumulator {
             return;
         }
 
-        BodyInfo info = bodies.computeIfAbsent(id, ignored -> new BodyInfo());
+        BodyInfo info = getBodies().computeIfAbsent(id, ignored -> new BodyInfo());
         info.setBodyId(id);
         info.setName(bodyName);
 
@@ -122,7 +122,7 @@ public class SystemAccumulator {
             return;
         }
 
-        BodyInfo info = bodies.computeIfAbsent(bodyId, ignored -> new BodyInfo());
+        BodyInfo info = getBodies().computeIfAbsent(bodyId, ignored -> new BodyInfo());
         for (Signal s : signals) {
             String type = toLower(s.getType());
             String loc = toLower(s.getTypeLocalised());
@@ -138,7 +138,7 @@ public class SystemAccumulator {
         if (bodyId < 0 || genuses == null || genuses.isEmpty()) {
             return;
         }
-        BodyInfo info = bodies.computeIfAbsent(bodyId, ignored -> new BodyInfo());
+        BodyInfo info = getBodies().computeIfAbsent(bodyId, ignored -> new BodyInfo());
         if (info.getObservedGenusPrefixes() == null) {
             info.setObservedGenusPrefixes(new HashSet<>());
         }
@@ -197,7 +197,7 @@ public class SystemAccumulator {
 
     private BodyInfo findOrCreateBodyByIdOrName(int bodyId, String bodyName) {
         if (bodyId > 0) {
-            BodyInfo existing = bodies.get(bodyId);
+            BodyInfo existing = getBodies().get(bodyId);
             if (existing != null) {
                 return existing;
             }
@@ -206,21 +206,31 @@ public class SystemAccumulator {
             if (bodyName != null && !bodyName.isEmpty()) {
                 info.setName(bodyName);
             }
-            bodies.put(bodyId, info);
+            getBodies().put(bodyId, info);
             return info;
         }
 
         String name = bodyName != null ? bodyName.trim() : "";
         if (!name.isEmpty()) {
-            for (BodyInfo b : bodies.values()) {
+            for (BodyInfo b : getBodies().values()) {
                 if (name.equals(b.getName())) {
                     return b;
                 }
             }
+
+            // >>> DEBUG: we are about to create a synthetic -1 body
+            System.out.println(
+                "[DEBUG] Creating synthetic bodyId=-1 for ScanOrganic in system '" + systemName
+                + "' (" + systemAddress + ")"
+                + " bodyId=" + bodyId
+                + " bodyName='" + bodyName + "' "
+                + debugDescribeBodies()
+            );
+
             BodyInfo info = new BodyInfo();
             info.setBodyId(-1);
             info.setName(bodyName);
-            bodies.put(bodies.size() + 1000000, info);
+            getBodies().put(getBodies().size() + 1000000, info);
             return info;
         }
 
@@ -302,7 +312,7 @@ public class SystemAccumulator {
 
     List<CachedBody> toCachedBodies() {
         List<CachedBody> list = new ArrayList<>();
-        for (BodyInfo b : bodies.values()) {
+        for (BodyInfo b : getBodies().values()) {
             CachedBody cb = new CachedBody();
             cb.name = b.getName();
             cb.bodyId = b.getBodyId();
@@ -336,6 +346,29 @@ public class SystemAccumulator {
     }
 
 	public boolean bodiesIsEmpty() {
-		return bodies.isEmpty();
+		return getBodies().isEmpty();
 	}
+
+	private Map<Integer, BodyInfo> getBodies() {
+		return bodies;
+	}
+	
+	private String debugDescribeBodies() {
+	    StringBuilder sb = new StringBuilder();
+	    sb.append("bodies={");
+	    boolean first = true;
+	    for (Map.Entry<Integer, BodyInfo> e : getBodies().entrySet()) {
+	        if (!first) {
+	            sb.append(", ");
+	        }
+	        first = false;
+	        BodyInfo b = e.getValue();
+	        sb.append("key=").append(e.getKey())
+	          .append(" id=").append(b.getBodyId())
+	          .append(" name='").append(b.getName()).append("'");
+	    }
+	    sb.append("}");
+	    return sb.toString();
+	}
+
 }
