@@ -236,7 +236,7 @@ public class RescanJournalsMain {
                 SystemKey key = new SystemKey(addr, name);
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applySignals(fb.getBodyId(), fb.getSignals());
+                acc.applySignals(fb.getBodyId(), fb.getBodyName(), fb.getSignals());
 
             } else if (event instanceof SaasignalsFoundEvent) {
                 SaasignalsFoundEvent sf = (SaasignalsFoundEvent) event;
@@ -248,7 +248,7 @@ public class RescanJournalsMain {
                 SystemKey key = new SystemKey(addr, name);
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyGenuses(sf.getBodyId(), sf.getGenuses());
+                acc.applyGenuses(sf.getBodyId(), sf.getBodyName(), sf.getGenuses());
 
             } else if (event instanceof ScanOrganicEvent) {
                 ScanOrganicEvent so = (ScanOrganicEvent) event;

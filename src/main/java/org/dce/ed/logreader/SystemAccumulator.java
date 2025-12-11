@@ -117,12 +117,19 @@ public class SystemAccumulator {
         }
     }
 
-    void applySignals(int bodyId, List<Signal> signals) {
+    void applySignals(int bodyId, String bodyName, List<Signal> signals) {
         if (bodyId < 0 || signals == null || signals.isEmpty()) {
             return;
         }
-
+        
         BodyInfo info = getBodies().computeIfAbsent(bodyId, ignored -> new BodyInfo());
+
+        // Make sure the BodyInfo knows its real ID
+        if (info.getBodyId() < 0) {
+            info.setBodyId(bodyId);
+        }
+        info.setName(bodyName);
+        
         for (Signal s : signals) {
             String type = toLower(s.getType());
             String loc = toLower(s.getTypeLocalised());
@@ -134,11 +141,19 @@ public class SystemAccumulator {
         }
     }
 
-    void applyGenuses(int bodyId, List<Genus> genuses) {
+    void applyGenuses(int bodyId, String bodyName, List<Genus> genuses) {
         if (bodyId < 0 || genuses == null || genuses.isEmpty()) {
             return;
         }
+
         BodyInfo info = getBodies().computeIfAbsent(bodyId, ignored -> new BodyInfo());
+
+        // Same here: ensure the ID field isn’t left at -1
+        if (info.getBodyId() < 0) {
+            info.setBodyId(bodyId);
+        }
+        info.setName(bodyName);
+        
         if (info.getObservedGenusPrefixes() == null) {
             info.setObservedGenusPrefixes(new HashSet<>());
         }
@@ -311,8 +326,26 @@ public class SystemAccumulator {
     }
 
     List<CachedBody> toCachedBodies() {
+    	
+    	if (systemName.equals("Antal"))
+    		System.out.println("Found it");
         List<CachedBody> list = new ArrayList<>();
         for (BodyInfo b : getBodies().values()) {
+            if (b.getBodyId() >= 0
+                    && b.getDistanceLs() == Double.NaN
+                    && !b.isLandable()
+                    && b.getPlanetClass() == null
+                    && b.getAtmoOrType() == null
+                    && (b.isHasBio() || b.isHasGeo())) {
+                System.out.println(
+                    "[DEBUG] Partial body in " + systemName
+                    + " addr=" + systemAddress
+                    + " bodyId=" + b.getBodyId()
+                    + " name='" + b.getName() + "'"
+                    + " hasBio=" + b.isHasBio()
+                    + " hasGeo=" + b.isHasGeo()
+                );
+            }
             CachedBody cb = new CachedBody();
             cb.name = b.getName();
             cb.bodyId = b.getBodyId();
