@@ -14,7 +14,7 @@ import javax.swing.Timer;
 
 public class LongHoverCopyHandler extends MouseAdapter implements MouseMotionListener {
 
-    private static final int HOVER_DELAY_MS = 1000;
+    private static final int HOVER_DELAY_MS = 500;
 
     private final JTable table;
     private final int systemNameModelColumnIndex;
