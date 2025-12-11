@@ -327,8 +327,6 @@ public class SystemAccumulator {
 
     List<CachedBody> toCachedBodies() {
     	
-    	if (systemName.equals("Antal"))
-    		System.out.println("Found it");
         List<CachedBody> list = new ArrayList<>();
         for (BodyInfo b : getBodies().values()) {
             if (b.getBodyId() >= 0
