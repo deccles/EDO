@@ -1,5 +1,6 @@
 package org.dce.ed;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -7,6 +8,7 @@ import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -59,6 +61,7 @@ public class RouteTabPanel extends JPanel {
 
     private static final Color ED_ORANGE = new Color(255, 140, 0);
     private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
+    private static final Color ED_ORANGE_LESS_TRANS = new Color(255, 140, 0, 96);
     private static final Color STATUS_GRAY = new Color(210, 210, 210);
     private static final Color STATUS_BLUE = new Color(100, 149, 237);
     private static final Color STATUS_YELLOW = new Color(255, 215, 0);
@@ -511,7 +514,7 @@ public class RouteTabPanel extends JPanel {
 
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
-            if (entry.systemName.equals("Ploea Eurl EJ-U c18-2")) {
+            if (entry.systemName.equals("Ploea Eurl ST-H d10-4")) {
             	System.out.println("Found it");
             }
             if (bodies != null && bodies.bodies != null) {
@@ -526,10 +529,10 @@ public class RouteTabPanel extends JPanel {
                         if (b.discovery != null && b.discovery.commander != null) {
                         	commander = b.discovery.commander;
                         }
-                        if (commander == null || commander.isBlank()) {
-                            anyMissingDiscovery = true;
-                            break;
-                        }
+//                        if (commander == null || commander.isBlank()) {
+//                            anyMissingDiscovery = true;
+//                            break;
+//                        }
                     }
                 }
 
@@ -659,12 +662,17 @@ public class RouteTabPanel extends JPanel {
 
     
     private String getCurrentSystemName() {
+    	if (currentSystemName == null)
+			try {
+				currentSystemName = SystemCache.getInstance().load().systemName;
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
         return currentSystemName;
     }
 
     private void setCurrentSystemName(String currentSystemName) {
         if (currentSystemName == null) {
-            System.out.println("WHY is system name NULL???");
             return;
         }
 
@@ -1012,22 +1020,32 @@ public class RouteTabPanel extends JPanel {
             Icon icon = null;
 
             if (system != null) {
-                // 1) Current system: solid triangle
+
+                // 1) CURRENT system always wins (never blink / never outline)
                 if (system.equals(getCurrentSystemName())) {
                     icon = new TriangleIcon(ED_ORANGE, 10, 10);
 
-                // 2) Jump in progress (hyperdrive charging): blinking triangle
-                } else if (system.equals(pendingJumpSystemName) && jumpFlashOn) {
-                    icon = new TriangleIcon(ED_ORANGE, 10, 10);
+                // 2) Pending jump: blink solid triangle / blank (suppress outline during jump)
+                } else if (system.equals(pendingJumpSystemName)) {
+                    if (jumpFlashOn) {
+                        icon = new TriangleIcon(ED_ORANGE, 10, 10);
+                    } else {
+                        icon = null;
+                    }
 
-                // 3) FSD target: scope-like crosshair
+                // 3) Target system: outline triangle, only when NOT in a pending jump
                 } else if (system.equals(targetSystemName)) {
-                    icon = new CrosshairIcon(ED_ORANGE, 15, 15);
+                    if (pendingJumpSystemName == null) {
+                        icon = new OutlineTriangleIcon(ED_ORANGE_LESS_TRANS, 10, 10, 2f);
+                    } else {
+                        icon = null;
+                    }
                 }
             }
 
             l.setIcon(icon);
             return l;
+
         }
 
 
@@ -1065,14 +1083,17 @@ public class RouteTabPanel extends JPanel {
             g2.fillPolygon(xs, ys, 3);
         }
     }
-    private static class CrosshairIcon implements Icon {
+    private static class OutlineTriangleIcon implements Icon {
         private final Color color;
-        private final int w, h;
+        private final int w;
+        private final int h;
+        private final float strokeWidth;
 
-        CrosshairIcon(Color c, int w, int h) {
-            this.color = c;
+        OutlineTriangleIcon(Color color, int w, int h, float strokeWidth) {
+            this.color = color;
             this.w = w;
             this.h = h;
+            this.strokeWidth = strokeWidth;
         }
 
         @Override
@@ -1088,22 +1109,14 @@ public class RouteTabPanel extends JPanel {
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y) {
             Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setColor(color);
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                                RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 
-            int cx = x + w / 2;
-            int cy = y + h / 2;
-            int radius = Math.min(w, h) / 2 - 1;
+            int[] xs = { x, x, x + w };
+            int[] ys = { y, y + h, y + (h / 2) };
 
-            // outer circle
-            g2.drawOval(cx - radius, cy - radius, radius * 2, radius * 2);
-
-            // crosshair lines
-            g2.setColor(Color.red);
-            g2.drawLine(cx - radius, cy, cx + radius, cy);
-            g2.drawLine(cx, cy - radius, cx, cy + radius);
-
+            g2.drawPolygon(xs, ys, 3);
             g2.dispose();
         }
     }
