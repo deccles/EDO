@@ -326,6 +326,9 @@ public final class SystemCache {
         List<CachedBody> list = new ArrayList<>();
 
         for (BodyInfo b : state.getBodies().values()) {
+        	if (b.getBodyId() == -1) {
+        		System.out.println("Skipping body with id -1");
+        	}
             CachedBody cb = new CachedBody();
             cb.name = b.getName();
             cb.bodyId = b.getBodyId();

@@ -788,8 +788,6 @@ public class SystemTabPanel extends JPanel {
         		}
     			usedToHaveBodyIssues = true;
         	}
-        	if (usedToHaveBodyIssues)
-        		System.out.println("Yes we can");
             SystemCache.getInstance().storeSystem(state);
         }
     }

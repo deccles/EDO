@@ -100,6 +100,7 @@ public class RouteTabPanel extends JPanel {
 
     private String currentSystemName = null;
     private String pendingJumpSystemName = null;
+    private String targetSystemName = null;  
     private boolean jumpFlashOn = true;
     private final Timer jumpFlashTimer = new Timer(500, e -> {
         jumpFlashOn = !jumpFlashOn;
@@ -296,10 +297,20 @@ public class RouteTabPanel extends JPanel {
         }
 
         if (event instanceof NavRouteEvent
-            || event instanceof FsdTargetEvent
             || event instanceof NavRouteClearEvent) {
             reloadFromNavRouteFile();
         }
+        if (event instanceof NavRouteClearEvent) {
+            // Route cleared: no active FSD target anymore
+            targetSystemName = null;
+            table.repaint();
+        }
+        if (event instanceof FsdTargetEvent target) {
+            // FSD target selected: remember the target system for the crosshair
+            targetSystemName = target.getName();  // adjust to getStarSystem() if needed
+            table.repaint();
+        }
+        
         
         if (event instanceof LocationEvent loc) {
             setCurrentSystemName(loc.getStarSystem());
@@ -648,15 +659,19 @@ public class RouteTabPanel extends JPanel {
 
     
     private String getCurrentSystemName() {
-		return currentSystemName;
-	}
+        return currentSystemName;
+    }
 
-	private void setCurrentSystemName(String currentSystemName) {
-		if (currentSystemName == null)
-			System.out.println("WHY is system name NULL???");
-		else
-			this.currentSystemName = currentSystemName;
-	}
+    private void setCurrentSystemName(String currentSystemName) {
+        if (currentSystemName == null) {
+            System.out.println("WHY is system name NULL???");
+            return;
+        }
+
+        this.currentSystemName = currentSystemName;
+        tableModel.setCurrentSystemName(currentSystemName);
+    }
+
 
 
 	// ---------------------------------------------------------------------
@@ -707,6 +722,26 @@ public class RouteTabPanel extends JPanel {
 
         private boolean sumDistances = true;
 
+        private String currentSystemName;
+
+        void setCurrentSystemName(String currentSystemName) {
+            this.currentSystemName = currentSystemName;
+            fireTableDataChanged();
+        }
+        
+        private int findCurrentSystemRow() {
+            if (currentSystemName == null) {
+                return -1;
+            }
+            for (int i = 0; i < entries.size(); i++) {
+                String name = entries.get(i).systemName;
+                if (currentSystemName.equals(name)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        
         void setSumDistances(boolean sumDistances) {
             if (this.sumDistances != sumDistances) {
                 this.sumDistances = sumDistances;
@@ -762,22 +797,46 @@ public class RouteTabPanel extends JPanel {
                     return e.starClass != null ? e.starClass : "";
                 case COL_STATUS:
                     return e.status;
-                case COL_DISTANCE:
-                	 if (e.distanceLy == null) {
-                         return "";
-                     }
-                     double value = e.distanceLy.doubleValue();
-                     if (sumDistances) {
-                         double total = 0.0;
-                         for (int i = 0; i <= rowIndex && i < entries.size(); i++) {
-                             Double d = entries.get(i).distanceLy;
-                             if (d != null) {
-                                 total += d.doubleValue();
-                             }
-                         }
-                         value = total;
-                     }
-                     return String.format("%.2f Ly", value);
+                case COL_DISTANCE: {
+                    int currentRow = findCurrentSystemRow();
+
+                    // If we don't know where the current system is, keep old per-leg behavior
+                    if (currentRow < 0) {
+                        if (e.distanceLy == null) {
+                            return "";
+                        }
+                        return String.format("%.2f Ly", e.distanceLy.doubleValue());
+                    }
+
+                    // Current system row: show blank
+                    if (rowIndex == currentRow) {
+                        return "";
+                    }
+
+                    int from = Math.min(rowIndex, currentRow);
+                    int to   = Math.max(rowIndex, currentRow);
+
+                    double total = 0.0;
+                    boolean hasDistance = false;
+
+                    // distanceLy at index i is the distance from (i-1) -> i
+                    for (int i = from + 1; i <= to; i++) {
+                        Double d = entries.get(i).distanceLy;
+                        if (d == null) {
+                            // If any leg along the path is unknown, we can't compute the total
+                            return "";
+                        }
+                        total += d.doubleValue();
+                        hasDistance = true;
+                    }
+
+                    if (!hasDistance) {
+                        return "";
+                    }
+
+                    return String.format("%.2f Ly", total);
+                }
+
                 default:
                     return "";
             }
@@ -953,10 +1012,17 @@ public class RouteTabPanel extends JPanel {
             Icon icon = null;
 
             if (system != null) {
+                // 1) Current system: solid triangle
                 if (system.equals(getCurrentSystemName())) {
                     icon = new TriangleIcon(ED_ORANGE, 10, 10);
+
+                // 2) Jump in progress (hyperdrive charging): blinking triangle
                 } else if (system.equals(pendingJumpSystemName) && jumpFlashOn) {
                     icon = new TriangleIcon(ED_ORANGE, 10, 10);
+
+                // 3) FSD target: scope-like crosshair
+                } else if (system.equals(targetSystemName)) {
+                    icon = new CrosshairIcon(ED_ORANGE, 15, 15);
                 }
             }
 
@@ -997,6 +1063,48 @@ public class RouteTabPanel extends JPanel {
             int[] xs = { x, x, x + w };
             int[] ys = { y, y + h, y + h/2 };
             g2.fillPolygon(xs, ys, 3);
+        }
+    }
+    private static class CrosshairIcon implements Icon {
+        private final Color color;
+        private final int w, h;
+
+        CrosshairIcon(Color c, int w, int h) {
+            this.color = c;
+            this.w = w;
+            this.h = h;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return w;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return h;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setColor(color);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int cx = x + w / 2;
+            int cy = y + h / 2;
+            int radius = Math.min(w, h) / 2 - 1;
+
+            // outer circle
+            g2.drawOval(cx - radius, cy - radius, radius * 2, radius * 2);
+
+            // crosshair lines
+            g2.setColor(Color.red);
+            g2.drawLine(cx - radius, cy, cx + radius, cy);
+            g2.drawLine(cx, cy - radius, cx, cy + radius);
+
+            g2.dispose();
         }
     }
 
