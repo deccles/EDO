@@ -101,7 +101,8 @@ public class SystemAccumulator {
         info.setDistanceLs(e.getDistanceFromArrivalLs());
         info.setLandable(e.isLandable());
         info.setGravityMS(e.getSurfaceGravity());
-
+        info.setSurfacePressure(e.getSurfacePressure());
+        
         // Atmosphere / planet type used by prediction code
         info.setAtmoOrType(chooseAtmoOrType(e));
 
@@ -121,7 +122,7 @@ public class SystemAccumulator {
         if (volc != null && !volc.isEmpty()) {
             info.setVolcanism(volc);
         }
-        info.setSurfacePressure(e.getSurfacePressure());
+
     }
 
     void applySignals(int bodyId, String bodyName, List<Signal> signals) {

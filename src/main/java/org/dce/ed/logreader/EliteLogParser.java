@@ -393,6 +393,9 @@ public class EliteLogParser {
         boolean wasMapped = obj.has("WasMapped") && obj.get("WasMapped").getAsBoolean();
         String starType = getString(obj, "StarType");
 
+        Double surfacePressure = obj.has("SurfacePressure")
+        		? obj.get("SurfacePressure").getAsDouble(): null;
+        
         return new ScanEvent(
                 ts,
                 obj,
@@ -406,6 +409,7 @@ public class EliteLogParser {
                 atmosphere,
                 terraformState,
                 surfaceGravity,
+                surfacePressure,
                 surfaceTemp,
                 volcanism,
                 wasDiscovered,

@@ -29,6 +29,8 @@ public class CachedBody {
     public String parentStar;
     public String nebula; 
     
+    public Double surfacePressure;
+    
     // NEW: raw EDSM discovery info
     public String discoveryCommander;
 

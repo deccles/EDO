@@ -44,7 +44,12 @@ final class BioTableBuilder {
 
             // If there are no predictions yet, try a one-shot calculation here
             if (preds == null || preds.isEmpty()) {
-                ExobiologyData.BodyAttributes attrs = b.buildBodyAttributes();
+            	ExobiologyData.BodyAttributes attrs = null;
+            	try {
+            	    attrs = b.buildBodyAttributes();
+            	} catch (RuntimeException ex) {
+            	    System.out.println("Bio attrs not ready for " + b.getShortName() + " (" + b.getBodyId() + "): " + ex);
+            	}
                 if (attrs != null) {
                     List<ExobiologyData.BioCandidate> base = ExobiologyData.predict(attrs);
                     if (base != null && !base.isEmpty()) {
@@ -85,7 +90,6 @@ final class BioTableBuilder {
 
             Set<String> genusPrefixes = b.getObservedGenusPrefixes();
             Set<String> observedNamesRaw = b.getObservedBioDisplayNames();
-
             Set<String> observedGenusLower = new HashSet<>();
             if (genusPrefixes != null) {
                 for (String gp : genusPrefixes) {

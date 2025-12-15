@@ -309,7 +309,8 @@ public class ExobiologyAuditMain {
             info.setBodyName(bodyName);
             info.setLandable(e.isLandable());
             info.setGravityMS(e.getSurfaceGravity());
-
+            info.setSurfacePressure(e.getSurfacePressure());
+            
             // Prediction-related attributes
             info.setPlanetClass(e.getPlanetClass());
             info.setAtmosphere(e.getAtmosphere());

@@ -298,7 +298,6 @@ public class BodyInfo {
         double tempMax = tempMin;
 
         boolean hasVolc = getVolcanism() != null && !getVolcanism().isEmpty() && !getVolcanism().toLowerCase().startsWith("no volcanism");
-//        Double surfacePressure2 = getSurfacePressure();
 
         BodyAttributes attr = new BodyAttributes(
         		getBodyName(),

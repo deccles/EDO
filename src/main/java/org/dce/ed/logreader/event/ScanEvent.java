@@ -50,6 +50,7 @@ public final class ScanEvent extends EliteLogEvent {
                      String atmosphere,
                      String terraformState,
                      Double surfaceGravity,
+                     Double surfacePressure,
                      Double surfaceTemperature,
                      String volcanism,
                      boolean wasDiscovered,
@@ -67,6 +68,7 @@ public final class ScanEvent extends EliteLogEvent {
         this.atmosphere = atmosphere;
         this.terraformState = terraformState;
         this.surfaceGravity = surfaceGravity;
+        this.surfacePressure = surfacePressure;
         this.surfaceTemperature = surfaceTemperature;
         this.volcanism = volcanism;
         this.wasDiscovered = wasDiscovered;

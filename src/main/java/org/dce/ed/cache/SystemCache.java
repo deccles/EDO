@@ -218,6 +218,8 @@ public final class SystemCache {
             info.setBodyId(cb.bodyId);
             info.setDistanceLs(cb.distanceLs);
             info.setGravityMS(cb.gravityMS);
+            info.setSurfacePressure(cb.surfacePressure);
+            
             info.setLandable(cb.landable);
             info.setHasBio(cb.hasBio);
             info.setHasGeo(cb.hasGeo);
@@ -228,7 +230,7 @@ public final class SystemCache {
             info.setSurfaceTempK(cb.surfaceTempK);
             info.setVolcanism(cb.volcanism);
             info.setDiscoveryCommander(cb.discoveryCommander);
-            info.setSurfacePressure(cb.surfacePressure);
+
             info.setNebula(cb.nebula);
             info.setParentStar(cb.parentStar);
             

@@ -594,6 +594,10 @@ public class EdsmClient {
                 local.setGravityMS(remote.surfaceGravity);
             }
 
+            if (remote.getSurfacePressure() != null) {
+            	local.setSurfacePressure(remote.getSurfacePressure());
+            }
+            
             // Surface temperature
             if (remote.surfaceTemperature != null) {
                 local.setSurfaceTempK(remote.surfaceTemperature);

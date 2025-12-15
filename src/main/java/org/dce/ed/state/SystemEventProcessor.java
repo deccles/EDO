@@ -154,11 +154,14 @@ public class SystemEventProcessor {
         info.setDistanceLs(e.getDistanceFromArrivalLs());
         info.setLandable(e.isLandable());
         info.setGravityMS(e.getSurfaceGravity());
-        info.setAtmoOrType(chooseAtmoOrType(e));
-        info.setHighValue(isHighValue(e));
         
         System.out.println("Setting surface pressure of " + e.getSurfacePressure());
         info.setSurfacePressure(e.getSurfacePressure());
+        
+        info.setAtmoOrType(chooseAtmoOrType(e));
+        info.setHighValue(isHighValue(e));
+        
+
 
         info.setPlanetClass(e.getPlanetClass());
         info.setAtmosphere(e.getAtmosphere());
