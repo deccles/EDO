@@ -172,6 +172,8 @@ public class RescanJournalsMain {
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyLocation(le);
+                if (le.getStarPos() != null)
+                	acc.starPos = le.getStarPos();
 
             } else if (event instanceof FsdJumpEvent) {
                 FsdJumpEvent je = (FsdJumpEvent) event;
@@ -181,6 +183,9 @@ public class RescanJournalsMain {
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyFsdJump(je);
+                if (je.getStarPos() != null) {
+                	acc.starPos = je.getStarPos();
+                }
 
             } else if (event instanceof FssDiscoveryScanEvent) {
                 FssDiscoveryScanEvent fds = (FssDiscoveryScanEvent) event;
@@ -277,6 +282,7 @@ public class RescanJournalsMain {
             cache.put(
                 acc.systemAddress,
                 acc.systemName,
+                acc.starPos,
                 acc.totalBodies,
                 acc.nonBodyCount,
                 acc.fssProgress,

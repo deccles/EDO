@@ -165,7 +165,7 @@ public class ExobiologyPredictionAuditor {
 
         return new ExobiologyAuditCase(
                 systemName,
-                body.getName(),
+                body.getBodyName(),
                 body.getBodyId(),
                 planet,
                 new ArrayList<>(observedDisplayNames),

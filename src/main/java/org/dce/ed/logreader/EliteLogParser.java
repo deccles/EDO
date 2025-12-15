@@ -372,6 +372,8 @@ public class EliteLogParser {
     private ScanEvent parseScan(Instant ts, JsonObject obj) {
         String bodyName = getString(obj, "BodyName");
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;
+        String starSystem = obj.has("StarSystem") ? obj.get("StarSystem").getAsString() : "";
+        
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
         double distanceLs = obj.has("DistanceFromArrivalLS")
                 ? obj.get("DistanceFromArrivalLS").getAsDouble()
@@ -396,6 +398,7 @@ public class EliteLogParser {
                 obj,
                 bodyName,
                 bodyId,
+                starSystem,
                 systemAddress,
                 distanceLs,
                 landable,

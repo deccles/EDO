@@ -9,6 +9,7 @@ import java.util.List;
     public class CachedSystem {
         public long systemAddress;
         public String systemName;
+        public double starPos[];
         public List<CachedBody> bodies = new ArrayList<>();
 
         public Integer totalBodies;

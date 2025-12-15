@@ -13,9 +13,18 @@ import com.google.gson.JsonObject;
  */
 public final class ScanEvent extends EliteLogEvent {
 
+
+	
+	
+	
     private final String bodyName;
     private final int bodyId;
-    private final long systemAddress;
+    private final String starSystem;
+    public String getStarSystem() {
+		return starSystem;
+	}
+
+	private final long systemAddress;
     private final double distanceFromArrivalLs;
     private final boolean landable;
     private final String planetClass;
@@ -27,11 +36,13 @@ public final class ScanEvent extends EliteLogEvent {
     private final boolean wasDiscovered;
     private final boolean wasMapped;
     private final String starType;
+	private Double surfacePressure;
 
     public ScanEvent(Instant timestamp,
                      JsonObject rawJson,
                      String bodyName,
                      int bodyId,
+                     String starSystem,
                      long systemAddress,
                      double distanceFromArrivalLs,
                      boolean landable,
@@ -48,6 +59,7 @@ public final class ScanEvent extends EliteLogEvent {
         super(timestamp, EliteEventType.SCAN, rawJson);
         this.bodyName = bodyName;
         this.bodyId = bodyId;
+        this.starSystem = starSystem;
         this.systemAddress = systemAddress;
         this.distanceFromArrivalLs = distanceFromArrivalLs;
         this.landable = landable;
@@ -119,4 +131,8 @@ public final class ScanEvent extends EliteLogEvent {
     public String getStarType() {
         return starType;
     }
+
+	public Double getSurfacePressure() {
+		return surfacePressure;
+	}
 }

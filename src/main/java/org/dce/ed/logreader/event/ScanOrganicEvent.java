@@ -12,7 +12,9 @@ import com.google.gson.JsonObject;
  * Gives us the specific Genus/Species on that body.
  */
 public final class ScanOrganicEvent extends EliteLogEvent {
-
+/*
+Ploea Eurl YP-T c18-1
+ */
     private final long systemAddress;
     private final String bodyName;
     private final int bodyId;

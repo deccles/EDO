@@ -3,9 +3,13 @@ package org.dce.ed.state;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.dce.ed.exobiology.ExobiologyData;
+import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
+import org.dce.ed.exobiology.ExobiologyData.BodyAttributes;
+import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 
 /**
  * Pure domain representation of a single stellar body.
@@ -21,11 +25,22 @@ import org.dce.ed.exobiology.ExobiologyData;
  */
 public class BodyInfo {
 
+
     private String name;
     private String shortName;
     private int bodyId = -1;
+	private String starSystem;
+	double starPos[];
+	
+    public double[] getStarPos() {
+		return starPos;
+	}
 
-    private double distanceLs = Double.NaN;
+	public void setStarPos(double[] starPos) {
+		this.starPos = starPos;
+	}
+
+	private double distanceLs = Double.NaN;
     private Double gravityMS;     // in m/s^2
     private boolean landable;
 
@@ -52,11 +67,35 @@ public class BodyInfo {
     
     private String discoveryCommander;  // may be null or empty
     
+	private Double surfacePressure;
+	private String parentStar;
+	private String nebula;
+    
     // ------------------------------------------------------------
     // Accessors
     // ------------------------------------------------------------
 
-    public String getName() {
+	public String getStarSystem() {
+		return starSystem;
+	}
+
+	public void setParentStar(String parentStar) {
+	    this.parentStar = parentStar;
+	}
+
+	public String getParentStar() {
+	    return parentStar;
+	}
+
+	public void setNebula(String nebula) {
+	    this.nebula = nebula;
+	}
+
+	public String getNebula() {
+	    return nebula;
+	}
+	
+    public String getBodyName() {
         return name;
     }
 
@@ -148,11 +187,11 @@ public class BodyInfo {
     // Mutators
     // ------------------------------------------------------------
 
-    public void setName(String name) {
+    public void setBodyName(String name) {
         this.name = name;
     }
 
-    public void setShortName(String shortName) {
+    public void setBodyShortName(String shortName) {
         this.shortName = shortName;
     }
 
@@ -251,24 +290,51 @@ public class BodyInfo {
                 && Double.isNaN(gravityG)) {
             return null; // Not enough info to predict
         }
-
-        ExobiologyData.PlanetType pt = ExobiologyData.parsePlanetType(getPlanetClass());
-        ExobiologyData.AtmosphereType at = ExobiologyData.parseAtmosphere(getAtmosphere());
+        String pc = getPlanetClass();
+        PlanetType pt = ExobiologyData.parsePlanetType(pc);
+        AtmosphereType at = ExobiologyData.parseAtmosphere(getAtmosphere());
 
         double tempMin = getSurfaceTempK() != null ? getSurfaceTempK() : Double.NaN;
         double tempMax = tempMin;
 
-        boolean hasVolc = getVolcanism() != null && !getVolcanism().isEmpty();
+        boolean hasVolc = getVolcanism() != null && !getVolcanism().isEmpty() && !getVolcanism().toLowerCase().startsWith("no volcanism");
+//        Double surfacePressure2 = getSurfacePressure();
 
-        return new ExobiologyData.BodyAttributes(
+        BodyAttributes attr = new BodyAttributes(
+        		getBodyName(),
+        		getStarSystem(),
+        		starPos,
                 pt,
                 gravityG,
                 at,
                 tempMin,
                 tempMax,
+                surfacePressure,
                 hasVolc,
                 getVolcanism()
         );
+//        public BodyAttributes(String bodyName,
+//                PlanetType planetType,
+//                double gravity,
+//                AtmosphereType atmosphere,
+//                double tempKMin,
+//                double tempKMax,
+//                double pressure,
+//                boolean hasVolcanism,
+//                String volcanismType,
+//                Map<String, Double> atmosphereComponents,
+//                Double orbitalPeriod,
+//                Double distance,
+//                Boolean guardian,
+//                String nebula,
+//                String parentStar,
+//                String region,
+//                String starClass) {
+        
+        
+        
+        
+        return attr;
     }
 
     public void addObservedGenusPrefix(String genus) {
@@ -314,6 +380,18 @@ public class BodyInfo {
 
 	public void setRadius(Double radius) {
 		this.radius = radius;
+	}
+
+	public Double getSurfacePressure() {
+		return surfacePressure;
+	}
+
+	public void setSurfacePressure(Double surfacePressure) {
+		this.surfacePressure = surfacePressure;
+	}
+
+	public void setStarSystem(String starSystem) {
+		this.starSystem = starSystem;
 	}
 
 }

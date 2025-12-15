@@ -34,13 +34,14 @@ public class SystemEventProcessor {
     public void handleEvent(EliteLogEvent event) {
         if (event instanceof LocationEvent) {
             LocationEvent e = (LocationEvent) event;
-            enterSystem(e.getStarSystem(), e.getSystemAddress());
+            enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             return;
         }
 
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
-            enterSystem(e.getStarSystem(), e.getSystemAddress());
+
+            enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             return;
         }
 
@@ -79,7 +80,7 @@ public class SystemEventProcessor {
     // System transition handling
     // ---------------------------------------------------------------------
 
-    private void enterSystem(String name, long addr) {
+    private void enterSystem(String name, long addr, double[] starPos) {
         boolean sameName = name != null && name.equals(state.getSystemName());
         boolean sameAddr = addr != 0L && addr == state.getSystemAddress();
 
@@ -90,6 +91,7 @@ public class SystemEventProcessor {
             if (addr != 0L) {
                 state.setSystemAddress(addr);
             }
+            state.setStarPos(starPos);
             return;
         }
 
@@ -129,9 +131,13 @@ public class SystemEventProcessor {
         }
 
         BodyInfo info = state.getOrCreateBody(e.getBodyId());
+        
+        
         info.setBodyId(e.getBodyId());
-        info.setName(e.getBodyName());
-        info.setShortName(state.computeShortName(e.getBodyName()));
+        info.setBodyName(e.getBodyName());
+        info.setStarSystem(e.getStarSystem());
+        
+        info.setBodyShortName(state.computeShortName(e.getBodyName()));
 
         info.setDistanceLs(e.getDistanceFromArrivalLs());
         info.setLandable(e.isLandable());
@@ -149,7 +155,7 @@ public class SystemEventProcessor {
         if (e.getVolcanism() != null && !e.getVolcanism().isEmpty()) {
             info.setVolcanism(e.getVolcanism());
         }
-
+        state.getBodies().put(e.getBodyId(), info);
         updatePredictions(info);
     }
 
@@ -254,11 +260,11 @@ public class SystemEventProcessor {
         // Make sure the body has a name / short name
         String bodyName = e.getBodyName();
         if (bodyName != null && !bodyName.isEmpty()) {
-            if (info.getName() == null || info.getName().isEmpty()) {
-                info.setName(bodyName);
+            if (info.getBodyName() == null || info.getBodyName().isEmpty()) {
+                info.setBodyName(bodyName);
             }
             if (info.getShortName() == null || info.getShortName().isEmpty()) {
-                info.setShortName(state.computeShortName(bodyName));
+                info.setBodyShortName(state.computeShortName(bodyName));
             }
         }
 

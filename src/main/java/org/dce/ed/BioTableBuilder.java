@@ -21,6 +21,10 @@ final class BioTableBuilder {
     }
 
     static List<Row> buildRows(Collection<BodyInfo> bodies) {
+        return buildRows(bodies, false);
+    }
+
+    static List<Row> buildRows(Collection<BodyInfo> bodies, boolean shouldCollapse) {
         List<BodyInfo> sorted = new ArrayList<>(bodies);
         sorted.sort(Comparator.comparingDouble(b -> Double.isNaN(b.getDistanceLs())
                 ? Double.MAX_VALUE
@@ -159,6 +163,23 @@ final class BioTableBuilder {
 
                     return aName.compareToIgnoreCase(bName);
                 });
+
+
+                if (!shouldCollapse) {
+                    for (BioRowData br : bioRows) {
+                        String label = br.name;
+
+                        String valueText = "";
+                        if (br.cr != null) {
+                            long millions = Math.round(br.cr / 1_000_000.0);
+                            valueText = String.format(Locale.US, "%dM Cr", millions);
+                        }
+
+                        rows.add(Row.bio(b.getBodyId(), label, valueText));
+                    }
+
+                    continue;
+                }
 
                 // Collapse by genus: "Genus (n)" with max CR
                 class GenusSummary {

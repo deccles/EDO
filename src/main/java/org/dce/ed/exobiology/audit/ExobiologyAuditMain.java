@@ -27,6 +27,7 @@ import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.state.BodyInfo;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -149,7 +150,7 @@ public class ExobiologyAuditMain {
             }
             systemCount++;
             for (BodyInfo b : acc.bodies.values()) {
-                if (b.observedBioDisplayNames == null || b.observedBioDisplayNames.isEmpty()) {
+                if (b.getObservedBioDisplayNames() == null || b.getObservedBioDisplayNames().isEmpty()) {
                     continue; // no truth data; nothing to audit
                 }
                 bodyCount++;
@@ -233,22 +234,22 @@ public class ExobiologyAuditMain {
      * - physical attributes (planetClass, atmosphere, gravity, temp, volcanism)
      * - truth data (observed species from ScanOrganic).
      */
-    private static final class BodyInfo {
-        String name;
-        int bodyId = -1;
-        Double gravityMS = null;
-        boolean landable = false;
-
-        // Fields used for prediction/exobiology
-        String planetClass;
-        String atmosphere;
-        Double surfaceTempK;
-        String volcanism;
-
-        // Truth data from DSS / ScanOrganic
-        Set<String> observedGenusPrefixes;    // e.g. "bacterium", "stratum"
-        Set<String> observedBioDisplayNames;  // e.g. "Bacterium Nebulus"
-    }
+//    private static final class BodyInfo {
+//        String name;
+//        int bodyId = -1;
+//        Double gravityMS = null;
+//        boolean landable = false;
+//
+//        // Fields used for prediction/exobiology
+//        String planetClass;
+//        String atmosphere;
+//        Double surfaceTempK;
+//        String volcanism;
+//
+//        // Truth data from DSS / ScanOrganic
+//        Set<String> observedGenusPrefixes;    // e.g. "bacterium", "stratum"
+//        Set<String> observedBioDisplayNames;  // e.g. "Bacterium Nebulus"
+//    }
 
     /**
      * Accumulates events for a single system and converts them to BodyInfo entries.
@@ -304,23 +305,27 @@ public class ExobiologyAuditMain {
             }
 
             BodyInfo info = bodies.computeIfAbsent(id, ignored -> new BodyInfo());
-            info.bodyId = id;
-            info.name = bodyName;
-            info.landable = e.isLandable();
-            info.gravityMS = e.getSurfaceGravity();
+            info.setBodyId(id);
+            info.setBodyName(bodyName);
+            info.setLandable(e.isLandable());
+            info.setGravityMS(e.getSurfaceGravity());
 
             // Prediction-related attributes
-            info.planetClass = e.getPlanetClass();
-            info.atmosphere = e.getAtmosphere();
+            info.setPlanetClass(e.getPlanetClass());
+            info.setAtmosphere(e.getAtmosphere());
 
             Double temp = e.getSurfaceTemperature();
             if (temp != null) {
-                info.surfaceTempK = temp;
+                info.setSurfaceTempK(temp);
             }
 
+            Double pressure = e.getSurfacePressure();
+            if (pressure != null) {
+                info.setSurfacePressure(pressure);
+            }
             String volc = e.getVolcanism();
             if (volc != null && !volc.isEmpty()) {
-                info.volcanism = volc;
+                info.setVolcanism(volc);
             }
         }
 
@@ -339,10 +344,10 @@ public class ExobiologyAuditMain {
                 genusPrefix = toLower(e.getGenus());
             }
             if (!genusPrefix.isEmpty()) {
-                if (info.observedGenusPrefixes == null) {
-                    info.observedGenusPrefixes = new HashSet<>();
+                if (info.getObservedGenusPrefixes() == null) {
+                    info.setObservedGenusPrefixes(new HashSet<>());
                 }
-                info.observedGenusPrefixes.add(genusPrefix);
+                info.getObservedGenusPrefixes().add(genusPrefix);
             }
 
             // Full display name (truth row): "Bacterium Nebulus", etc.
@@ -351,10 +356,10 @@ public class ExobiologyAuditMain {
             String displayName = buildDisplayName(genusDisp, speciesDisp);
 
             if (!isEmpty(displayName)) {
-                if (info.observedBioDisplayNames == null) {
-                    info.observedBioDisplayNames = new HashSet<>();
+                if (info.getObservedBioDisplayNames() == null) {
+                    info.setObservedBioDisplayNames(new HashSet<>());
                 }
-                info.observedBioDisplayNames.add(displayName);
+                info.getObservedBioDisplayNames().add(displayName);
             }
         }
         private static String buildDisplayName(String genusDisp, String speciesDisp) {
@@ -394,25 +399,25 @@ public class ExobiologyAuditMain {
                 BodyInfo info = bodies.get(bodyId);
                 if (info == null) {
                     info = new BodyInfo();
-                    info.bodyId = bodyId;
-                    info.name = bodyName;
+                    info.setBodyId(bodyId);
+                    info.setBodyName(bodyName);
                     bodies.put(bodyId, info);
                 } else if (bodyName != null && !bodyName.isEmpty()
-                        && (info.name == null || info.name.isEmpty())) {
-                    info.name = bodyName;
+                        && (info.getBodyName() == null || info.getBodyName().isEmpty())) {
+                    info.setBodyName(bodyName);
                 }
                 return info;
             }
 
             if (bodyName != null && !bodyName.isEmpty()) {
                 for (BodyInfo b : bodies.values()) {
-                    if (bodyName.equals(b.name)) {
+                    if (bodyName.equals(b.getBodyName())) {
                         return b;
                     }
                 }
                 BodyInfo info = new BodyInfo();
-                info.bodyId = -1;
-                info.name = bodyName;
+                info.setBodyId(-1);
+                info.setBodyName(bodyName);
                 // Use a synthetic key for "no numeric body ID"
                 bodies.put(bodies.size() + 1_000_000, info);
                 return info;
@@ -459,22 +464,22 @@ public class ExobiologyAuditMain {
             return null;
         }
 
-        PlanetType planetType = mapPlanetType(b.planetClass);
+        PlanetType planetType = mapPlanetType(b.getPlanetClass());
         if (planetType == null) {
             return null;
         }
 
-        AtmosphereType atmo = mapAtmosphereType(b.atmosphere);
+        AtmosphereType atmo = mapAtmosphereType(b.getAtmosphere());
         if (atmo == null) {
             atmo = AtmosphereType.UNKNOWN;
         }
 
-        double gravity = (b.gravityMS != null) ? b.gravityMS : Double.NaN;
+        double gravity = (b.getGravityMS() != null) ? b.getGravityMS() : Double.NaN;
         if (Double.isNaN(gravity)) {
             return null;
         }
 
-        double temp = (b.surfaceTempK != null) ? b.surfaceTempK : Double.NaN;
+        double temp = (b.getSurfaceTempK() != null) ? b.getSurfaceTempK() : Double.NaN;
         if (Double.isNaN(temp)) {
             return null;
         }
@@ -482,16 +487,20 @@ public class ExobiologyAuditMain {
         double tempMin = temp;
         double tempMax = temp;
 
-        String volc = b.volcanism != null ? b.volcanism : "";
+        String volc = b.getVolcanism() != null ? b.getVolcanism() : "";
         boolean hasVolc = !volc.isEmpty()
                 && !volc.toLowerCase(Locale.ROOT).contains("no volcanism");
 
         return new BodyAttributes(
-                planetType,
+        		b.getBodyName(),
+        		b.getStarSystem(),
+        		b.getStarPos(),
+        		planetType,
                 gravity,
                 atmo,
                 tempMin,
                 tempMax,
+                b.getSurfacePressure(),
                 hasVolc,
                 volc
         );
@@ -571,13 +580,13 @@ public class ExobiologyAuditMain {
                                                       BodyInfo b,
                                                       BodyAttributes attrs,
                                                       List<BioCandidate> predicted) {
-        if (b.observedBioDisplayNames == null || b.observedBioDisplayNames.isEmpty()) {
+        if (b.getObservedBioDisplayNames() == null || b.getObservedBioDisplayNames().isEmpty()) {
             return null;
         }
 
         // Normalize observed species (truth)
         Set<String> observedNorm = new LinkedHashSet<>();
-        for (String raw : b.observedBioDisplayNames) {
+        for (String raw : b.getObservedBioDisplayNames()) {
             String n = normalizeSpeciesName(raw);
             if (!n.isEmpty()) {
                 observedNorm.add(n);
@@ -611,27 +620,27 @@ public class ExobiologyAuditMain {
         for (String obs : observedNorm) {
             if (!predictedNorm.contains(obs)) {
                 missingNorm.add(obs);
-                String pretty = findOriginal(b.observedBioDisplayNames, obs);
+                String pretty = findOriginal(b.getObservedBioDisplayNames(), obs);
                 missingNice.add(pretty != null ? pretty : obs);
             }
         }
 
         PlanetSnapshot planet = new PlanetSnapshot(
-                b.planetClass,
-                b.atmosphere,
-                b.surfaceTempK,
-                b.gravityMS,
-                b.volcanism,
-                b.landable
+                b.getPlanetClass(),
+                b.getAtmosphere(),
+                b.getSurfaceTempK(),
+                b.getGravityMS(),
+                b.getVolcanism(),
+                b.isLandable()
         );
 
         return new ExobiologyAuditCase(
                 systemName,
                 systemAddress,
-                b.bodyId,
-                b.name,
+                b.getBodyId(),
+                b.getBodyName(),
                 planet,
-                new ArrayList<>(b.observedBioDisplayNames),
+                new ArrayList<>(b.getObservedBioDisplayNames()),
                 new ArrayList<>(observedNorm),
                 predictedDetailed,
                 missingNice,

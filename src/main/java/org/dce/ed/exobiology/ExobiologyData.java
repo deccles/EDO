@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
+
+import org.dce.ed.exobiology.RegionMapData;
 
 /**
  * Exobiology prediction helper using rulesets derived from the
@@ -39,15 +42,34 @@ public final class ExobiologyData {
 
     public enum AtmosphereType {
         NONE,
+
         CO2,
+        CO2_RICH,
+
         METHANE,
+        METHANE_RICH,
+
         NITROGEN,
+        NITROGEN_RICH,
+
         OXYGEN,
+        OXYGEN_RICH,
+
         NEON,
+        NEON_RICH,
+
         ARGON,
+        ARGON_RICH,
+
         WATER,
+        WATER_RICH,
+
         SULPHUR_DIOXIDE,
+        SULPHUR_DIOXIDE_RICH,
+
         AMMONIA,
+        AMMONIA_RICH,
+
         HELIUM,
         OTHER,
         UNKNOWN
@@ -72,28 +94,131 @@ public final class ExobiologyData {
      */
     public static final class BodyAttributes {
 
+        /** Optional body name (for rulesets that restrict to certain bodies). */
+        public final String bodyName;
+        public final String starSystem;
+        public final double starPos[];
         public final PlanetType planetType;
         public final double gravity;
         public final AtmosphereType atmosphere;
+
+        /**
+         * Temperature in Kelvin. BioScan uses a single value; we keep min/max to avoid churn,
+         * but in most cases tempKMin == tempKMax.
+         */
         public final double tempKMin;
         public final double tempKMax;
+
+        /** Surface pressure (atm). Use NaN if unknown. */
+        public double pressure;
+
+        /** True if volcanism is present. */
         public final boolean hasVolcanism;
+
+        /** Raw volcanism string (e.g. "Water geysers"). Null if none/unknown. */
         public final String volcanismType;
 
-        public BodyAttributes(PlanetType planetType,
+        /**
+         * Optional atmosphere composition, keyed by gas name as used by the BioScan ruleset
+         * (e.g. "CO2" -> 0.85). Use empty map if unknown.
+         */
+        public final Map<String, Double> atmosphereComponents;
+
+        /** Optional orbital period (same units as ruleset). Null if unknown. */
+        public final Double orbitalPeriod;
+
+        /** Optional distance (same units as ruleset). Null if unknown. */
+        public final Double distance;
+
+        /** Optional guardian flag. Null if unknown. */
+        public final Boolean guardian;
+
+        /** Optional nebula string. Null if unknown. */
+        public final String nebula;
+
+        /** Optional parent star class/name. Null if unknown. */
+        public final String parentStar;
+
+        /** Optional region name. Null if unknown. */
+        public final String region;
+
+        /** Optional star class for system. Null if unknown. */
+        public final String starClass;
+
+        public BodyAttributes(String bodyName,
+        		              String starSystem,
+        		              double starPos[],
+                              PlanetType planetType,
                               double gravity,
                               AtmosphereType atmosphere,
                               double tempKMin,
                               double tempKMax,
+                              double pressure,
                               boolean hasVolcanism,
-                              String volcanismType) {
+                              String volcanismType,
+                              Map<String, Double> atmosphereComponents,
+                              Double orbitalPeriod,
+                              Double distance,
+                              Boolean guardian,
+                              String nebula,
+                              String parentStar,
+                              String region,
+                              String starClass) {
+
+            this.bodyName = bodyName;
+            this.starSystem = starSystem;
+            this.starPos = starPos;
             this.planetType = planetType;
             this.gravity = gravity;
             this.atmosphere = atmosphere;
             this.tempKMin = tempKMin;
             this.tempKMax = tempKMax;
+            this.pressure = pressure;
             this.hasVolcanism = hasVolcanism;
             this.volcanismType = volcanismType;
+            this.atmosphereComponents = atmosphereComponents != null ? atmosphereComponents : Collections.emptyMap();
+            this.orbitalPeriod = orbitalPeriod;
+            this.distance = distance;
+            this.guardian = guardian;
+            this.nebula = nebula;
+            this.parentStar = parentStar;
+            this.region = region;
+            this.starClass = starClass;
+        }
+
+        /** Back-compat: pressure included. */
+        public BodyAttributes(
+        		String bodyName,
+        		String starSystem,
+        		double starPos[],
+        		PlanetType planetType,
+                              double gravity,
+                              AtmosphereType atmosphere,
+                              double tempKMin,
+                              double tempKMax,
+                              double pressure,
+                              boolean hasVolcanism,
+                              String volcanismType) {
+
+            this(bodyName,
+            		starSystem,
+            		starPos,
+                 planetType,
+                 gravity,
+                 atmosphere,
+                 tempKMin,
+                 tempKMax,
+                 pressure,
+                 hasVolcanism,
+                 volcanismType,
+                 Collections.emptyMap(),
+                 null,
+                 null,
+                 null,
+                 null,
+                 null,
+                 null,
+                 null);
         }
     }
 
@@ -101,30 +226,6 @@ public final class ExobiologyData {
      * Rules and constraints
      * ===================================================================== */
 
-    /**
-     * One ruleset row for a given {genus, species}, mapped from the Python
-     * rulesets entry.
-     *
-     * Missing dimensions in the source ruleset are represented as:
-     *  - gravity:   [0, 100] (effectively "no constraint")
-     *  - temp:      [0, 1_000_000]
-     *  - atmospheres: empty set  => no restriction
-     *  - bodyTypes:  empty set   => no restriction
-     *  - volcanism:  ANY
-     */
-    /**
-     * One ruleset row for a given {genus, species}, mapped from the Python
-     * rulesets entry.
-     *
-     * Missing dimensions in the source ruleset are represented as:
-     *  - gravity:   [0, 100] (effectively "no constraint")
-     *  - temp:      [0, 1_000_000]
-     *  - pressure:  [0, 1_000_000]
-     *  - atmospheres: empty set  => no restriction
-     *  - bodyTypes:  empty set   => no restriction
-     *  - volcanism:  ANY
-     *  - lists/maps: empty => no restriction (until you choose to use them)
-     */
     /**
      * One ruleset row for a given {genus, species}, mapped from the Python
      * rulesets entry.
@@ -145,16 +246,19 @@ public final class ExobiologyData {
      */
     public static final class SpeciesRule {
 
-        public final double minGravity;
-        public final double maxGravity;
-        public final double minTempK;
-        public final double maxTempK;
+        public final Double minGravity;
+        public final Double maxGravity;
+        public final Double minTempK;
+        public final Double maxTempK;
 
-        public final double minPressure;
-        public final double maxPressure;
+        public final Double minPressure;
+        public final Double maxPressure;
 
         public final Set<AtmosphereType> atmospheres;
         public final Set<PlanetType> bodyTypes;
+
+        /** If true, ruleset atmosphere is 'Any' which means the body must have an atmosphere (not airless). */
+        public final boolean requireAtmosphere;
 
         /** Optional detailed atmosphere components (e.g. {"CO2": 0.8}). */
         public final Map<String, Double> atmosphereComponents;
@@ -186,16 +290,23 @@ public final class ExobiologyData {
         /** Optional “tuber” anchor constraints. */
         public final List<String> tuberTargets;
 
+        /** Volcanism constraint value (e.g. 'Any', 'None', '!water'). Null if not specified. */
+        public final String volcanismValue;
+
+        /** Volcanism any-of list (substring match, '=' prefix for exact). Null/empty if not specified. */
+        public final List<String> volcanismAnyOf;
+
         public final VolcanismRequirement volcanismRequirement;
 
-        public SpeciesRule(double minGravity,
-                           double maxGravity,
-                           double minTempK,
-                           double maxTempK,
-                           double minPressure,
-                           double maxPressure,
+        public SpeciesRule(Double minGravity,
+                           Double maxGravity,
+                           Double minTempK,
+                           Double maxTempK,
+                           Double minPressure,
+                           Double maxPressure,
                            Set<AtmosphereType> atmospheres,
                            Set<PlanetType> bodyTypes,
+                           boolean requireAtmosphere,
                            Map<String, Double> atmosphereComponents,
                            List<String> bodies,
                            Double maxOrbitalPeriod,
@@ -206,6 +317,8 @@ public final class ExobiologyData {
                            List<String> regions,
                            List<String> starClasses,
                            List<String> tuberTargets,
+                           String volcanismValue,
+                           List<String> volcanismAnyOf,
                            VolcanismRequirement volcanismRequirement) {
 
             this.minGravity = minGravity;
@@ -216,6 +329,7 @@ public final class ExobiologyData {
             this.maxPressure = maxPressure;
             this.atmospheres = atmospheres;
             this.bodyTypes = bodyTypes;
+            this.requireAtmosphere = requireAtmosphere;
             this.atmosphereComponents = atmosphereComponents;
             this.bodies = bodies;
             this.maxOrbitalPeriod = maxOrbitalPeriod;
@@ -226,6 +340,8 @@ public final class ExobiologyData {
             this.regions = regions;
             this.starClasses = starClasses;
             this.tuberTargets = tuberTargets;
+            this.volcanismValue = volcanismValue;
+            this.volcanismAnyOf = volcanismAnyOf;
             this.volcanismRequirement = volcanismRequirement;
         }
 
@@ -239,56 +355,257 @@ public final class ExobiologyData {
          * until BodyAttributes carries matching data and we decide
          * how to enforce them.
          */
-        public boolean matches(BodyAttributes body) {
+        public boolean matches(String name, BodyAttributes body) {
             if (body == null) {
+                warn("BodyAttributes was null");
                 return false;
             }
 
-            // Planet type restriction (empty = no restriction)
+            if (name.equals("Tussock Ventusa") && body.bodyName.equals(body.starSystem + " 4 a"))
+            		System.out.println("Found it");
+            
+            
             if (!bodyTypes.isEmpty() && (body.planetType == null || !bodyTypes.contains(body.planetType))) {
                 return false;
             }
 
-            // Atmosphere restriction (empty = no restriction)
+            AtmosphereType at = body.atmosphere != null ? body.atmosphere : AtmosphereType.UNKNOWN;
+
+            if (requireAtmosphere) {
+                if (at == AtmosphereType.NONE || at == AtmosphereType.UNKNOWN) {
+                    return false;
+                }
+            }
+
             if (!atmospheres.isEmpty()) {
-                AtmosphereType at = body.atmosphere != null ? body.atmosphere : AtmosphereType.UNKNOWN;
                 if (!atmospheres.contains(at)) {
                     return false;
                 }
             }
 
-            // Gravity range
-            double g = body.gravity;
-            if (g < minGravity || g > maxGravity) {
-                return false;
+            if (minGravity != null || maxGravity != null) {
+                double g = body.gravity;
+                if (Double.isNaN(g)) {
+                    warn("Missing gravity for rule that requires gravity range");
+                    return false;
+                }
+                if (minGravity != null && g < minGravity) {
+                    return false;
+                }
+                if (maxGravity != null && g > maxGravity) {
+                    return false;
+                }
             }
 
-            // Temperature: require overlap between body's [min,max] and rule's [min,max]
-            double bodyMinT = body.tempKMin;
-            double bodyMaxT = body.tempKMax;
-            if (bodyMaxT < minTempK || bodyMinT > maxTempK) {
-                return false;
-            }
-
-            // Volcanism requirement
-            switch (volcanismRequirement) {
-                case NO_VOLCANISM:
-                    if (body.hasVolcanism) {
+            if (minTempK != null || maxTempK != null) {
+                double t = body.tempKMin;
+                if (!Double.isNaN(t)) {
+                    if (minTempK != null && t < minTempK) {
                         return false;
                     }
-                    break;
-                case VOLCANIC_ONLY:
-                    if (!body.hasVolcanism) {
+                    if (maxTempK != null && t > maxTempK) {
                         return false;
                     }
-                    break;
-                case ANY:
-                default:
-                    // no constraint
-                    break;
+                } else {
+                    warn("Missing temperature for rule that requires temperature range");
+                    return false;
+                }
             }
 
-            // Pressure and the advanced fields are currently ignored in the matcher.
+            if (minPressure != null || maxPressure != null) {
+                double p = body.pressure;
+                if (!Double.isNaN(p)) {
+                    if (minPressure != null && p < minPressure) {
+                        return false;
+                    }
+                    if (maxPressure != null && p >= maxPressure) {
+                        return false;
+                    }
+                } else {
+                    warn("Missing pressure for rule that requires pressure range");
+                    return false;
+                }
+            }
+
+            if (atmosphereComponents != null && !atmosphereComponents.isEmpty()) {
+                Map<String, Double> comps = body.atmosphereComponents != null ? body.atmosphereComponents : Collections.emptyMap();
+                for (Map.Entry<String, Double> e : atmosphereComponents.entrySet()) {
+                    String gas = e.getKey();
+                    Double minPct = e.getValue();
+                    if (minPct == null) {
+                        continue;
+                    }
+                    double have = comps.getOrDefault(gas, 0.0);
+                    if (have < minPct) {
+                        return false;
+                    }
+                }
+            }
+
+            if (bodies != null && !bodies.isEmpty()) {
+                if (body.bodyName == null || body.bodyName.trim().isEmpty()) {
+                    warn("Rule restricts to bodies but bodyName was not provided");
+                    return false;
+                }
+                if (!bodies.contains(body.bodyName)) {
+                    return false;
+                }
+            }
+
+            if (maxOrbitalPeriod != null) {
+                if (body.orbitalPeriod == null) {
+                    warn("Rule requires orbital period but body.orbitalPeriod was null");
+                    return false;
+                }
+                if (body.orbitalPeriod >= maxOrbitalPeriod) {
+                    return false;
+                }
+            }
+
+            if (distance != null) {
+                if (body.distance == null) {
+                    warn("Rule requires distance but body.distance was null");
+                    return false;
+                }
+                if (body.distance < distance) {
+                    return false;
+                }
+            }
+
+            if (guardian != null) {
+                if (body.guardian == null) {
+                    warn("Rule requires guardian flag but body.guardian was null");
+                    return false;
+                }
+                if (!guardian.equals(body.guardian)) {
+                    return false;
+                }
+            }
+
+            if (nebula != null) {
+                if (body.nebula == null) {
+                    warn("Rule requires nebula constraint but body.nebula was null");
+                    return false;
+                }
+                if (nebula.startsWith("!")) {
+                    String n = nebula.substring(1);
+                    if (body.nebula.equalsIgnoreCase(n)) {
+                        return false;
+                    }
+                } else if (!nebula.equalsIgnoreCase("all") && !nebula.equalsIgnoreCase("large")) {
+                    if (!body.nebula.equalsIgnoreCase(nebula)) {
+                        return false;
+                    }
+                } else {
+                    if (body.nebula.trim().isEmpty()) {
+                        return false;
+                    }
+                }
+            }
+
+            if (parentStars != null && !parentStars.isEmpty()) {
+                if (body.parentStar == null) {
+                    warn("Rule requires parent star constraint but body.parentStar was null");
+                    return false;
+                }
+                if (!parentStars.contains(body.parentStar)) {
+                    return false;
+                }
+            }
+
+            double[] starPos = body.starPos;
+            int regionId = RegionResolver.findRegionId(starPos[0], starPos[1]);
+            System.out.println(regionId);
+            String regionName = RegionMapData.REGIONS[regionId].toLowerCase().replaceAll(" ", "-");
+            
+            if (regions != null && !regions.isEmpty()) {
+                if (regionName == null) {
+                    warn("Rule requires region constraint but body.region was null");
+                    return false;
+                }
+                if (!regions.contains(regionName)) {
+                    return false;
+                }
+            }
+
+            if (starClasses != null && !starClasses.isEmpty()) {
+                if (body.starClass == null) {
+                    warn("Rule requires star class constraint but body.starClass was null");
+                    return false;
+                }
+                if (!starClasses.contains(body.starClass)) {
+                    return false;
+                }
+            }
+
+            String bodyVolc = body.volcanismType != null ? body.volcanismType : "";
+            boolean hasVolc = body.hasVolcanism;
+
+            if (volcanismAnyOf != null && !volcanismAnyOf.isEmpty()) {
+                boolean found = false;
+                for (String volcType : volcanismAnyOf) {
+                    if (volcType == null) {
+                        continue;
+                    }
+                    if (volcType.startsWith("=")) {
+                        if (bodyVolc.equalsIgnoreCase(volcType.substring(1))) {
+                            found = true;
+                            break;
+                        }
+                    } else {
+                        if (bodyVolc.toLowerCase(Locale.ROOT).contains(volcType.toLowerCase(Locale.ROOT))) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    return false;
+                }
+            } else if (volcanismValue != null) {
+                String v = volcanismValue;
+                if ("Any".equalsIgnoreCase(v)) {
+                    if (!hasVolc || bodyVolc.isEmpty()) {
+                        return false;
+                    }
+                } else if ("None".equalsIgnoreCase(v)) {
+                    if (hasVolc && !bodyVolc.isEmpty()) {
+                        return false;
+                    }
+                } else if (v.startsWith("!")) {
+                    String sub = v.substring(1);
+                    if (!hasVolc || bodyVolc.isEmpty()
+                            || bodyVolc.toLowerCase(Locale.ROOT).contains(sub.toLowerCase(Locale.ROOT))) {
+                        return false;
+                    }
+                } else if (v.startsWith("=")) {
+                    if (!bodyVolc.equalsIgnoreCase(v.substring(1))) {
+                        return false;
+                    }
+                } else {
+                    if (!hasVolc || bodyVolc.isEmpty()
+                            || !bodyVolc.toLowerCase(Locale.ROOT).contains(v.toLowerCase(Locale.ROOT))) {
+                        return false;
+                    }
+                }
+            } else {
+                switch (volcanismRequirement) {
+                    case NO_VOLCANISM:
+                        if (body.hasVolcanism) {
+                            return false;
+                        }
+                        break;
+                    case VOLCANIC_ONLY:
+                        if (!body.hasVolcanism) {
+                            return false;
+                        }
+                        break;
+                    case ANY:
+                    default:
+                        break;
+                }
+            }
+
             return true;
         }
 
@@ -302,6 +619,11 @@ public final class ExobiologyData {
             private Double minGravity, maxGravity;
             private Double minTemp, maxTemp;
             private Double minPressure, maxPressure;
+
+            private boolean requireAtmosphere;
+
+            private String volcanismValue;
+            private final List<String> volcanismAnyOf = new ArrayList<>();
 
             private final Set<AtmosphereType> atmos = new HashSet<>();
             private final Set<PlanetType> planets = new HashSet<>();
@@ -336,6 +658,24 @@ public final class ExobiologyData {
             }
 
             public SpeciesRuleBuilder pressure(double min, double max) {
+                this.minPressure = min;
+                this.maxPressure = max;
+                return this;
+            }
+
+public SpeciesRuleBuilder gravity(Double min, Double max) {
+                this.minGravity = min;
+                this.maxGravity = max;
+                return this;
+            }
+
+            public SpeciesRuleBuilder temperature(Double minK, Double maxK) {
+                this.minTemp = minK;
+                this.maxTemp = maxK;
+                return this;
+            }
+
+            public SpeciesRuleBuilder pressure(Double min, Double max) {
                 this.minPressure = min;
                 this.maxPressure = max;
                 return this;
@@ -410,15 +750,37 @@ public final class ExobiologyData {
                 return this;
             }
 
+            
+            public SpeciesRuleBuilder requireAtmosphere() {
+                this.requireAtmosphere = true;
+                return this;
+            }
+
+            public SpeciesRuleBuilder volcanism(String value) {
+                this.volcanismValue = value;
+                return this;
+            }
+
+            public SpeciesRuleBuilder volcanismAnyOf(String... values) {
+                if (values != null) {
+                    for (String v : values) {
+                        if (v != null) {
+                            this.volcanismAnyOf.add(v);
+                        }
+                    }
+                }
+                return this;
+            }
+
             public SpeciesRule build() {
-                double minG = minGravity != null ? minGravity : 0.0;
-                double maxG = maxGravity != null ? maxGravity : 100.0;
+                Double minG = minGravity;
+                Double maxG = maxGravity;
 
-                double minT = minTemp != null ? minTemp : 0.0;
-                double maxT = maxTemp != null ? maxTemp : 1_000_000.0;
+                Double minT = minTemp;
+                Double maxT = maxTemp;
 
-                double minP = minPressure != null ? minPressure : 0.0;
-                double maxP = maxPressure != null ? maxPressure : 1_000_000.0;
+                Double minP = minPressure;
+                Double maxP = maxPressure;
 
                 Set<AtmosphereType> atmoSet =
                         atmos.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(new HashSet<>(atmos));
@@ -427,6 +789,11 @@ public final class ExobiologyData {
 
                 VolcanismRequirement v = volc != null ? volc : VolcanismRequirement.ANY;
 
+                List<String> volcanismAnyOfList =
+                        volcanismAnyOf.isEmpty()
+                                ? Collections.<String>emptyList()
+                                : Collections.unmodifiableList(new ArrayList<>(volcanismAnyOf));
+                
                 Map<String, Double> ac =
                         atmosphereComponents == null
                                 ? Collections.<String, Double>emptyMap()
@@ -466,6 +833,7 @@ public final class ExobiologyData {
                         maxP,
                         atmoSet,
                         bodySet,
+                        requireAtmosphere,
                         ac,
                         bodiesList,
                         maxOrbitalPeriod,
@@ -476,8 +844,11 @@ public final class ExobiologyData {
                         regionList,
                         starClassList,
                         tuberList,
+                        volcanismValue,
+                        volcanismAnyOfList,
                         v
                 );
+
             }
         }
     }
@@ -606,6 +977,22 @@ public final class ExobiologyData {
 
     private static final Map<String, SpeciesConstraint> CONSTRAINTS = new LinkedHashMap<>();
 
+    
+
+    private static Consumer<String> WARNING_SINK = msg -> System.err.println("[ExobiologyData] " + msg);
+
+    public static void setWarningSink(Consumer<String> sink) {
+        WARNING_SINK = sink != null ? sink : (msg -> System.err.println("[ExobiologyData] " + msg));
+    }
+
+    private static void warn(String msg) {
+        try {
+            WARNING_SINK.accept(msg);
+        } catch (Exception ignored) {
+            // never let warnings break predictions
+        }
+    }
+
     static {
         initConstraints();
     }
@@ -644,7 +1031,7 @@ public final class ExobiologyData {
             String bestReason = null;
 
             for (SpeciesRule rule : sc.getRules()) {
-                if (!rule.matches(attrs)) {
+                if (!rule.matches(sc.genus + " " + sc.species, attrs)) {
                     continue;
                 }
 
@@ -748,30 +1135,54 @@ public final class ExobiologyData {
         }
 
         if (at.contains("carbon dioxide")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.CO2_RICH;
+            }
             return AtmosphereType.CO2;
         }
         if (at.contains("methane")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.METHANE_RICH;
+            }
             return AtmosphereType.METHANE;
         }
         if (at.contains("nitrogen")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.NITROGEN_RICH;
+            }
             return AtmosphereType.NITROGEN;
         }
         if (at.contains("oxygen")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.OXYGEN_RICH;
+            }
             return AtmosphereType.OXYGEN;
         }
         if (at.contains("neon")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.NEON_RICH;
+            }
             return AtmosphereType.NEON;
         }
         if (at.contains("argon")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.ARGON_RICH;
+            }
             return AtmosphereType.ARGON;
         }
         if (at.contains("water")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.WATER_RICH;
+            }
             return AtmosphereType.WATER;
         }
         if (at.contains("sulphur dioxide") || at.contains("sulfur dioxide")) {
             return AtmosphereType.SULPHUR_DIOXIDE;
         }
         if (at.contains("ammonia")) {
+            if (at.contains("rich")) {
+                return AtmosphereType.AMMONIA_RICH;
+            }
             return AtmosphereType.AMMONIA;
         }
         if (at.contains("helium")) {

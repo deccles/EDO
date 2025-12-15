@@ -664,7 +664,7 @@ public class RouteTabPanel extends JPanel {
     private String getCurrentSystemName() {
     	if (currentSystemName == null)
 			try {
-				currentSystemName = SystemCache.getInstance().load().systemName;
+				currentSystemName = SystemCache.load().systemName;
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
@@ -1022,7 +1022,8 @@ public class RouteTabPanel extends JPanel {
             if (system != null) {
 
                 // 1) CURRENT system always wins (never blink / never outline)
-                if (system.equals(getCurrentSystemName())) {
+            	String cachedSystemName = getCurrentSystemName();
+                if (system.equals(cachedSystemName)) {
                     icon = new TriangleIcon(ED_ORANGE, 10, 10);
 
                 // 2) Pending jump: blink solid triangle / blank (suppress outline during jump)

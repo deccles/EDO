@@ -519,8 +519,8 @@ public class EdsmClient {
                 byId.put(bi.getBodyId(), bi);
 //            }
 
-            if (bi.getName() != null && !bi.getName().isEmpty()) {
-                byName.put(strip(bi.getName()), bi);
+            if (bi.getBodyName() != null && !bi.getBodyName().isEmpty()) {
+                byName.put(strip(bi.getBodyName()), bi);
             }
         }
 
@@ -560,7 +560,7 @@ public class EdsmClient {
             if (local == null) {
                 local = new BodyInfo();
                 local.setBodyId(nextSyntheticId);
-                local.setName(remote.name);  // EDSM names are canonical
+                local.setBodyName(remote.name);  // EDSM names are canonical
                 localBodies.put(nextSyntheticId, local);
                 byId.put(nextSyntheticId, local);
                 byName.put(strip(remote.name), local);
@@ -581,7 +581,9 @@ public class EdsmClient {
             if (remote.distanceToArrival != null) {
                 local.setDistanceLs(remote.distanceToArrival);
             }
-
+            
+            local.setStarSystem(edsm.name);
+            
             // Landable
             if (remote.isLandable != null) {
                 local.setLandable(remote.isLandable);
@@ -621,6 +623,10 @@ public class EdsmClient {
             // if (remote.rings != null) {
             //     local.setRings(remote.rings);
             // }
+            
+            if (remote.getSurfacePressure() != null) {
+            	local.setSurfacePressure(remote.getSurfacePressure());
+            }
         }
     }
 

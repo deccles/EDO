@@ -21,6 +21,7 @@ import org.dce.ed.state.BodyInfo;
 public class SystemAccumulator {
     String systemName;
     long systemAddress;
+    double starPos[];
     Integer totalBodies;
     Integer nonBodyCount;
     Double fssProgress;
@@ -40,6 +41,8 @@ public class SystemAccumulator {
         if (e.getSystemAddress() != 0L) {
             systemAddress = e.getSystemAddress();
         }
+        if (e.getStarPos() != null)
+        	starPos = e.getStarPos();
     }
 
     void applyFsdJump(FsdJumpEvent e) {
@@ -49,6 +52,8 @@ public class SystemAccumulator {
         if (e.getSystemAddress() != 0L) {
             systemAddress = e.getSystemAddress();
         }
+        if (e.getStarPos() != null)
+        	starPos = e.getStarPos();
     }
 
     void applyFssDiscovery(FssDiscoveryScanEvent e) {
@@ -89,7 +94,8 @@ public class SystemAccumulator {
 
         BodyInfo info = getBodies().computeIfAbsent(id, ignored -> new BodyInfo());
         info.setBodyId(id);
-        info.setName(bodyName);
+        info.setBodyName(bodyName);
+        info.setStarSystem(e.getStarSystem());
 
         // Distance / landability / gravity
         info.setDistanceLs(e.getDistanceFromArrivalLs());
@@ -128,7 +134,7 @@ public class SystemAccumulator {
         if (info.getBodyId() < 0) {
             info.setBodyId(bodyId);
         }
-        info.setName(bodyName);
+        info.setBodyName(bodyName);
         
         for (Signal s : signals) {
             String type = toLower(s.getType());
@@ -152,7 +158,7 @@ public class SystemAccumulator {
         if (info.getBodyId() < 0) {
             info.setBodyId(bodyId);
         }
-        info.setName(bodyName);
+        info.setBodyName(bodyName);
         
         if (info.getObservedGenusPrefixes() == null) {
             info.setObservedGenusPrefixes(new HashSet<>());
@@ -181,8 +187,8 @@ public class SystemAccumulator {
 
         // If the ScanOrganic has a body name and the scan body didn't, fill it in.
         if (bodyName != null && !bodyName.isEmpty()
-                && (info.getName() == null || info.getName().isEmpty())) {
-            info.setName(bodyName);
+                && (info.getBodyName() == null || info.getBodyName().isEmpty())) {
+            info.setBodyName(bodyName);
         }
 
         // Genus prefix (for narrowing predictions)
@@ -219,7 +225,7 @@ public class SystemAccumulator {
             BodyInfo info = new BodyInfo();
             info.setBodyId(bodyId);
             if (bodyName != null && !bodyName.isEmpty()) {
-                info.setName(bodyName);
+                info.setBodyName(bodyName);
             }
             getBodies().put(bodyId, info);
             return info;
@@ -228,7 +234,7 @@ public class SystemAccumulator {
         String name = bodyName != null ? bodyName.trim() : "";
         if (!name.isEmpty()) {
             for (BodyInfo b : getBodies().values()) {
-                if (name.equals(b.getName())) {
+                if (name.equals(b.getBodyName())) {
                     return b;
                 }
             }
@@ -244,7 +250,7 @@ public class SystemAccumulator {
 
             BodyInfo info = new BodyInfo();
             info.setBodyId(-1);
-            info.setName(bodyName);
+            info.setBodyName(bodyName);
             getBodies().put(getBodies().size() + 1000000, info);
             return info;
         }
@@ -339,13 +345,13 @@ public class SystemAccumulator {
                     "[DEBUG] Partial body in " + systemName
                     + " addr=" + systemAddress
                     + " bodyId=" + b.getBodyId()
-                    + " name='" + b.getName() + "'"
+                    + " name='" + b.getBodyName() + "'"
                     + " hasBio=" + b.isHasBio()
                     + " hasGeo=" + b.isHasGeo()
                 );
             }
             CachedBody cb = new CachedBody();
-            cb.name = b.getName();
+            cb.name = b.getBodyName();
             cb.bodyId = b.getBodyId();
             cb.distanceLs = b.getDistanceLs();
             cb.gravityMS = b.getGravityMS();
@@ -361,6 +367,9 @@ public class SystemAccumulator {
             cb.volcanism = b.getVolcanism();
             cb.discoveryCommander = b.getDiscoveryCommander();
 
+            cb.nebula = b.getNebula();
+            cb.parentStar = b.getParentStar();
+            
             if (b.getObservedGenusPrefixes() != null
                     && !b.getObservedGenusPrefixes().isEmpty()) {
                 cb.observedGenusPrefixes = new HashSet<>(b.getObservedGenusPrefixes());
@@ -396,7 +405,7 @@ public class SystemAccumulator {
 	        BodyInfo b = e.getValue();
 	        sb.append("key=").append(e.getKey())
 	          .append(" id=").append(b.getBodyId())
-	          .append(" name='").append(b.getName()).append("'");
+	          .append(" name='").append(b.getBodyName()).append("'");
 	    }
 	    sb.append("}");
 	    return sb.toString();

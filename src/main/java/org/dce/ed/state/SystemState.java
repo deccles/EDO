@@ -18,7 +18,8 @@ public class SystemState {
 
     private String systemName;
     private long systemAddress;
-
+	private double[] starPos;
+	
     private boolean visitedByMe;
     /**
      * Total number of bodies reported by EDSM for this system (may be null if unknown).
@@ -41,6 +42,7 @@ public class SystemState {
     
     // Body ID → BodyInfo
     private final Map<Integer, BodyInfo> bodies = new HashMap<>();
+
 
     public SystemState() {
     }
@@ -200,7 +202,8 @@ public class SystemState {
         if (fullName == null) {
             return "";
         }
-
+        if (systemName == null)
+        	System.out.println("Uh oh");
         if (systemName != null && !systemName.isEmpty()) {
             String prefix = systemName + " ";
             if (fullName.startsWith(prefix)) {
@@ -211,10 +214,10 @@ public class SystemState {
             }
         }
 
-        int idx = fullName.lastIndexOf(' ');
-        if (idx >= 0 && idx + 1 < fullName.length()) {
-            return fullName.substring(idx + 1);
-        }
+//        int idx = fullName.lastIndexOf(' ');
+//        if (idx >= 0 && idx + 1 < fullName.length()) {
+//            return fullName.substring(idx + 1);
+//        }
 
         return fullName;
     }
@@ -279,5 +282,13 @@ public class SystemState {
     public void setEdsmBodyCount(Integer edsmBodyCount) {
         this.edsmBodyCount = edsmBodyCount;
     }
+
+	public void setStarPos(double[] starPos) {
+		this.starPos = starPos;
+	}
+
+	public double[] getStarPos() {
+		return starPos;
+	}
 
 }

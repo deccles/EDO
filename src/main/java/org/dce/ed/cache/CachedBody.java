@@ -8,6 +8,9 @@ import java.util.Set;
 public class CachedBody {
     public String name;
     public int bodyId;
+    public String starSystem;
+	public double[] starPos;
+	
     public double distanceLs;
     public Double gravityMS;
     public boolean landable;
@@ -22,6 +25,10 @@ public class CachedBody {
     public Double surfaceTempK;
     public String volcanism;
 
+    public String bodyName;
+    public String parentStar;
+    public String nebula; 
+    
     // NEW: raw EDSM discovery info
     public String discoveryCommander;
 
@@ -30,4 +37,5 @@ public class CachedBody {
     
     // Full "truth" names like "Bacterium Nebulus", "Stratum Tectonicas", etc.
     public Set<String> observedBioDisplayNames;  // may be null
+
 }

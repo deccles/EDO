@@ -26,27 +26,44 @@ def map_body_type(bt: str) -> str:
     return mapping[bt]
 
 
-def map_atmo(a: str) -> str:
-    """Map ruleset atmosphere keys -> AtmosphereType enum constant."""
+def map_atmo(a: str):
+    """Map ruleset atmosphere keys -> AtmosphereType enum constant, or None for BioScan 'Any'."""
     mapping = {
-        "CarbonDioxide": "AtmosphereType.CO2",
-        "CarbonDioxideRich": "AtmosphereType.CO2",
-        "Methane": "AtmosphereType.METHANE",
-        "MethaneRich": "AtmosphereType.METHANE",
-        "Nitrogen": "AtmosphereType.NITROGEN",
-        "Oxygen": "AtmosphereType.OXYGEN",
-        "Neon": "AtmosphereType.NEON",
-        "NeonRich": "AtmosphereType.NEON",
-        "Argon": "AtmosphereType.ARGON",
-        "ArgonRich": "AtmosphereType.ARGON",
-        "Water": "AtmosphereType.WATER",
-        "WaterRich": "AtmosphereType.WATER",
-        "SulphurDioxide": "AtmosphereType.SULPHUR_DIOXIDE",
-        "Helium": "AtmosphereType.HELIUM",
-        "Ammonia": "AtmosphereType.AMMONIA",
+        "Any": None,  # handled specially: must have an atmosphere but type does not matter
         "None": "AtmosphereType.NONE",
         "No atmosphere": "AtmosphereType.NONE",
+
+        "CarbonDioxide": "AtmosphereType.CO2",
+        "CarbonDioxideRich": "AtmosphereType.CO2_RICH",
+
+        "Methane": "AtmosphereType.METHANE",
+        "MethaneRich": "AtmosphereType.METHANE_RICH",
+
+        "Nitrogen": "AtmosphereType.NITROGEN",
+        "NitrogenRich": "AtmosphereType.NITROGEN_RICH",
+
+        "Oxygen": "AtmosphereType.OXYGEN",
+        "OxygenRich": "AtmosphereType.OXYGEN_RICH",
+
+        "Neon": "AtmosphereType.NEON",
+        "NeonRich": "AtmosphereType.NEON_RICH",
+
+        "Argon": "AtmosphereType.ARGON",
+        "ArgonRich": "AtmosphereType.ARGON_RICH",
+
+        "Water": "AtmosphereType.WATER",
+        "WaterRich": "AtmosphereType.WATER_RICH",
+
+        "SulphurDioxide": "AtmosphereType.SULPHUR_DIOXIDE",
+        "SulphurDioxideRich": "AtmosphereType.SULPHUR_DIOXIDE_RICH",
+
+        "Helium": "AtmosphereType.HELIUM",
+
+        "Ammonia": "AtmosphereType.AMMONIA",
+        "AmmoniaRich": "AtmosphereType.AMMONIA_RICH",
     }
+    if a not in mapping:
+        raise KeyError(f"Unknown atmosphere mapping: {a}")
     return mapping[a]
 
 
@@ -68,9 +85,18 @@ def volcanism_req(volc_value) -> str:
     return "VolcanismRequirement.ANY"
 
 
-def java_str(s: str) -> str:
-    """Quote and escape a Java string literal."""
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+def java_str(s):
+    if s is None:
+        return "null"
+    s = str(s)
+    # escape backslashes first, then quotes
+    s = s.replace("\\", "\\\\").replace('"', '\\"')
+    return '"' + s + '"'
+
+
+def java_opt_num(v) -> str:
+    """Return a Java numeric literal or 'null' for None."""
+    return "null" if v is None else str(float(v))
 
 
 def load_all_species():
@@ -168,7 +194,7 @@ def main():
     print("import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;")
     print("import org.dce.ed.exobiology.ExobiologyData.PlanetType;")
     print("import org.dce.ed.exobiology.ExobiologyData.SpeciesConstraint;")
-    print("import org.dce.ed.exobiology.ExobiologyData.SpeciesRuleBuilder;")
+    print("import org.dce.ed.exobiology.ExobiologyData.SpeciesRule.SpeciesRuleBuilder;")
     print("import org.dce.ed.exobiology.ExobiologyData.VolcanismRequirement;")
     print()
     print("public final class ExobiologyDataConstraints {")
@@ -221,16 +247,28 @@ def main():
                 )
 
             # Scalars with defaults when missing
-            min_g = float(r.get("min_gravity", 0.0))
-            max_g = float(r.get("max_gravity", 100.0))
-            min_t = float(r.get("min_temperature", 0.0))
-            max_t = float(r.get("max_temperature", 1_000_000.0))
-            min_p = float(r.get("min_pressure", 0.0))
-            max_p = float(r.get("max_pressure", 1_000_000.0))
+            min_g = r.get("min_gravity")
+            max_g = r.get("max_gravity")
+            min_t = r.get("min_temperature")
+            max_t = r.get("max_temperature")
+            min_p = r.get("min_pressure")
+            max_p = r.get("max_pressure")
 
             # Atmosphere -> AtmosphereType...
-            atmo_list = r.get("atmosphere", []) or []
-            atmo_enum_vals = [map_atmo(a) for a in atmo_list]
+            atmo_raw = r.get("atmosphere", []) or []
+            if isinstance(atmo_raw, str):
+                atmo_list = [atmo_raw]
+            else:
+                atmo_list = list(atmo_raw)
+
+            require_atmo_any = any(a == "Any" for a in atmo_list)
+
+            atmo_enum_vals = []
+            for a in atmo_list:
+                mapped = map_atmo(a)
+                if mapped is None:
+                    continue
+                atmo_enum_vals.append(mapped)
 
             # body_type -> PlanetType...
             body_list = r.get("body_type", []) or []
@@ -277,16 +315,33 @@ def main():
             tuber_list = [str(x) for x in tuber_field]
             tuber_expr = java_list_of_strings(tuber_list)
 
-            volc_req = volcanism_req(r.get("volcanism"))
+            volc_raw = r.get("volcanism")
+            volc_value = None
+            volc_list = None
+            if isinstance(volc_raw, (list, tuple)):
+                volc_list = [str(v) for v in volc_raw if v is not None]
+            elif volc_raw is not None and volc_raw != "":
+                volc_value = str(volc_raw)
 
             builder_lines = [
                 "            SpeciesRuleBuilder.create()",
-                "                .gravity(%s, %s)" % (min_g, max_g),
-                "                .temperature(%s, %s)" % (min_t, max_t),
-                "                .pressure(%s, %s)" % (min_p, max_p),
             ]
 
+            # Gravity (emit only if constrained)
+            if min_g is not None or max_g is not None:
+                builder_lines.append(f"                .gravity({java_opt_num(min_g)}, {java_opt_num(max_g)})")
+
+            # Temperature (emit only if constrained)
+            if min_t is not None or max_t is not None:
+                builder_lines.append(f"                .temperature({java_opt_num(min_t)}, {java_opt_num(max_t)})")
+
+            # Pressure (emit only if constrained)
+            if min_p is not None or max_p is not None:
+                builder_lines.append(f"                .pressure({java_opt_num(min_p)}, {java_opt_num(max_p)})")
+
             # Only add atmosphere and planet-type constraints if they actually restrict something.
+            if require_atmo_any:
+                builder_lines.append("                .requireAtmosphere()")
             if atmo_enum_vals:
                 atmo_args = ", ".join(atmo_enum_vals)
                 builder_lines.append(f"                .atmospheres({atmo_args})")
@@ -317,9 +372,12 @@ def main():
             if tuber_list:
                 builder_lines.append("                .tubers(%s)" % tuber_expr)
 
-            # Volcanism: only emit if not the default ANY
-            if volc_req != "VolcanismRequirement.ANY":
-                builder_lines.append("                .volcanism(%s)" % volc_req)
+                        # Volcanism (BioScan semantics)
+            if volc_list:
+                volc_args = ", ".join(java_str(v) for v in volc_list)
+                builder_lines.append(f"                .volcanismAnyOf({volc_args})")
+            elif volc_value:
+                builder_lines.append(f"                .volcanism({java_str(volc_value)})")
 
             builder_lines.append("                .build()")
             rule_blocks.append("\n".join(builder_lines))

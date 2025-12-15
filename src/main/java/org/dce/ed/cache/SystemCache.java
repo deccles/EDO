@@ -128,6 +128,7 @@ public final class SystemCache {
      */
     public synchronized void put(long systemAddress,
             String systemName,
+            double starPos[],
             Integer totalBodies,
             Integer nonBodyCount,
             Double fssProgress,
@@ -135,6 +136,7 @@ public final class SystemCache {
             List<CachedBody> bodies) {
         ensureLoaded();
 
+//        System.out.println("systemcache.put " + starPos[0] + "," + starPos[1] + "," + starPos[2]);
         if ((systemAddress == 0L) && (systemName == null || systemName.isEmpty())) {
             return;
         }
@@ -143,7 +145,7 @@ public final class SystemCache {
         if (cs == null) {
             cs = new CachedSystem();
         }
-
+        cs.starPos = starPos;
         cs.systemAddress = systemAddress;
         cs.systemName = systemName;
         cs.totalBodies = totalBodies;
@@ -198,7 +200,7 @@ public final class SystemCache {
         state.setSystemName(cs.systemName);
         state.setSystemAddress(cs.systemAddress);
         state.setVisitedByMe(true);
-        
+        state.setStarPos(cs.starPos);
         state.resetBodies();
 
         state.setTotalBodies(cs.totalBodies);
@@ -208,8 +210,11 @@ public final class SystemCache {
         
         for (CachedBody cb : cs.bodies) {
             BodyInfo info = new BodyInfo();
-            info.setName(cb.name);
-            info.setShortName(state.computeShortName(cb.name));
+            info.setBodyName(cb.name);
+            info.setStarSystem(cb.starSystem);
+            info.setStarPos(state.getStarPos());
+            
+            info.setBodyShortName(state.computeShortName(cb.name));
             info.setBodyId(cb.bodyId);
             info.setDistanceLs(cb.distanceLs);
             info.setGravityMS(cb.gravityMS);
@@ -223,6 +228,9 @@ public final class SystemCache {
             info.setSurfaceTempK(cb.surfaceTempK);
             info.setVolcanism(cb.volcanism);
             info.setDiscoveryCommander(cb.discoveryCommander);
+            
+            info.setNebula(cb.nebula);
+            info.setParentStar(cb.parentStar);
             
             if (cb.observedGenusPrefixes != null && !cb.observedGenusPrefixes.isEmpty()) {
                 info.setObservedGenusPrefixes(new java.util.HashSet<>(cb.observedGenusPrefixes));
@@ -264,20 +272,42 @@ public final class SystemCache {
         }
 
         for (BodyInfo local : localBodies.values()) {
-            String localName = local.getName();
+            String localName = local.getBodyName();
             if (localName == null || localName.isEmpty()) {
                 continue;
             }
 
+            Map<Long, String> starNameByBodyId = new HashMap<>();
+            for (BodiesResponse.Body b : edsm.bodies) {
+                if (b.id != 0L && b.type != null && b.type.equalsIgnoreCase("Star")) {
+                    starNameByBodyId.put(b.id, b.name);
+                }
+            }
             BodiesResponse.Body remote = null;
             for (BodiesResponse.Body b : edsm.bodies) {
                 if (localName.equals(b.name)) {
                     remote = b;
                     break;
                 }
+                
             }
             if (remote == null) {
                 continue;
+            }
+            if (local.getParentStar() == null && remote.parents != null) {
+                Integer parentStarId = null;
+                for (BodiesResponse.ParentRef p : remote.parents) {
+                    if (p != null && p.Star != null) {
+                        parentStarId = p.Star;
+                        break;
+                    }
+                }
+                if (parentStarId != null) {
+                    String parentStarName = starNameByBodyId.get(parentStarId);
+                    if (parentStarName != null) {
+                        local.setParentStar(parentStarName);
+                    }
+                }
             }
 
             // ----- Discovery commander -----
@@ -330,8 +360,10 @@ public final class SystemCache {
         		System.out.println("Skipping body with id -1");
         	}
             CachedBody cb = new CachedBody();
-            cb.name = b.getName();
+            cb.name = b.getBodyName();
             cb.bodyId = b.getBodyId();
+            cb.starSystem = b.getStarSystem();
+            cb.starPos = state.getStarPos();
             cb.distanceLs = b.getDistanceLs();
             cb.gravityMS = b.getGravityMS();
             cb.landable = b.isLandable();
@@ -344,6 +376,9 @@ public final class SystemCache {
             cb.surfaceTempK = b.getSurfaceTempK();
             cb.volcanism = b.getVolcanism();
             cb.discoveryCommander = b.getDiscoveryCommander();
+            
+            cb.nebula = b.getNebula();
+            cb.parentStar = b.getParentStar();
             
             if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
                 cb.observedGenusPrefixes = new java.util.HashSet<>(b.getObservedGenusPrefixes());
@@ -365,6 +400,7 @@ public final class SystemCache {
         }
         put(state.getSystemAddress(),
                 state.getSystemName(),
+                state.getStarPos(),
                 state.getTotalBodies(),
                 state.getNonBodyCount(),
                 state.getFssProgress(),
@@ -414,7 +450,7 @@ public final class SystemCache {
         }
 
         for (BodyInfo b : state.getBodies().values()) {
-            Boolean has = discoveryFlagsByBodyName.get(b.getName());
+            Boolean has = discoveryFlagsByBodyName.get(b.getBodyName());
             if (has == null || !has.booleanValue()) {
                 continue;
             }

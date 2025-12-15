@@ -15,12 +15,20 @@ public class BodiesResponse {
 
     public int bodyCount;
     
+    public Coords coords;
+
+    public static class Coords {
+        public Double x;
+        public Double y;
+        public Double z;
+    }
+    
     /** List of celestial bodies (stars, planets, moons, etc.) */
     public List<Body> bodies;
 
     public static class Discovery {
     	public String commander;
-    	String date;
+		public String date;
     }
     public static class Body {
         public long id;
@@ -70,7 +78,8 @@ public class BodiesResponse {
         public Boolean rotationalPeriodTidallyLocked;
         public Double axialTilt;
         private Double surfacePressure;
-
+        public List<ParentRef> parents;
+        
         public Double getSurfacePressure() {
 			return surfacePressure;
 		}
@@ -94,4 +103,10 @@ public class BodiesResponse {
             public Double outerRadius;
         }
     }
+    public static class ParentRef {
+        public Integer Star;
+        public Integer Planet;
+        public Integer Null;
+    }
+
 }
