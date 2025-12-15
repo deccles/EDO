@@ -121,6 +121,7 @@ public class SystemAccumulator {
         if (volc != null && !volc.isEmpty()) {
             info.setVolcanism(volc);
         }
+        info.setSurfacePressure(e.getSurfacePressure());
     }
 
     void applySignals(int bodyId, String bodyName, List<Signal> signals) {

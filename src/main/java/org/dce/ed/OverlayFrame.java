@@ -2,6 +2,8 @@ package org.dce.ed;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Graphics;
@@ -56,7 +58,7 @@ public class OverlayFrame extends JFrame {
     // Crosshair overlay and timer to show mouse position in pass-through mode
     private final CrosshairOverlay crosshairOverlay = new CrosshairOverlay();
     private final Timer crosshairTimer;
- 
+
     public OverlayFrame() {
         super("Elite Dangerous Overlay");
 
@@ -78,7 +80,7 @@ public class OverlayFrame extends JFrame {
         // Poll global mouse position and update crosshair
         crosshairTimer = new Timer(40, e -> updateCrosshair());
         crosshairTimer.start();
-        
+
         // Transparent window background
         setBackground(new java.awt.Color(0, 0, 0, 0));
 
@@ -120,15 +122,44 @@ public class OverlayFrame extends JFrame {
         // Load saved bounds if available; otherwise use defaults
         loadBoundsFromPreferences(prefs, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
 
-     // Add custom resize handler for edges/corners
-        ResizeHandler resizeHandler = new ResizeHandler(this);
-        JComponent root = getRootPane();
-        root.addMouseListener(resizeHandler);
-        root.addMouseMotionListener(resizeHandler);
+        // Add custom resize handler for edges/corners.
+        // IMPORTANT: attach recursively so resizing works even when cursor is over child components.
+        int dragThickness = calcBorderDragThicknessPx();
+        ResizeHandler resizeHandler = new ResizeHandler(this, dragThickness);
+        installResizeHandlerRecursive(getRootPane(), resizeHandler);
+        installResizeHandlerRecursive(getContentPane(), resizeHandler);
+    }
 
-        // Also attach to the title bar so top-edge drags on the bar can resize
-        titleBar.addMouseListener(resizeHandler);
-        titleBar.addMouseMotionListener(resizeHandler);
+    private static int calcBorderDragThicknessPx() {
+        // 96 DPI is typical "100%" baseline on Windows.
+        int dpi = Toolkit.getDefaultToolkit().getScreenResolution();
+        float scale = dpi / 96.0f;
+
+        // 18px @ 100% feels good; clamp for sanity.
+        int px = Math.round(40.0f * scale);
+        if (px < 12) {
+            px = 12;
+        }
+        if (px > 50) {
+            px = 50;
+        }
+        return px;
+    }
+
+    private static void installResizeHandlerRecursive(Component c, ResizeHandler handler) {
+        if (c == null) {
+            return;
+        }
+
+        c.addMouseListener(handler);
+        c.addMouseMotionListener(handler);
+
+        if (c instanceof Container) {
+            Container cont = (Container) c;
+            for (Component child : cont.getComponents()) {
+                installResizeHandlerRecursive(child, handler);
+            }
+        }
     }
 
     public void showOverlay() {
@@ -213,7 +244,7 @@ public class OverlayFrame extends JFrame {
         if (y + h > screenSize.height) {
             y = screenSize.height - h;
         }
-        System.out.println("Read " + x +" " + y + " " + w + " " + h);
+        System.out.println("Read " + x + " " + y + " " + w + " " + h);
         setBounds(x, y, w, h);
     }
 
@@ -227,14 +258,9 @@ public class OverlayFrame extends JFrame {
         prefs.putInt(keyY, getY());
         prefs.putInt(keyWidth, getWidth());
         prefs.putInt(keyHeight, getHeight());
-        
+
         System.out.println("Saved : " + getX() + " " + getY() + " " + getWidth() + " " + getHeight());
     }
-
-    /**
-     * Mouse handler that provides resize handles on edges and corners
-     * for the undecorated frame.
-     */
 
     /**
      * Centralized close method: saves bounds then exits.
@@ -244,9 +270,14 @@ public class OverlayFrame extends JFrame {
         dispose();
         System.exit(0);
     }
+
+    /**
+     * Mouse handler that provides resize handles on edges and corners
+     * for the undecorated frame.
+     */
     private static class ResizeHandler extends MouseAdapter {
 
-        private static final int BORDER_DRAG_THICKNESS = 12;
+        private final int borderDragThickness;
 
         private final OverlayFrame frame;
         private int dragCursor = Cursor.DEFAULT_CURSOR;
@@ -262,8 +293,9 @@ public class OverlayFrame extends JFrame {
         private int dragStartX;
         private int dragStartY;
 
-        ResizeHandler(OverlayFrame frame) {
+        ResizeHandler(OverlayFrame frame, int borderDragThickness) {
             this.frame = frame;
+            this.borderDragThickness = borderDragThickness;
         }
 
         @Override
@@ -386,10 +418,10 @@ public class OverlayFrame extends JFrame {
             int w = frame.getWidth();
             int h = frame.getHeight();
 
-            boolean left = x < BORDER_DRAG_THICKNESS;
-            boolean right = x >= w - BORDER_DRAG_THICKNESS;
-            boolean top = y < BORDER_DRAG_THICKNESS;
-            boolean bottom = y >= h - BORDER_DRAG_THICKNESS;
+            boolean left = x < borderDragThickness;
+            boolean right = x >= w - borderDragThickness;
+            boolean top = y < borderDragThickness;
+            boolean bottom = y >= h - borderDragThickness;
 
             if (left && top) {
                 return Cursor.NW_RESIZE_CURSOR;
@@ -412,6 +444,7 @@ public class OverlayFrame extends JFrame {
             }
         }
     }
+
     private void updateCrosshair() {
         // If window isn't showing, don't bother
         if (!isShowing()) {
@@ -453,6 +486,7 @@ public class OverlayFrame extends JFrame {
             crosshairOverlay.setVisible(false);
         }
     }
+
     private static class CrosshairOverlay extends JComponent {
 
         private Point crosshairPoint;
@@ -494,9 +528,8 @@ public class OverlayFrame extends JFrame {
 
         @Override
         public boolean contains(int x, int y) {
-            // Critical: don't intercept mouse events when overlay is not in OS pass-through mode.
+            // Critical: don't intercept mouse events.
             return false;
         }
     }
-
 }

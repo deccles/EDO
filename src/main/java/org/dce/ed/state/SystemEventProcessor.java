@@ -3,6 +3,8 @@ package org.dce.ed.state;
 import java.util.List;
 import java.util.Locale;
 
+import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.cache.SystemCache;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
@@ -91,17 +93,27 @@ public class SystemEventProcessor {
             if (addr != 0L) {
                 state.setSystemAddress(addr);
             }
-            state.setStarPos(starPos);
+            if (starPos != null) {
+            	state.setStarPos(starPos);
+            }
             return;
         }
 
         // New system: clear old one
         state.setSystemName(name);
         state.setSystemAddress(addr);
+        state.setStarPos(starPos);
         state.resetBodies();
         state.setTotalBodies(null);
         state.setNonBodyCount(null);
         state.setFssProgress(null);
+        
+//        for (BodyInfo b : state.getBodies().values()) {
+//            if (b.getStarPos() == null) {
+//                b.setStarPos(starPos);
+//            }
+//        }
+        
     }
 
     // ---------------------------------------------------------------------
@@ -137,13 +149,16 @@ public class SystemEventProcessor {
         info.setBodyName(e.getBodyName());
         info.setStarSystem(e.getStarSystem());
         
-        info.setBodyShortName(state.computeShortName(e.getBodyName()));
+        info.setBodyShortName(state.computeShortName(e.getStarSystem(), e.getBodyName()));
 
         info.setDistanceLs(e.getDistanceFromArrivalLs());
         info.setLandable(e.isLandable());
         info.setGravityMS(e.getSurfaceGravity());
         info.setAtmoOrType(chooseAtmoOrType(e));
         info.setHighValue(isHighValue(e));
+        
+        System.out.println("Setting surface pressure of " + e.getSurfacePressure());
+        info.setSurfacePressure(e.getSurfacePressure());
 
         info.setPlanetClass(e.getPlanetClass());
         info.setAtmosphere(e.getAtmosphere());
@@ -155,6 +170,7 @@ public class SystemEventProcessor {
         if (e.getVolcanism() != null && !e.getVolcanism().isEmpty()) {
             info.setVolcanism(e.getVolcanism());
         }
+        System.out.println("adding body " + e.getBodyId());
         state.getBodies().put(e.getBodyId(), info);
         updatePredictions(info);
     }
@@ -252,11 +268,12 @@ public class SystemEventProcessor {
         }
 
         // If we don't know the system name yet but have a body name, infer it
-        state.setSystemNameIfEmptyFromBodyName(e.getBodyName());
+//        state.setSystemNameIfEmptyFromBodyName(e.getBodyName());
 
         BodyInfo info = state.getOrCreateBody(e.getBodyId());
         info.setHasBio(true);
 
+        CachedSystem system = SystemCache.getInstance().get(e.getSystemAddress(), null);
         // Make sure the body has a name / short name
         String bodyName = e.getBodyName();
         if (bodyName != null && !bodyName.isEmpty()) {
@@ -264,7 +281,7 @@ public class SystemEventProcessor {
                 info.setBodyName(bodyName);
             }
             if (info.getShortName() == null || info.getShortName().isEmpty()) {
-                info.setBodyShortName(state.computeShortName(bodyName));
+                info.setBodyShortName(state.computeShortName(system.systemName, bodyName));
             }
         }
 

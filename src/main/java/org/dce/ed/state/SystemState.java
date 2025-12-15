@@ -112,7 +112,13 @@ public class SystemState {
     }
 
     public BodyInfo getOrCreateBody(int bodyId) {
-        return bodies.computeIfAbsent(bodyId, id -> new BodyInfo());
+        BodyInfo info = bodies.computeIfAbsent(bodyId, id -> new BodyInfo());
+        
+        if (info.getStarPos() == null && getStarPos() != null) {
+            info.setStarPos(getStarPos());
+        }
+        
+        return info;
     }
 
     // ------------------------------------------------------------
@@ -198,28 +204,27 @@ public class SystemState {
         }
     }
     
-    public String computeShortName(String fullName) {
-        if (fullName == null) {
+    public String computeShortName(String starSystem, String name) {
+        if (name == null) {
             return "";
         }
-        if (systemName == null)
-        	System.out.println("Uh oh");
-        if (systemName != null && !systemName.isEmpty()) {
-            String prefix = systemName + " ";
-            if (fullName.startsWith(prefix)) {
-                String suffix = fullName.substring(prefix.length());
+
+        String sys = starSystem;
+        if (sys == null || sys.isEmpty()) {
+            sys = this.systemName;
+        }
+
+        if (sys != null && !sys.isEmpty()) {
+            String prefix = sys + " ";
+            if (name.startsWith(prefix)) {
+                String suffix = name.substring(prefix.length());
                 if (!suffix.isEmpty()) {
                     return suffix;
                 }
             }
         }
 
-//        int idx = fullName.lastIndexOf(' ');
-//        if (idx >= 0 && idx + 1 < fullName.length()) {
-//            return fullName.substring(idx + 1);
-//        }
-
-        return fullName;
+        return name;
     }
 
     public void resetBodies() {
@@ -230,24 +235,24 @@ public class SystemState {
         allBodiesFound = null;
     }
 
-    public void setSystemNameIfEmptyFromBodyName(String bodyName) {
-        if (systemName != null && !systemName.isEmpty()) {
-            return;
-        }
-        if (bodyName == null || bodyName.isEmpty()) {
-            return;
-        }
-
-        // Heuristic: bodyName is usually "SystemName <suffix>".
-        // Strip the last token to get a reasonable systemName guess.
-        int idx = bodyName.lastIndexOf(' ');
-        if (idx > 0) {
-            String candidate = bodyName.substring(0, idx).trim();
-            if (!candidate.isEmpty()) {
-                systemName = candidate;
-            }
-        }
-    }
+//    public void setSystemNameIfEmptyFromBodyName(String bodyName) {
+//        if (systemName != null && !systemName.isEmpty()) {
+//            return;
+//        }
+//        if (bodyName == null || bodyName.isEmpty()) {
+//            return;
+//        }
+//
+//        // Heuristic: bodyName is usually "SystemName <suffix>".
+//        // Strip the last token to get a reasonable systemName guess.
+//        int idx = bodyName.lastIndexOf(' ');
+//        if (idx > 0) {
+//            String candidate = bodyName.substring(0, idx).trim();
+//            if (!candidate.isEmpty()) {
+//                systemName = candidate;
+//            }
+//        }
+//    }
 
     
     private static String toLower(String s) {

@@ -214,7 +214,7 @@ public final class SystemCache {
             info.setStarSystem(cb.starSystem);
             info.setStarPos(state.getStarPos());
             
-            info.setBodyShortName(state.computeShortName(cb.name));
+            info.setBodyShortName(state.computeShortName(cb.starSystem, cb.name));
             info.setBodyId(cb.bodyId);
             info.setDistanceLs(cb.distanceLs);
             info.setGravityMS(cb.gravityMS);
@@ -228,7 +228,7 @@ public final class SystemCache {
             info.setSurfaceTempK(cb.surfaceTempK);
             info.setVolcanism(cb.volcanism);
             info.setDiscoveryCommander(cb.discoveryCommander);
-            
+            info.setSurfacePressure(cb.surfacePressure);
             info.setNebula(cb.nebula);
             info.setParentStar(cb.parentStar);
             
@@ -376,7 +376,7 @@ public final class SystemCache {
             cb.surfaceTempK = b.getSurfaceTempK();
             cb.volcanism = b.getVolcanism();
             cb.discoveryCommander = b.getDiscoveryCommander();
-            
+            cb.surfacePressure = b.getSurfacePressure();
             cb.nebula = b.getNebula();
             cb.parentStar = b.getParentStar();
             

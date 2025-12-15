@@ -13,6 +13,7 @@ import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -23,6 +24,7 @@ import javax.swing.JViewport;
 import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -276,18 +278,34 @@ public class SystemTabPanel extends JPanel {
     // ---------------------------------------------------------------------
 
     public void handleLogEvent(EliteLogEvent event) {
-        if (event != null) {
-            processor.handleEvent(event);
-            
-            if (event instanceof FsdJumpEvent) {
-                FsdJumpEvent e = (FsdJumpEvent)event;
-                loadSystem(e.getStarSystem(), e.getSystemAddress());
-                rebuildTable();
-            }
-
-            rebuildTable();
-            persistIfPossible();
+        if (event == null) {
+            return;
         }
+
+        // 1) Mutate domain state (can be on background thread)
+        processor.handleEvent(event);
+
+        // 2) If we jumped, do the heavy load/merge off the EDT,
+        //    then refresh UI on the EDT.
+        if (event instanceof FsdJumpEvent) {
+            FsdJumpEvent e = (FsdJumpEvent) event;
+
+            new Thread(() -> {
+
+
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    loadSystem(e.getStarSystem(), e.getSystemAddress());
+                    requestRebuild();
+                    persistIfPossible();
+                });
+            }, "SystemTabPanel-loadSystem").start();
+
+            return;
+        }
+
+        // 3) Normal events: just refresh UI on EDT
+            requestRebuild();
+            persistIfPossible();
     }
 
     // ---------------------------------------------------------------------
@@ -315,6 +333,11 @@ public class SystemTabPanel extends JPanel {
                 }
             }
 
+            if ((systemName == null || systemName.isEmpty()) && systemAddress == 0L) {
+                rebuildTable();
+                return;
+            }
+            
             loadSystem(systemName, systemAddress);
             rebuildTable();
 
@@ -356,12 +379,24 @@ public class SystemTabPanel extends JPanel {
         rebuildTable();
         persistIfPossible();
     }
-
+    private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
 
     // ---------------------------------------------------------------------
     // UI rebuild from SystemState
     // ---------------------------------------------------------------------
+    private void requestRebuild() {
+        if (!rebuildPending.compareAndSet(false, true)) {
+            return; // already queued
+        }
 
+        SwingUtilities.invokeLater(() -> {
+            try {
+                rebuildTable();
+            } finally {
+                rebuildPending.set(false);
+            }
+        });
+    }
     private void rebuildTable() {
         updateHeaderLabel();
 
@@ -526,7 +561,7 @@ public class SystemTabPanel extends JPanel {
         private final String[] columns = {
                 "Body",
                 "g",
-                "Atmosphere / Type",
+                "Atmo / Body",
                 "Bio",
                 "Value",
                 "Land",

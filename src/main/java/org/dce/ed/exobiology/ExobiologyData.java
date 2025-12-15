@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import org.dce.ed.exobiology.RegionMapData;
+import org.dce.ed.exobiology.ExobiologyData.SpeciesConstraint;
 
 /**
  * Exobiology prediction helper using rulesets derived from the
@@ -361,7 +362,7 @@ public final class ExobiologyData {
                 return false;
             }
 
-            if (name.equals("Tussock Ventusa") && body.bodyName.equals(body.starSystem + " 4 a"))
+            if (name.equals("Frutexa Acus") && body.bodyName.equals(body.starSystem + " 4 a"))
             		System.out.println("Found it");
             
             
@@ -515,7 +516,6 @@ public final class ExobiologyData {
 
             double[] starPos = body.starPos;
             int regionId = RegionResolver.findRegionId(starPos[0], starPos[1]);
-            System.out.println(regionId);
             String regionName = RegionMapData.REGIONS[regionId].toLowerCase().replaceAll(" ", "-");
             
             if (regions != null && !regions.isEmpty()) {
@@ -523,11 +523,12 @@ public final class ExobiologyData {
                     warn("Rule requires region constraint but body.region was null");
                     return false;
                 }
-                if (!regions.contains(regionName)) {
+                if (!RegionSlugMatcher.matchesAnySlug(regionId, regions)) {
                     return false;
                 }
             }
 
+            
             if (starClasses != null && !starClasses.isEmpty()) {
                 if (body.starClass == null) {
                     warn("Rule requires star class constraint but body.starClass was null");
