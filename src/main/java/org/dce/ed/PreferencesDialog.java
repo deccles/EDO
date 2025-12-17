@@ -19,8 +19,6 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.border.EmptyBorder;
 
-import org.dce.ed.ui.PollyTtsCached;
-
 /**
  * Preferences dialog for the overlay.
  */
@@ -42,6 +40,17 @@ public class PreferencesDialog extends JDialog {
     private JTextField speechCacheDirField;
     private JTextField speechSampleRateField;
 
+    public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
+            "Joanna",
+            "Matthew",
+            "Ivy",
+            "Justin",
+            "Kendra",
+            "Kimberly",
+            "Joey",
+            "Salli"
+    };
+    
     public PreferencesDialog(OverlayFrame owner) {
         super(owner, "Overlay Preferences", true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -238,7 +247,7 @@ public class PreferencesDialog extends JDialog {
         content.add(voiceLabel, gbc);
 
         gbc.gridx = 1;
-        speechVoiceCombo = new JComboBox<>(PollyTtsCached.STANDARD_US_ENGLISH_VOICES);
+        speechVoiceCombo = new JComboBox<>(STANDARD_US_ENGLISH_VOICES);
         speechVoiceCombo.setSelectedItem(OverlayPreferences.getSpeechVoiceId());
         content.add(speechVoiceCombo, gbc);
 

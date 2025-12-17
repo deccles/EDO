@@ -33,7 +33,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     }
 
     public static void main(String[] args) {
-    	PollyTtsCached.speak("Welcome to Elite Dangerous Overlay, commander villunus");
+    	new PollyTtsCached().speak("Welcome to Elite Dangerous Overlay, commander villanous");
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");
     	
