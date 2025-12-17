@@ -5,20 +5,23 @@ import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Enumeration;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
+import java.util.Vector;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
@@ -38,6 +41,11 @@ import software.amazon.awssdk.services.polly.model.VoiceId;
 
 public class PollyTtsCached implements Closeable {
 
+	// Trim leading/trailing silence from Polly PCM before writing cache WAVs.
+	private static final int TRIM_ABS_THRESHOLD = 250;  // 16-bit PCM amplitude threshold (0..32767)
+	private static final int TRIM_KEEP_MS = 1;         // keep a little padding to avoid clipped starts/ends
+
+	
     // “Standard US English” voices list (good enough for a simple pick-list).
     // (These are also the well-known US English voices commonly used in examples.)
     public static final List<String> STANDARD_US_ENGLISH_VOICES = List.of(
@@ -69,7 +77,7 @@ public class PollyTtsCached implements Closeable {
         if (text == null || text.isBlank()) {
             return;
         }
-        playbackQueue.submit(() -> {
+        getPlaybackQueue().submit(() -> {
             try {
                 speakBlocking(text);
             } catch (Exception e) {
@@ -198,8 +206,7 @@ public class PollyTtsCached implements Closeable {
     private static Path getVoiceCacheDir(String voiceName, Engine engine, int sampleRate) {
         Path base = OverlayPreferences.getSpeechCacheDir();
         String name = (voiceName == null) ? "unknown" : voiceName.trim();
-        return base.resolve("polly")
-                .resolve(name + "-" + engine.toString().toLowerCase(Locale.ROOT) + "-" + sampleRate);
+        return base.resolve(name);
     }
 
     private static String normalize(String s) {
@@ -216,6 +223,8 @@ public class PollyTtsCached implements Closeable {
         // Polly PCM is signed little-endian, 16-bit.
         byte[] pcmBytes = pcm.readAllBytes();
 
+        pcmBytes = trimSilencePcm16leMono(pcmBytes, sampleRate, TRIM_ABS_THRESHOLD, TRIM_KEEP_MS);
+        
         int byteRate = sampleRate * channels * (bitsPerSample / 8);
         short blockAlign = (short) (channels * (bitsPerSample / 8));
         int dataLen = pcmBytes.length;
@@ -245,6 +254,77 @@ public class PollyTtsCached implements Closeable {
         }
     }
 
+    private static byte[] trimSilencePcm16leMono(byte[] pcm, int sampleRate, int absThreshold, int keepMs) {
+        if (pcm == null || pcm.length < 4) {
+            return pcm;
+        }
+
+        // Ensure even byte count (16-bit samples)
+        int len = pcm.length & ~1;
+        if (len < 2) {
+            return pcm;
+        }
+
+        int keepSamples = (int) ((keepMs / 1000.0) * sampleRate);
+        if (keepSamples < 0) {
+            keepSamples = 0;
+        }
+        int keepBytes = keepSamples * 2;
+
+        int start = 0;
+        while (start + 1 < len) {
+            int sample = (short) ((pcm[start + 1] << 8) | (pcm[start] & 0xFF));
+            if (Math.abs(sample) > absThreshold) {
+                break;
+            }
+            start += 2;
+        }
+
+        int end = len - 2;
+        while (end >= 0) {
+            int sample = (short) ((pcm[end + 1] << 8) | (pcm[end] & 0xFF));
+            if (Math.abs(sample) > absThreshold) {
+                break;
+            }
+            end -= 2;
+        }
+
+        // All silence: keep a tiny amount so we still produce a valid WAV.
+        if (end < start) {
+            int outLen = keepBytes;
+            if (outLen < 2) {
+                outLen = 2;
+            }
+            if (outLen > len) {
+                outLen = len;
+            }
+
+            byte[] out = new byte[outLen];
+            System.arraycopy(pcm, 0, out, 0, outLen);
+            return out;
+        }
+
+        start -= keepBytes;
+        if (start < 0) {
+            start = 0;
+        }
+
+        end += keepBytes;
+        if (end > len - 2) {
+            end = len - 2;
+        }
+
+        int outLen = (end - start) + 2;
+        if (outLen <= 0) {
+            return pcm;
+        }
+
+        byte[] out = new byte[outLen];
+        System.arraycopy(pcm, start, out, 0, outLen);
+        return out;
+    }
+
+    
     private void writeManifestLine(Path voiceDir, String wavFileName, String text) {
         synchronized (manifestLock) {
             try {
@@ -269,6 +349,107 @@ public class PollyTtsCached implements Closeable {
         }
     }
 
+    void playCombinedWavsBlocking(List<Path> wavPaths) throws Exception {
+        if (wavPaths == null || wavPaths.isEmpty()) {
+            return;
+        }
+
+        List<AudioInputStream> streams = new java.util.ArrayList<>();
+        AudioFormat format = null;
+        long totalFrames = 0;
+
+        try {
+            for (Path p : wavPaths) {
+                if (p == null) {
+                    continue;
+                }
+
+                AudioInputStream ais = AudioSystem.getAudioInputStream(p.toFile());
+                AudioFormat f = ais.getFormat();
+
+                if (format == null) {
+                    format = f;
+                } else if (!formatsEquivalent(format, f)) {
+                    ais.close();
+                    throw new IllegalArgumentException("WAV format mismatch: " + p);
+                }
+
+                streams.add(ais);
+
+                long frames = ais.getFrameLength();
+                if (frames > 0) {
+                    totalFrames += frames;
+                }
+            }
+
+            if (streams.isEmpty()) {
+                return;
+            }
+
+            Vector<InputStream> inputs = new Vector<>();
+            for (AudioInputStream ais : streams) {
+                inputs.add(ais);
+            }
+
+            Enumeration<InputStream> en = inputs.elements();
+            SequenceInputStream seq = new SequenceInputStream(en);
+
+            // If frame length is unknown (-1), pass -1; Clip still works with many WAVs.
+            long combinedFrames = (totalFrames > 0) ? totalFrames : AudioSystem.NOT_SPECIFIED;
+
+            try (AudioInputStream combined = new AudioInputStream(seq, format, combinedFrames)) {
+                playAudioBlocking(combined);
+            }
+        } finally {
+            for (AudioInputStream ais : streams) {
+                try {
+                    ais.close();
+                } catch (Exception ignore) {
+                    // ignore
+                }
+            }
+        }
+    }
+
+    private void playAudioBlocking(AudioInputStream ais) throws Exception {
+        Clip clip = AudioSystem.getClip();
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+
+        clip.addLineListener(e -> {
+            if (e.getType() == LineEvent.Type.STOP || e.getType() == LineEvent.Type.CLOSE) {
+                done.countDown();
+            }
+        });
+
+        clip.open(ais);
+        clip.start();
+        done.await();
+        clip.close();
+    }
+
+    private static boolean formatsEquivalent(AudioFormat a, AudioFormat b) {
+        if (!java.util.Objects.equals(a.getEncoding(), b.getEncoding())) {
+            return false;
+        }
+        if (a.getSampleRate() != b.getSampleRate()) {
+            return false;
+        }
+        if (a.getSampleSizeInBits() != b.getSampleSizeInBits()) {
+            return false;
+        }
+        if (a.getChannels() != b.getChannels()) {
+            return false;
+        }
+        if (a.isBigEndian() != b.isBigEndian()) {
+            return false;
+        }
+        if (a.getFrameSize() != b.getFrameSize()) {
+            return false;
+        }
+        return a.getFrameRate() == b.getFrameRate();
+    }
+
+    
     private static void playWavBlockingInternal(Path wavPath) {
         if (wavPath == null) {
             return;
@@ -305,7 +486,7 @@ public class PollyTtsCached implements Closeable {
 
     @Override
     public void close() {
-        playbackQueue.shutdownNow();
+        getPlaybackQueue().shutdownNow();
         try {
             polly.close();
         } catch (Exception e) {
@@ -325,4 +506,8 @@ public class PollyTtsCached implements Closeable {
             e.printStackTrace();
         }
     }
+
+	public ExecutorService getPlaybackQueue() {
+		return playbackQueue;
+	}
 }

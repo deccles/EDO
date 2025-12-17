@@ -11,6 +11,7 @@ import javax.swing.SwingUtilities;
 
 import org.dce.ed.logreader.RescanJournalsMain;
 import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
@@ -33,7 +34,11 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     }
 
     public static void main(String[] args) {
-    	new PollyTtsCached().speak("Welcome to Elite Dangerous Overlay, commander villanous");
+    	String commander = "villanous";
+    	
+    	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
+    	ttsSprintf.speakf("{n} species discovered including one kickass {species}", 5, "stratum tectonicus");
+    	ttsSprintf.speakf("5 species discovered including one kickass stratum tectonicus");
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");
     	

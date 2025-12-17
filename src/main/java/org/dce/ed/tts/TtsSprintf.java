@@ -1,5 +1,6 @@
 package org.dce.ed.tts;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -72,11 +73,38 @@ public class TtsSprintf {
      */
     public void speakf(String template, Object... args) {
         List<String> chunks = formatToUtteranceChunks(template, args);
-        for (String chunk : chunks) {
-            tts.speak(chunk);
+        if (chunks.isEmpty()) {
+            return;
+        }
+
+        tts.getPlaybackQueue().submit(() -> {
+            try {
+                speakAssembledBlocking(chunks);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private void speakAssembledBlocking(List<String> chunks) throws Exception {
+        List<Path> wavs = new ArrayList<>();
+
+        for (String c : chunks) {
+            if (c == null || c.isBlank()) {
+                continue;
+            }
+            Path p = tts.ensureCachedWav(c);
+            if (p != null) {
+                wavs.add(p);
+            }
+        }
+
+        if (!wavs.isEmpty()) {
+            tts.playCombinedWavsBlocking(wavs);
         }
     }
 
+    
     /**
      * Blocking: speaks the fully expanded chunks sequentially (delegates to PollyTtsCached.speakBlocking()).
      */
