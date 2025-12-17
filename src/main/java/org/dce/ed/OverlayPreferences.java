@@ -7,6 +7,8 @@ import java.util.prefs.Preferences;
 
 import org.dce.ed.logreader.EliteLogFileLocator;
 
+import software.amazon.awssdk.services.polly.model.Engine;
+
 /**
  * Centralized preferences for the overlay, including log directory selection.
  */
@@ -94,10 +96,10 @@ public final class OverlayPreferences {
         PREFS.putBoolean(KEY_SPEECH_ENABLED, enabled);
     }
 
-    public static String getSpeechEngine() {
+    public static Engine getSpeechEngine() {
         // Defaults: as you requested, keep sane hardcoded defaults.
         // Start with "standard" to avoid Neural costs.
-        return PREFS.get(KEY_SPEECH_ENGINE, "standard");
+        return Engine.fromValue(PREFS.get(KEY_SPEECH_ENGINE, "standard"));
     }
 
     public static void setSpeechEngine(String engine) {
@@ -107,7 +109,7 @@ public final class OverlayPreferences {
         PREFS.put(KEY_SPEECH_ENGINE, engine.trim().toLowerCase());
     }
 
-    public static String getSpeechVoiceId() {
+    public static String getSpeechVoiceName() {
         // Default voice: "Joanna" (standard, decent baseline)
         return PREFS.get(KEY_SPEECH_VOICE, "Joanna");
     }

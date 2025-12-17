@@ -36,7 +36,7 @@ import software.amazon.awssdk.services.polly.model.SynthesizeSpeechResponse;
 import software.amazon.awssdk.services.polly.model.TextType;
 import software.amazon.awssdk.services.polly.model.VoiceId;
 
-public final class PollyTtsCached implements Closeable {
+public class PollyTtsCached implements Closeable {
 
     // “Standard US English” voices list (good enough for a simple pick-list).
     // (These are also the well-known US English voices commonly used in examples.)
@@ -79,31 +79,83 @@ public final class PollyTtsCached implements Closeable {
     }
 
     /**
-     * Blocking: completes only after the clip finishes playing.
+     * Blocking: does not return until the audio has finished playing.
      * (Useful for tests, or if you ever want “wait until done”.)
      */
     public void speakBlocking(String text) throws Exception {
         Objects.requireNonNull(text, "text");
 
-        // Pull settings from prefs
-        String voiceName = OverlayPreferences.getSpeechVoiceId();
+        String voiceName = OverlayPreferences.getSpeechVoiceName();
         if (voiceName == null || voiceName.isBlank()) {
             voiceName = "Joanna";
         }
 
-        String engineName = OverlayPreferences.getSpeechEngine();
-        Engine engine = "neural".equalsIgnoreCase(engineName)
-                ? Engine.NEURAL
-                : Engine.STANDARD;
+        Engine engine = OverlayPreferences.getSpeechEngine();
+        if (engine == null) {
+            engine = Engine.NEURAL;
+        }
 
-        // For easy playback in JavaSound: request PCM and wrap into WAV ourselves.
         int sampleRate = OverlayPreferences.getSpeechSampleRateHz();
         if (sampleRate != 8000 && sampleRate != 16000) {
             sampleRate = 16000;
         }
 
         Path wavFile = getOrCreateCachedWav(text, voiceName, engine, sampleRate);
-        playWavBlocking(wavFile);
+        playWavBlockingInternal(wavFile);
+    }
+
+    /**
+     * Ensures the given utterance is present in the local cache and returns the cached WAV path.
+     * This does NOT play audio.
+     */
+    public Path ensureCachedWav(String text) throws Exception {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+
+        String voiceName = OverlayPreferences.getSpeechVoiceName();
+        if (voiceName == null || voiceName.isBlank()) {
+            voiceName = "Joanna";
+        }
+
+        Engine engine = OverlayPreferences.getSpeechEngine();
+        if (engine == null) {
+            engine = Engine.NEURAL;
+        }
+
+        int sampleRate = OverlayPreferences.getSpeechSampleRateHz();
+        if (sampleRate != 8000 && sampleRate != 16000) {
+            sampleRate = 16000;
+        }
+
+        return getOrCreateCachedWav(text, voiceName, engine, sampleRate);
+    }
+
+    /**
+     * Ensures all utterances are cached and returns WAV paths in the same order (null/blank inputs skipped).
+     * This does NOT play audio.
+     */
+    public List<Path> ensureCachedWavs(List<String> utterances) throws Exception {
+        if (utterances == null || utterances.isEmpty()) {
+            return List.of();
+        }
+
+        List<Path> out = new java.util.ArrayList<>();
+        for (String u : utterances) {
+            Path p = ensureCachedWav(u);
+            if (p != null) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Plays a WAV file synchronously (blocks until finished).
+     * This is primarily for higher-level code that assembles audio from cached chunks.
+     */
+    public void playWavBlocking(Path wavPath) {
+        playWavBlockingInternal(wavPath);
     }
 
     private Path getOrCreateCachedWav(String text, String voiceName, Engine engine, int sampleRate) throws IOException {
@@ -128,53 +180,80 @@ public final class PollyTtsCached implements Closeable {
         SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
                 .engine(engine)
                 .voiceId(voiceId)
-                .outputFormat(OutputFormat.PCM) // PCM 16-bit signed little-endian mono
+                .outputFormat(OutputFormat.PCM)
                 .sampleRate(Integer.toString(sampleRate))
                 .textType(TextType.TEXT)
                 .text(text)
                 .build();
 
-        Path tmp = voiceDir.resolve(key + ".tmp");
-        try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
-            // Write to tmp then move atomically
-            writePcmAsWav(audio, tmp, sampleRate);
-        }
+        ResponseInputStream<SynthesizeSpeechResponse> in = polly.synthesizeSpeech(req);
+        writePcmToWav(in, wav, sampleRate, (short) 1, (short) 16);
 
-        try {
-            Files.move(tmp, wav);
-        } catch (IOException moveEx) {
-            // If move fails (e.g., antivirus lock), fall back to copy+delete.
-            Files.copy(tmp, wav);
-            Files.deleteIfExists(tmp);
-        }
-
-        // Append to manifest ONLY when we generated a new file
-        appendToManifest(voiceDir, wav.getFileName().toString(), text);
+        // Log to manifest
+        writeManifestLine(voiceDir, wav.getFileName().toString(), text);
 
         return wav;
     }
 
-    private Path getVoiceCacheDir(String voiceName, Engine engine, int sampleRate) {
-        Path root = OverlayPreferences.getSpeechCacheDir();
-        if (root == null) {
-            root = Path.of(System.getProperty("user.home"), ".edo", "tts-cache");
-        }
-
-        // Separate directories per voice (and engine + sample rate so you don’t mix formats).
-        String safeVoice = voiceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
-        String safeEngine = engine.toString().toLowerCase(Locale.ROOT);
-        String safeSr = Integer.toString(sampleRate);
-
-        Path path = root.resolve(safeVoice);
-        //.resolve(safeEngine).resolve(safeSr);
-        return path;
+    private static Path getVoiceCacheDir(String voiceName, Engine engine, int sampleRate) {
+        Path base = OverlayPreferences.getSpeechCacheDir();
+        String name = (voiceName == null) ? "unknown" : voiceName.trim();
+        return base.resolve("polly")
+                .resolve(name + "-" + engine.toString().toLowerCase(Locale.ROOT) + "-" + sampleRate);
     }
 
-    private void appendToManifest(Path voiceDir, String fileName, String text) {
+    private static String normalize(String s) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.strip();
+        t = t.replaceAll("\\s+", " ");
+        return t;
+    }
+
+    private static void writePcmToWav(InputStream pcm, Path wavOut, int sampleRate, short channels, short bitsPerSample) throws IOException {
+        // WAV header + raw PCM payload
+        // Polly PCM is signed little-endian, 16-bit.
+        byte[] pcmBytes = pcm.readAllBytes();
+
+        int byteRate = sampleRate * channels * (bitsPerSample / 8);
+        short blockAlign = (short) (channels * (bitsPerSample / 8));
+        int dataLen = pcmBytes.length;
+
+        try (DataOutputStream out = new DataOutputStream(
+                new BufferedOutputStream(Files.newOutputStream(wavOut, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))
+        )) {
+            // RIFF header
+            out.writeBytes("RIFF");
+            out.writeInt(Integer.reverseBytes(36 + dataLen));
+            out.writeBytes("WAVE");
+
+            // fmt chunk
+            out.writeBytes("fmt ");
+            out.writeInt(Integer.reverseBytes(16)); // PCM fmt chunk size
+            out.writeShort(Short.reverseBytes((short) 1)); // audio format = PCM
+            out.writeShort(Short.reverseBytes(channels));
+            out.writeInt(Integer.reverseBytes(sampleRate));
+            out.writeInt(Integer.reverseBytes(byteRate));
+            out.writeShort(Short.reverseBytes(blockAlign));
+            out.writeShort(Short.reverseBytes(bitsPerSample));
+
+            // data chunk
+            out.writeBytes("data");
+            out.writeInt(Integer.reverseBytes(dataLen));
+            out.write(pcmBytes);
+        }
+    }
+
+    private void writeManifestLine(Path voiceDir, String wavFileName, String text) {
         synchronized (manifestLock) {
-            Path manifest = voiceDir.resolve("manifest.tsv");
-            String line = Instant.now() + "\t" + fileName + "\t" + text.replace("\t", " ").replace("\r", " ").replace("\n", " ") + "\n";
             try {
+                Path manifest = voiceDir.resolve("_manifest.txt");
+                String line = Instant.now().toString()
+                        + "\t" + wavFileName
+                        + "\t" + text.replace("\n", "\\n")
+                        + System.lineSeparator();
+
                 Files.writeString(
                         manifest,
                         line,
@@ -190,7 +269,7 @@ public final class PollyTtsCached implements Closeable {
         }
     }
 
-    private static void playWavBlocking(Path wavPath) {
+    private static void playWavBlockingInternal(Path wavPath) {
         if (wavPath == null) {
             return;
         }
@@ -207,70 +286,11 @@ public final class PollyTtsCached implements Closeable {
 
             clip.open(ais);
             clip.start();
-
-            // Wait for playback to finish
             done.await();
-
             clip.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
-
-    /**
-     * Writes a standard RIFF/WAVE header + PCM payload.
-     * Polly PCM is 16-bit signed little-endian mono. :contentReference[oaicite:2]{index=2}
-     */
-    private static void writePcmAsWav(InputStream pcm, Path wavOut, int sampleRate) throws IOException {
-        byte[] pcmBytes = pcm.readAllBytes();
-
-        int numChannels = 1;
-        int bitsPerSample = 16;
-        int byteRate = sampleRate * numChannels * bitsPerSample / 8;
-        int blockAlign = numChannels * bitsPerSample / 8;
-
-        int subchunk2Size = pcmBytes.length;
-        int chunkSize = 36 + subchunk2Size;
-
-        try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(
-                wavOut, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)))) {
-
-            // RIFF header
-            out.writeBytes("RIFF");
-            writeIntLE(out, chunkSize);
-            out.writeBytes("WAVE");
-
-            // fmt subchunk
-            out.writeBytes("fmt ");
-            writeIntLE(out, 16);                 // Subchunk1Size for PCM
-            writeShortLE(out, (short) 1);        // AudioFormat = 1 (PCM)
-            writeShortLE(out, (short) numChannels);
-            writeIntLE(out, sampleRate);
-            writeIntLE(out, byteRate);
-            writeShortLE(out, (short) blockAlign);
-            writeShortLE(out, (short) bitsPerSample);
-
-            // data subchunk
-            out.writeBytes("data");
-            writeIntLE(out, subchunk2Size);
-            out.write(pcmBytes);
-        }
-    }
-
-    private static void writeIntLE(DataOutputStream out, int v) throws IOException {
-        out.writeByte(v & 0xFF);
-        out.writeByte((v >>> 8) & 0xFF);
-        out.writeByte((v >>> 16) & 0xFF);
-        out.writeByte((v >>> 24) & 0xFF);
-    }
-
-    private static void writeShortLE(DataOutputStream out, short v) throws IOException {
-        out.writeByte(v & 0xFF);
-        out.writeByte((v >>> 8) & 0xFF);
-    }
-
-    private static String normalize(String s) {
-        return s.trim().replaceAll("\\s+", " ");
     }
 
     private static String sha256(String s) {
@@ -289,11 +309,10 @@ public final class PollyTtsCached implements Closeable {
         try {
             polly.close();
         } catch (Exception e) {
-            // ignore
+            e.printStackTrace();
         }
     }
 
-    // Quick smoke test
     public static void main(String[] args) {
         System.out.println("Starting");
         try (PollyTtsCached tts = new PollyTtsCached()) {
@@ -301,7 +320,6 @@ public final class PollyTtsCached implements Closeable {
             tts.speak("this should play after hello finishes");
             tts.speak("and this should play after that");
             System.out.println("Queued.");
-            // main can exit; playback thread is daemon. If you want it to wait, sleep briefly.
             Thread.sleep(4000);
         } catch (Exception e) {
             e.printStackTrace();

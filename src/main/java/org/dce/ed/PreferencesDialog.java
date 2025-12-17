@@ -248,7 +248,7 @@ public class PreferencesDialog extends JDialog {
 
         gbc.gridx = 1;
         speechVoiceCombo = new JComboBox<>(STANDARD_US_ENGLISH_VOICES);
-        speechVoiceCombo.setSelectedItem(OverlayPreferences.getSpeechVoiceId());
+        speechVoiceCombo.setSelectedItem(OverlayPreferences.getSpeechVoiceName());
         content.add(speechVoiceCombo, gbc);
 
         // Region
