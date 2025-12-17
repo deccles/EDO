@@ -1,6 +1,7 @@
 package org.dce.ed.tts;
 
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -25,7 +26,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -52,7 +52,6 @@ public class PollyTtsCached implements Closeable {
     private static final int TRIM_KEEP_MS = 1;          // you tuned this down and liked it
 
     // Speech-mark parsing (JSON lines)
-    private static final Pattern SSML_MARK_LINE = Pattern.compile(".*\\\"value\\\"\\s*:\\s*\\\"([^\\\"]+)\\\".*?\\\"time\\\"\\s*:\\s*(\\d+).*", Pattern.CASE_INSENSITIVE);
 
     public static final List<String> STANDARD_US_ENGLISH_VOICES = List.of(
             "Ivy", "Joanna", "Kendra", "Kimberly", "Salli", "Joey", "Justin", "Matthew"
@@ -126,15 +125,31 @@ public class PollyTtsCached implements Closeable {
      * Option B (SSML marks): synthesize the full SSML sentence once, get SSML-mark times,
      * then cache each chunk by slicing the full PCM between marks.
      *
-     * - chunkTexts.size() must match markNames.size()
-     * - each mark name should exist in the SSML as <mark name="..."/>
+     * This overload keys each chunk by its literal chunk text (legacy behavior).
      */
     public List<Path> ensureCachedWavsFromSsmlMarks(List<String> chunkTexts, String ssml, List<String> markNames) throws Exception {
+        return ensureCachedWavsFromSsmlMarks(chunkTexts, chunkTexts, ssml, markNames);
+    }
+
+    /**
+     * Option B (SSML marks) with explicit cache keys per chunk.
+     *
+     * chunkTexts: what Polly speaks (used for SSML and manifest text)
+     * cacheKeys : what we use to compute the cache file path (lets you include context like END vs MID)
+     * markNames : one mark per chunk, in order, present in the SSML as <mark name="..."/>
+     */
+    public List<Path> ensureCachedWavsFromSsmlMarks(List<String> chunkTexts, List<String> cacheKeys, String ssml, List<String> markNames) throws Exception {
         if (chunkTexts == null || markNames == null || chunkTexts.isEmpty()) {
             return List.of();
         }
+        if (cacheKeys == null) {
+            cacheKeys = chunkTexts;
+        }
         if (chunkTexts.size() != markNames.size()) {
             throw new IllegalArgumentException("chunkTexts.size != markNames.size");
+        }
+        if (cacheKeys.size() != chunkTexts.size()) {
+            throw new IllegalArgumentException("cacheKeys.size != chunkTexts.size");
         }
         if (ssml == null || ssml.isBlank()) {
             throw new IllegalArgumentException("ssml is blank");
@@ -149,12 +164,18 @@ public class PollyTtsCached implements Closeable {
         List<Integer> missingIdx = new ArrayList<>();
 
         for (int i = 0; i < chunkTexts.size(); i++) {
-            String t = chunkTexts.get(i);
-            if (t == null || t.isBlank()) {
+            String spoken = chunkTexts.get(i);
+            if (spoken == null || spoken.isBlank()) {
                 paths.add(null);
                 continue;
             }
-            Path wav = getCachedWavPath(voiceDir, s, t);
+
+            String keyText = cacheKeys.get(i);
+            if (keyText == null || keyText.isBlank()) {
+                keyText = spoken;
+            }
+
+            Path wav = getCachedWavPath(voiceDir, s, keyText);
             paths.add(wav);
             if (!Files.exists(wav)) {
                 missingIdx.add(i);
@@ -165,76 +186,56 @@ public class PollyTtsCached implements Closeable {
             return paths;
         }
 
-        // Synthesize full sentence PCM (SSML) and SSML speech marks (timestamps for <mark/>).
+        // Synthesize full sentence audio once, and SSML mark times once.
         byte[] fullPcm = synthesizePcmSsml(ssml, s);
         Map<String, Integer> markTimesMs = synthesizeSsmlMarkTimes(ssml, s);
 
-        // Ensure we have monotonic mark times for all marks in order.
-        int[] startMs = new int[markNames.size()];
-        for (int i = 0; i < markNames.size(); i++) {
-            String name = markNames.get(i);
-            Integer t = markTimesMs.get(name);
-            if (t == null) {
-                throw new IllegalStateException("Missing SSML mark time for: " + name);
-            }
-            startMs[i] = t.intValue();
-        }
+        int totalSamples = fullPcm.length / 2; // 16-bit mono
+        int totalMs = (int) ((totalSamples * 1000L) / s.sampleRate);
 
-        // Convert mark start times into byte offsets.
-        int bytesPerSample = 2; // 16-bit mono
-        int[] startByte = new int[startMs.length];
-        for (int i = 0; i < startMs.length; i++) {
-            long sampleIndex = (long) startMs[i] * (long) s.sampleRate / 1000L;
-            long byteIndex = sampleIndex * bytesPerSample;
-            if (byteIndex < 0) {
-                byteIndex = 0;
+        for (int idx : missingIdx) {
+            String mark = markNames.get(idx);
+            Integer startMsObj = markTimesMs.get(mark);
+            if (startMsObj == null) {
+                throw new IllegalStateException("Missing SSML mark time for: " + mark);
             }
-            if (byteIndex > fullPcm.length) {
-                byteIndex = fullPcm.length;
-            }
-            startByte[i] = (int) (byteIndex & ~1); // even
-        }
+            int startMs = startMsObj;
 
-        // Cache missing chunks by slicing [mark_i .. mark_{i+1}) (or end for last).
-        for (int mi = 0; mi < missingIdx.size(); mi++) {
-            int i = missingIdx.get(mi);
-
-            int from = startByte[i];
-            int to;
-            if (i + 1 < startByte.length) {
-                to = startByte[i + 1];
+            int endMs;
+            if (idx + 1 < markNames.size()) {
+                String nextMark = markNames.get(idx + 1);
+                Integer endMsObj = markTimesMs.get(nextMark);
+                if (endMsObj == null) {
+                    // If the next mark is missing for some reason, fall back to end of audio.
+                    endMs = totalMs;
+                } else {
+                    endMs = endMsObj;
+                }
             } else {
-                to = fullPcm.length;
+                endMs = totalMs;
             }
 
-            if (to < from) {
-                to = from;
-            }
-            if ((to - from) < 2) {
-                // keep at least 1 sample so WAV isn't empty
-                to = Math.min(fullPcm.length, from + 2);
+            if (endMs < startMs) {
+                endMs = startMs;
             }
 
-            byte[] slice = new byte[to - from];
-            System.arraycopy(fullPcm, from, slice, 0, slice.length);
+            int startSample = (int) ((startMs * (long) s.sampleRate) / 1000L);
+            int endSample = (int) ((endMs * (long) s.sampleRate) / 1000L);
 
-            Path wavPath = paths.get(i);
-            // Write to tmp then move (avoid partial file in cache)
-            Path tmp = wavPath.resolveSibling(wavPath.getFileName().toString() + ".tmp");
-            writePcmBytesAsWav(slice, tmp, s.sampleRate);
-            try {
-                Files.move(tmp, wavPath);
-            } catch (IOException moveEx) {
-                Files.copy(tmp, wavPath);
-                Files.deleteIfExists(tmp);
-            }
+            int startByte = Math.max(0, Math.min(fullPcm.length, startSample * 2));
+            int endByte = Math.max(startByte, Math.min(fullPcm.length, endSample * 2));
 
-            appendToManifest(voiceDir, wavPath.getFileName().toString(), chunkTexts.get(i));
+            byte[] slice = java.util.Arrays.copyOfRange(fullPcm, startByte, endByte);
+
+            Path wavOut = paths.get(idx);
+            writePcmBytesAsWav(slice, wavOut, s.sampleRate);
+
+            // Manifest uses what was spoken, not the cache key.
+            writeManifestLine(voiceDir, wavOut.getFileName().toString(), chunkTexts.get(idx));
         }
 
         return paths;
     }
-
     public void playWavBlocking(Path wavPath) {
         playWavBlockingInternal(wavPath);
     }
@@ -377,9 +378,8 @@ public class PollyTtsCached implements Closeable {
     private void appendToManifest(Path voiceDir, String fileName, String text) {
         synchronized (manifestLock) {
             Path manifest = voiceDir.resolve("manifest.tsv");
-            String line = Instant.now() + "\t" + fileName + "\t"
-                    + text.replace("\t", " ").replace("\r", " ").replace("\n", " ")
-                    + System.lineSeparator();
+            String safe = (text == null) ? "" : text.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ');
+            String line = Instant.now() + "\t" + fileName + "\t" + safe + System.lineSeparator();
             try {
                 Files.writeString(
                         manifest,
@@ -393,7 +393,12 @@ public class PollyTtsCached implements Closeable {
                 // ignore
             }
         }
+    }  // <-- add this
+
+    private void writeManifestLine(Path voiceDir, String fileName, String spokenText) {
+        appendToManifest(voiceDir, fileName, spokenText);
     }
+
 
     // ------------------------------
     // Polly synth helpers
@@ -441,34 +446,34 @@ public class PollyTtsCached implements Closeable {
             return out;
         }
 
-        String[] lines = jsonLines.split("\r?\n");
+        String[] lines = jsonLines.split("\\r?\\n");
         for (String line : lines) {
-            if (line == null) {
-                continue;
-            }
-            Matcher m = SSML_MARK_LINE.matcher(line);
-            if (!m.find()) {
-                // try alternate field ordering
-                // {"time":0,"type":"ssml","value":"C0"} or {"type":"ssml","value":"C0","time":0}
-                String v = extractJsonString(line, "value");
-                String t = extractJsonNumber(line, "time");
-                String ty = extractJsonString(line, "type");
-                if (!"ssml".equalsIgnoreCase(ty) || v == null || t == null) {
-                    continue;
-                }
-                out.put(v, Integer.parseInt(t));
+            if (line == null || line.isBlank()) {
                 continue;
             }
 
-            String value = m.group(1);
-            String time = m.group(2);
-            out.put(value, Integer.parseInt(time));
+            String type = extractJsonString(line, "type");
+            if (!"ssml".equalsIgnoreCase(type)) {
+                continue;
+            }
+
+            String value = extractJsonString(line, "value");
+            String time = extractJsonNumber(line, "time");
+            if (value == null || time == null) {
+                continue;
+            }
+
+            try {
+                out.put(value, Integer.parseInt(time));
+            } catch (NumberFormatException e) {
+                // ignore
+            }
         }
         return out;
     }
 
     private static String extractJsonString(String line, String key) {
-        int idx = line.indexOf("\"" + key + "\"" );
+        int idx = line.indexOf("\"" + key + "\"");
         if (idx < 0) {
             return null;
         }
@@ -488,7 +493,7 @@ public class PollyTtsCached implements Closeable {
     }
 
     private static String extractJsonNumber(String line, String key) {
-        int idx = line.indexOf("\"" + key + "\"" );
+        int idx = line.indexOf("\"" + key + "\"");
         if (idx < 0) {
             return null;
         }

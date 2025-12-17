@@ -38,7 +38,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     	
     	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
     	ttsSprintf.speakf("{n} species discovered including one kickass {species}", 5, "stratum tectonicus");
-    	ttsSprintf.speakf("5 species discovered including one kickass stratum tectonicus");
+    	ttsSprintf.speakf("I like to think that stratus has 5");
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");
     	

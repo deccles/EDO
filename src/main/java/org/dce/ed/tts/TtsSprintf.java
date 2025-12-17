@@ -95,7 +95,7 @@ public class TtsSprintf {
         SsmlPlan plan = buildSsmlWithMarks(chunks);
 
         // Ensure cached WAVs, preferring context-derived chunks when missing.
-        List<Path> wavs = tts.ensureCachedWavsFromSsmlMarks(plan.chunkTexts, plan.ssml, plan.markNames);
+        List<Path> wavs = tts.ensureCachedWavsFromSsmlMarks(plan.chunkTexts, plan.cacheKeys, plan.ssml, plan.markNames);
 
         // Filter nulls (blank chunks) and play as a single continuous stream.
         List<Path> toPlay = new ArrayList<>();
@@ -114,55 +114,83 @@ public class TtsSprintf {
         private final String ssml;
         private final List<String> markNames;
         private final List<String> chunkTexts;
+        private final List<String> cacheKeys;
 
-        private SsmlPlan(String ssml, List<String> markNames, List<String> chunkTexts) {
+        private SsmlPlan(String ssml, List<String> markNames, List<String> chunkTexts, List<String> cacheKeys) {
             this.ssml = ssml;
             this.markNames = markNames;
             this.chunkTexts = chunkTexts;
+            this.cacheKeys = cacheKeys;
         }
     }
 
     private SsmlPlan buildSsmlWithMarks(List<String> chunks) {
         List<String> markNames = new ArrayList<>(chunks.size());
         List<String> chunkTexts = new ArrayList<>(chunks.size());
+        List<String> cacheKeys = new ArrayList<>(chunks.size());
+
+        int lastNonBlankIdx = -1;
+        for (int i = 0; i < chunks.size(); i++) {
+            String c = chunks.get(i);
+            if (c != null && !c.isBlank()) {
+                lastNonBlankIdx = i;
+            }
+        }
 
         StringBuilder ssml = new StringBuilder();
         ssml.append("<speak>");
 
         for (int i = 0; i < chunks.size(); i++) {
             String c = chunks.get(i);
-            if (c == null) {
-                c = "";
+            if (c == null || c.isBlank()) {
+                continue;
             }
 
             String mark = "C" + i;
             markNames.add(mark);
             chunkTexts.add(c);
+            cacheKeys.add(computeCacheKey(c, i, lastNonBlankIdx));
 
             ssml.append("<mark name=\"").append(mark).append("\"/>");
-
-            // Always emit the chunk text (even if empty) so mark ordering stays aligned.
-            // We normalize spacing here so Polly doesn't do weird pauses due to repeated whitespace.
-            String escaped = escapeForSsml(c);
-            if (!escaped.isBlank()) {
-                ssml.append(escaped);
-            }
-
-            // Add a single space between chunks to keep natural phrasing.
-            if (i + 1 < chunks.size()) {
-                ssml.append(" ");
-            }
+            ssml.append(escapeForSsml(c));
+            ssml.append(" ");
         }
 
         ssml.append("</speak>");
-        return new SsmlPlan(ssml.toString(), markNames, chunkTexts);
+        return new SsmlPlan(ssml.toString(), markNames, chunkTexts, cacheKeys);
+    }
+
+    private static String computeCacheKey(String chunkText, int idx, int lastNonBlankIdx) {
+        if (chunkText == null) {
+            return null;
+        }
+
+        // Numbers sound different at the end of a sentence vs. leading into a phrase.
+        if (isAllDigits(chunkText)) {
+            String pos = (idx == lastNonBlankIdx) ? "END" : "MID";
+            return "N|" + chunkText + "|" + pos;
+        }
+
+        return chunkText;
+    }
+
+    private static boolean isAllDigits(String s) {
+        if (s == null || s.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isDigit(s.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String escapeForSsml(String s) {
         if (s == null) {
             return "";
         }
-        String t = s.trim().replaceAll("\s+", " ");
+        String t = s.trim().replaceAll("\\s+", " ");
         // Minimal XML escaping for SSML text nodes.
         t = t.replace("&", "&amp;");
         t = t.replace("<", "&lt;");
