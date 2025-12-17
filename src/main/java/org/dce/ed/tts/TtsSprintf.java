@@ -87,21 +87,89 @@ public class TtsSprintf {
     }
 
     private void speakAssembledBlocking(List<String> chunks) throws Exception {
-        List<Path> wavs = new ArrayList<>();
+        if (chunks == null || chunks.isEmpty()) {
+            return;
+        }
 
-        for (String c : chunks) {
-            if (c == null || c.isBlank()) {
-                continue;
-            }
-            Path p = tts.ensureCachedWav(c);
+        // Build SSML with explicit <mark/> boundaries so Polly returns precise timestamps.
+        SsmlPlan plan = buildSsmlWithMarks(chunks);
+
+        // Ensure cached WAVs, preferring context-derived chunks when missing.
+        List<Path> wavs = tts.ensureCachedWavsFromSsmlMarks(plan.chunkTexts, plan.ssml, plan.markNames);
+
+        // Filter nulls (blank chunks) and play as a single continuous stream.
+        List<Path> toPlay = new ArrayList<>();
+        for (Path p : wavs) {
             if (p != null) {
-                wavs.add(p);
+                toPlay.add(p);
             }
         }
 
-        if (!wavs.isEmpty()) {
-            tts.playCombinedWavsBlocking(wavs);
+        if (!toPlay.isEmpty()) {
+            tts.playCombinedWavsBlocking(toPlay);
         }
+    }
+
+    private static final class SsmlPlan {
+        private final String ssml;
+        private final List<String> markNames;
+        private final List<String> chunkTexts;
+
+        private SsmlPlan(String ssml, List<String> markNames, List<String> chunkTexts) {
+            this.ssml = ssml;
+            this.markNames = markNames;
+            this.chunkTexts = chunkTexts;
+        }
+    }
+
+    private SsmlPlan buildSsmlWithMarks(List<String> chunks) {
+        List<String> markNames = new ArrayList<>(chunks.size());
+        List<String> chunkTexts = new ArrayList<>(chunks.size());
+
+        StringBuilder ssml = new StringBuilder();
+        ssml.append("<speak>");
+
+        for (int i = 0; i < chunks.size(); i++) {
+            String c = chunks.get(i);
+            if (c == null) {
+                c = "";
+            }
+
+            String mark = "C" + i;
+            markNames.add(mark);
+            chunkTexts.add(c);
+
+            ssml.append("<mark name=\"").append(mark).append("\"/>");
+
+            // Always emit the chunk text (even if empty) so mark ordering stays aligned.
+            // We normalize spacing here so Polly doesn't do weird pauses due to repeated whitespace.
+            String escaped = escapeForSsml(c);
+            if (!escaped.isBlank()) {
+                ssml.append(escaped);
+            }
+
+            // Add a single space between chunks to keep natural phrasing.
+            if (i + 1 < chunks.size()) {
+                ssml.append(" ");
+            }
+        }
+
+        ssml.append("</speak>");
+        return new SsmlPlan(ssml.toString(), markNames, chunkTexts);
+    }
+
+    private static String escapeForSsml(String s) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.trim().replaceAll("\s+", " ");
+        // Minimal XML escaping for SSML text nodes.
+        t = t.replace("&", "&amp;");
+        t = t.replace("<", "&lt;");
+        t = t.replace(">", "&gt;");
+        t = t.replace("\"", "&quot;");
+        t = t.replace("'", "&apos;");
+        return t;
     }
 
     
