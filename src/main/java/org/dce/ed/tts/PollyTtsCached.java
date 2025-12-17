@@ -1,4 +1,4 @@
-package org.dce.ed.ui;
+package org.dce.ed.tts;
 
 import java.io.BufferedOutputStream;
 import java.io.Closeable;

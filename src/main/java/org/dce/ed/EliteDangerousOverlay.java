@@ -10,7 +10,7 @@ import java.util.prefs.Preferences;
 import javax.swing.SwingUtilities;
 
 import org.dce.ed.logreader.RescanJournalsMain;
-import org.dce.ed.ui.PollyTtsCached;
+import org.dce.ed.tts.PollyTtsCached;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
