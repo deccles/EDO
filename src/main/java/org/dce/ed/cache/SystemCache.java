@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 
@@ -234,6 +235,10 @@ public final class SystemCache {
             info.setNebula(cb.nebula);
             info.setParentStar(cb.parentStar);
             
+            if (cb.predictions != null && !cb.predictions.isEmpty()) {
+                info.setPredictions(new ArrayList<BioCandidate>(cb.predictions));
+            }
+            
             if (cb.observedGenusPrefixes != null && !cb.observedGenusPrefixes.isEmpty()) {
                 info.setObservedGenusPrefixes(new java.util.HashSet<>(cb.observedGenusPrefixes));
             }
@@ -381,6 +386,10 @@ public final class SystemCache {
             cb.surfacePressure = b.getSurfacePressure();
             cb.nebula = b.getNebula();
             cb.parentStar = b.getParentStar();
+            
+            if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
+                cb.predictions = b.getPredictions();
+            }
             
             if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
                 cb.observedGenusPrefixes = new java.util.HashSet<>(b.getObservedGenusPrefixes());

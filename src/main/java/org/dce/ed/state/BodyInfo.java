@@ -1,13 +1,14 @@
 package org.dce.ed.state;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
+import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.exobiology.ExobiologyData.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 
@@ -58,7 +59,7 @@ public class BodyInfo {
     Double axialTilt;
     Double radius;
     // Derived biological prediction data
-    private List<ExobiologyData.BioCandidate> predictions;
+    private List<BioCandidate> predictions;
 
     private java.util.Set<String> observedBioDisplayNames;
     
@@ -391,6 +392,10 @@ public class BodyInfo {
 
 	public void setStarSystem(String starSystem) {
 		this.starSystem = starSystem;
+	}
+
+	public void setPredictions(ArrayList<BioCandidate> predictions) {
+		this.predictions = predictions;		
 	}
 
 }

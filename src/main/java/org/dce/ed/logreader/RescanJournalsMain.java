@@ -5,75 +5,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
-import org.dce.ed.cache.CachedBody;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.logreader.event.FsdJumpEvent;
-import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
-import org.dce.ed.logreader.event.FssBodySignalsEvent;
-import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.LocationEvent;
-import org.dce.ed.logreader.event.SaasignalsFoundEvent;
-import org.dce.ed.logreader.event.ScanEvent;
-import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.state.SystemEventProcessor;
+import org.dce.ed.state.SystemState;
 
 /**
  * Standalone utility with a main() that scans all Elite Dangerous journal files
  * and populates the local SystemCache with every system/body it can reconstruct.
  *
- * Run this once (with the same JVM/Classpath as the overlay) 
+ * Run this once (with the same JVM/Classpath as the overlay)
  * before starting the overlay, or periodically to refresh the local body cache.
  */
 public class RescanJournalsMain {
-
-    /**
-     * Compound key so we can index systems by (address, name).
-     */
-    private static final class SystemKey {
-        final long systemAddress;
-        final String systemName;
-
-        SystemKey(long systemAddress, String systemName) {
-            this.systemAddress = systemAddress;
-            this.systemName = systemName;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (!(o instanceof SystemKey)) {
-                return false;
-            }
-            SystemKey other = (SystemKey) o;
-            if (systemAddress != 0L && other.systemAddress != 0L) {
-                return systemAddress == other.systemAddress;
-            }
-            return systemName != null && systemName.equals(other.systemName);
-        }
-
-        @Override
-        public int hashCode() {
-            if (systemAddress != 0L) {
-                return Long.hashCode(systemAddress);
-            }
-            return systemName != null ? systemName.hashCode() : 0;
-        }
-
-        @Override
-        public String toString() {
-            return "SystemKey{" +
-                    "systemAddress=" + systemAddress +
-                    ", systemName='" + systemName + '\'' +
-                    '}';
-        }
-    }
-
-
 
     private static final String LAST_IMPORT_FILENAME = "edo-cache.lastRescanTimestamp";
 
@@ -125,10 +72,10 @@ public class RescanJournalsMain {
         rescanJournals(forceFull);
     }
 
-	public static void rescanJournals(boolean forceFull) throws IOException {
+    public static void rescanJournals(boolean forceFull) throws IOException {
         EliteJournalReader reader = new EliteJournalReader();
-        
-		Path journalDirectory = reader.getJournalDirectory();
+
+        Path journalDirectory = reader.getJournalDirectory();
         Instant lastImport = null;
         if (!forceFull) {
             lastImport = readLastImportInstant(journalDirectory);
@@ -148,13 +95,12 @@ public class RescanJournalsMain {
             events = reader.readEventsSince(lastImport);
         }
 
-
         System.out.println("Loaded " + events.size() + " events from journal files.");
 
-        Map<SystemKey, SystemAccumulator> systems = new HashMap<>();
+        SystemCache cache = SystemCache.getInstance();
 
-        String currentSystemName = null;
-        long currentSystemAddress = 0L;
+        SystemState state = new SystemState();
+        SystemEventProcessor processor = new SystemEventProcessor(state);
 
         Instant newestEventTimestamp = lastImport;
 
@@ -164,140 +110,43 @@ public class RescanJournalsMain {
                 newestEventTimestamp = ts;
             }
 
+            // IMPORTANT:
+            // SystemEventProcessor.enterSystem(...) clears bodies when we jump/relocate to a new system.
+            // To avoid losing the previous system's accumulated state, persist BEFORE processing the
+            // Location/FSDJump that causes the reset.
             if (event instanceof LocationEvent) {
                 LocationEvent le = (LocationEvent) event;
-                currentSystemName = le.getStarSystem();
-                currentSystemAddress = le.getSystemAddress();
-                SystemKey key = new SystemKey(currentSystemAddress, currentSystemName);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyLocation(le);
-                if (le.getStarPos() != null)
-                	acc.starPos = le.getStarPos();
-
+                persistIfSystemIsChanging(cache, state, le.getStarSystem(), le.getSystemAddress());
             } else if (event instanceof FsdJumpEvent) {
                 FsdJumpEvent je = (FsdJumpEvent) event;
-                currentSystemName = je.getStarSystem();
-                currentSystemAddress = je.getSystemAddress();
-                SystemKey key = new SystemKey(currentSystemAddress, currentSystemName);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyFsdJump(je);
-                if (je.getStarPos() != null) {
-                	acc.starPos = je.getStarPos();
-                }
-
-            } else if (event instanceof FssDiscoveryScanEvent) {
-                FssDiscoveryScanEvent fds = (FssDiscoveryScanEvent) event;
-                String name = fds.getSystemName();
-                long addr = fds.getSystemAddress();
-                if (addr != 0L || name != null) {
-                    if (name != null) {
-                        currentSystemName = name;
-                    }
-                    if (addr != 0L) {
-                        currentSystemAddress = addr;
-                    }
-                }
-                SystemKey key = new SystemKey(currentSystemAddress, currentSystemName);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyFssDiscovery(fds);
-
-            } else if (event instanceof FssAllBodiesFoundEvent) {
-                FssAllBodiesFoundEvent fab = (FssAllBodiesFoundEvent) event;
-                long addr = fab.getSystemAddress();
-                String name = fab.getSystemName();
-                if (addr == 0L) {
-                    addr = currentSystemAddress;
-                }
-                if (name == null || name.isEmpty()) {
-                    name = currentSystemName;
-                }
-                SystemKey key = new SystemKey(addr, name);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyFssAllBodiesFound(fab);
-
-            } else if (event instanceof ScanEvent) {
-                ScanEvent se = (ScanEvent) event;
-                long addr = se.getSystemAddress();
-                String name = currentSystemName;
-                if (addr == 0L) {
-                    addr = currentSystemAddress;
-                }
-                SystemKey key = new SystemKey(addr, name);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyScan(se);
-
-            } else if (event instanceof FssBodySignalsEvent) {
-                FssBodySignalsEvent fb = (FssBodySignalsEvent) event;
-                long addr = fb.getSystemAddress();
-                String name = currentSystemName;
-                if (addr == 0L) {
-                    addr = currentSystemAddress;
-                }
-                SystemKey key = new SystemKey(addr, name);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applySignals(fb.getBodyId(), fb.getBodyName(), fb.getSignals());
-
-            } else if (event instanceof SaasignalsFoundEvent) {
-                SaasignalsFoundEvent sf = (SaasignalsFoundEvent) event;
-                long addr = sf.getSystemAddress();
-                String name = currentSystemName;
-                if (addr == 0L) {
-                    addr = currentSystemAddress;
-                }
-                SystemKey key = new SystemKey(addr, name);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyGenuses(sf.getBodyId(), sf.getBodyName(), sf.getGenuses());
-
-            } else if (event instanceof ScanOrganicEvent) {
-                ScanOrganicEvent so = (ScanOrganicEvent) event;
-                long addr = so.getSystemAddress();
-                String name = currentSystemName;
-                if (addr == 0L) {
-                    addr = currentSystemAddress;
-                }
-                SystemKey key = new SystemKey(addr, name);
-                SystemAccumulator acc = systems.computeIfAbsent(
-                        key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
-                acc.applyScanOrganic(so);
+                persistIfSystemIsChanging(cache, state, je.getStarSystem(), je.getSystemAddress());
             }
+
+            processor.handleEvent(event);
         }
 
-        SystemCache cache = SystemCache.getInstance();
-        int systemCount = 0;
-        int bodyCount = 0;
-
-        for (SystemAccumulator acc : systems.values()) {
-            if (acc.bodiesIsEmpty()) {
-                continue;
-            }
-            List<CachedBody> bodies = acc.toCachedBodies();
-
-            cache.put(
-                acc.systemAddress,
-                acc.systemName,
-                acc.starPos,
-                acc.totalBodies,
-                acc.nonBodyCount,
-                acc.fssProgress,
-                acc.allBodiesFound,
-                bodies
-            );
-            systemCount++;
-            bodyCount += bodies.size();
-        }
+        // Persist the final system (if valid)
+        cache.storeSystem(state);
 
         if (journalDirectory != null && newestEventTimestamp != null) {
             writeLastImportInstant(journalDirectory, newestEventTimestamp);
             System.out.println("Updated last journal import time to: " + newestEventTimestamp);
         }
 
-        System.out.println("Rescan complete. Cached " + bodyCount + " bodies in " + systemCount + " systems.");
-	}
+        System.out.println("Rescan complete.");
+    }
+
+    private static void persistIfSystemIsChanging(SystemCache cache, SystemState state, String nextName, long nextAddr) {
+        String curName = state.getSystemName();
+        long curAddr = state.getSystemAddress();
+
+        boolean sameName = nextName != null && nextName.equals(curName);
+        boolean sameAddr = nextAddr != 0L && nextAddr == curAddr;
+
+        if (sameName || sameAddr) {
+            return;
+        }
+
+        cache.storeSystem(state);
+    }
 }

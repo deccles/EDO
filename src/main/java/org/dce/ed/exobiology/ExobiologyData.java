@@ -111,7 +111,7 @@ public final class ExobiologyData {
         public final double tempKMax;
 
         /** Surface pressure (atm). Use NaN if unknown. */
-        public double pressure;
+        public Double pressure;
 
         /** True if volcanism is present. */
         public final boolean hasVolcanism;
@@ -154,7 +154,7 @@ public final class ExobiologyData {
                               AtmosphereType atmosphere,
                               double tempKMin,
                               double tempKMax,
-                              double pressure,
+                              Double pressure,
                               boolean hasVolcanism,
                               String volcanismType,
                               Map<String, Double> atmosphereComponents,
@@ -197,7 +197,7 @@ public final class ExobiologyData {
                               AtmosphereType atmosphere,
                               double tempKMin,
                               double tempKMax,
-                              double pressure,
+                              Double pressure,
                               boolean hasVolcanism,
                               String volcanismType) {
 
@@ -362,8 +362,9 @@ public final class ExobiologyData {
                 return false;
             }
 
-            if (name.equals("Frutexa Acus") && body.bodyName.equals(body.starSystem + " 4 a"))
-            		System.out.println("Found it");
+//            if (name.equals("Frutexa Acus") && body.bodyName.equals(body.starSystem + " 4 a")) {
+//            		System.out.println("Found it");
+//            }
             
             
             if (!bodyTypes.isEmpty() && (body.planetType == null || !bodyTypes.contains(body.planetType))) {
@@ -912,43 +913,49 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
      */
     public static final class BioCandidate {
 
-        private final SpeciesConstraint constraint;
+//        private final SpeciesConstraint constraint;
         private final double score;
-        private final String reason;
-
+//        private final String reason;
+        String genus = "";
+        String species = "";
+        Long baseValue;
+        
         public BioCandidate(SpeciesConstraint constraint, double score, String reason) {
-            this.constraint = constraint;
+        	genus = constraint.getGenus();
+        	species = constraint.getSpecies();
+        	baseValue = constraint.getBaseValue();
+        	
             this.score = score;
-            this.reason = reason;
+//            this.reason = reason;
         }
 
         public String getGenus() {
-            return constraint.getGenus();
+            return genus;
         }
 
         public String getSpecies() {
-            return constraint.getSpecies();
+            return species;
         }
 
         public String getDisplayName() {
-            return constraint.getGenus() + " " + constraint.getSpecies();
+            return genus + " " + species;
         }
 
         public long getBaseValue() {
-            return constraint.getBaseValue();
+            return baseValue;
         }
 
         public double getScore() {
             return score;
         }
 
-        public String getReason() {
-            return reason;
-        }
+//        public String getReason() {
+//            return reason;
+//        }
 
-        public SpeciesConstraint getConstraint() {
-            return constraint;
-        }
+//        public SpeciesConstraint getConstraint() {
+//            return constraint;
+//        }
 
         /**
          * Simple estimated payout based on Vista base value.
@@ -956,9 +963,9 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
          */
         public long getEstimatedPayout(boolean firstDiscovery) {
             if (firstDiscovery) {
-                return constraint.getBaseValue() * 5L;  // rough ED-style bump
+                return baseValue * 5L;  // rough ED-style bump
             }
-            return constraint.getBaseValue();
+            return baseValue;
         }
 
         @Override
@@ -966,8 +973,8 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
             return "BioCandidate{" +
                     "name='" + getDisplayName() + '\'' +
                     ", score=" + score +
-                    ", value=" + constraint.getBaseValue() +
-                    ", reason='" + reason + '\'' +
+                    ", value=" + baseValue +
+//                    ", reason='" + reason + '\'' +
                     '}';
         }
     }
@@ -1023,7 +1030,6 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
         if (attrs == null) {
             return Collections.emptyList();
         }
-
         List<BioCandidate> result = new ArrayList<>();
 
         for (SpeciesConstraint sc : CONSTRAINTS.values()) {
@@ -1036,7 +1042,7 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
                     continue;
                 }
 
-                double gScore = scoreInRange(attrs.gravity, rule.minGravity, rule.maxGravity);
+                Double gScore = scoreInRange(attrs.gravity, rule.minGravity, rule.maxGravity);
                 double tScore = scoreInRange(
                         0.5 * (attrs.tempKMin + attrs.tempKMax),
                         rule.minTempK,
@@ -1080,7 +1086,13 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
      * Simple helper to score how "central" x is within [min,max].
      * 1.0 at the midpoint, 0.0 at or outside the bounds.
      */
-    private static double scoreInRange(double x, double min, double max) {
+    private static double scoreInRange(Double x, Double min, Double max) {
+    	if (x == null)
+    		return 0.0;
+    	
+    	if (min == null || max == null)
+    		return 0.5;
+    	
         if (x < min || x > max) {
             return 0.0;
         }

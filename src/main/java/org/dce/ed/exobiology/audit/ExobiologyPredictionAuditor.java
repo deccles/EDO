@@ -128,7 +128,7 @@ public class ExobiologyPredictionAuditor {
                     display,
                     bc.getScore(),
                     bc.getBaseValue(),
-                    bc.getReason()
+                    ""//bc.getReason()
             ));
         }
 

@@ -514,9 +514,9 @@ public class RouteTabPanel extends JPanel {
 
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
-            if (entry.systemName.equals("Ploea Eurl ST-H d10-4")) {
-            	System.out.println("Found it");
-            }
+//            if (entry.systemName.equals("Ploea Eurl ST-H d10-4")) {
+//            	System.out.println("Found it");
+//            }
             if (bodies != null && bodies.bodies != null) {
                 int returnedBodies = bodies.bodies.size();
                 boolean hasBodies = returnedBodies > 0;

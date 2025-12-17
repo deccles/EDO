@@ -612,7 +612,7 @@ public class ExobiologyAuditMain {
                     display,
                     bc.getScore(),
                     bc.getBaseValue(),
-                    bc.getReason()
+                    ""//bc.getReason()
             ));
         }
 

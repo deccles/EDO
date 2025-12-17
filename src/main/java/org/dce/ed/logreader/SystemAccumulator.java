@@ -372,6 +372,10 @@ public class SystemAccumulator {
             cb.nebula = b.getNebula();
             cb.parentStar = b.getParentStar();
             
+            if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
+                cb.predictions= new ArrayList<>(b.getPredictions());
+            }
+            
             if (b.getObservedGenusPrefixes() != null
                     && !b.getObservedGenusPrefixes().isEmpty()) {
                 cb.observedGenusPrefixes = new HashSet<>(b.getObservedGenusPrefixes());

@@ -1,6 +1,9 @@
 package org.dce.ed.cache;
 
+import java.util.List;
 import java.util.Set;
+
+import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 
 /**
  * Represents one body as stored in the cache.
@@ -34,6 +37,8 @@ public class CachedBody {
     // NEW: raw EDSM discovery info
     public String discoveryCommander;
 
+    public List<BioCandidate> predictions;
+    
     // NEW: confirmed genera observed (ScanOrganic / DSS)
     public Set<String> observedGenusPrefixes;   // may be null if none known
     

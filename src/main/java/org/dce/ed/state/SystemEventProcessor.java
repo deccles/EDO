@@ -155,7 +155,6 @@ public class SystemEventProcessor {
         info.setLandable(e.isLandable());
         info.setGravityMS(e.getSurfaceGravity());
         
-        System.out.println("Setting surface pressure of " + e.getSurfacePressure());
         info.setSurfacePressure(e.getSurfacePressure());
         
         info.setAtmoOrType(chooseAtmoOrType(e));
@@ -173,7 +172,6 @@ public class SystemEventProcessor {
         if (e.getVolcanism() != null && !e.getVolcanism().isEmpty()) {
             info.setVolcanism(e.getVolcanism());
         }
-        System.out.println("adding body " + e.getBodyId());
         state.getBodies().put(e.getBodyId(), info);
         updatePredictions(info);
     }
