@@ -136,12 +136,12 @@ public class OverlayFrame extends JFrame {
         float scale = dpi / 96.0f;
 
         // 18px @ 100% feels good; clamp for sanity.
-        int px = Math.round(40.0f * scale);
+        int px = Math.round(18.0f * scale);
         if (px < 12) {
             px = 12;
         }
-        if (px > 50) {
-            px = 50;
+        if (px > 36) {
+            px = 36;
         }
         return px;
     }

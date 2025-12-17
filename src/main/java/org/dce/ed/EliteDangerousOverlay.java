@@ -10,6 +10,7 @@ import java.util.prefs.Preferences;
 import javax.swing.SwingUtilities;
 
 import org.dce.ed.logreader.RescanJournalsMain;
+import org.dce.ed.ui.PollyTtsCached;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
@@ -32,6 +33,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     }
 
     public static void main(String[] args) {
+    	PollyTtsCached.speak("Welcome to Elite Dangerous Overlay, commander villunus");
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");
     	
