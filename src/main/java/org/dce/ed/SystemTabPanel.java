@@ -66,7 +66,7 @@ public class SystemTabPanel extends JPanel {
     private final SystemBodiesTableModel tableModel;
 
     private final SystemState state = new SystemState();
-    private final SystemEventProcessor processor = new SystemEventProcessor(state);
+    private final SystemEventProcessor processor = new SystemEventProcessor(state, new EdsmClient());
 
     private final EdsmClient edsmClient = new EdsmClient();
 

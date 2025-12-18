@@ -6,6 +6,8 @@ import java.util.Locale;
 
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
+import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
@@ -30,9 +32,17 @@ import org.dce.ed.logreader.event.ScanOrganicEvent;
 public class SystemEventProcessor {
 
     private final SystemState state;
+    private final SystemCache systemCache;
+    private final EdsmClient edsmClient; // optional; may be null
 
     public SystemEventProcessor(SystemState state) {
+        this(state, null);
+    }
+
+    public SystemEventProcessor(SystemState state, EdsmClient edsmClient) {
         this.state = state;
+        this.edsmClient = edsmClient;
+        this.systemCache = SystemCache.getInstance();
     }
 
     /**
@@ -47,7 +57,6 @@ public class SystemEventProcessor {
 
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
-
             enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             return;
         }
@@ -71,7 +80,7 @@ public class SystemEventProcessor {
             handleFssBodySignals((FssBodySignalsEvent) event);
             return;
         }
-        
+
         if (event instanceof FssAllBodiesFoundEvent) {
             handleFssAllBodiesFound((FssAllBodiesFoundEvent) event);
             return;
@@ -99,7 +108,7 @@ public class SystemEventProcessor {
                 state.setSystemAddress(addr);
             }
             if (starPos != null) {
-            	state.setStarPos(starPos);
+                state.setStarPos(starPos);
             }
             return;
         }
@@ -108,17 +117,31 @@ public class SystemEventProcessor {
         state.setSystemName(name);
         state.setSystemAddress(addr);
         state.setStarPos(starPos);
+
         state.resetBodies();
         state.setTotalBodies(null);
         state.setNonBodyCount(null);
         state.setFssProgress(null);
-        
-//        for (BodyInfo b : state.getBodies().values()) {
-//            if (b.getStarPos() == null) {
-//                b.setStarPos(starPos);
-//            }
-//        }
-        
+        state.setAllBodiesFound(null);
+
+        // 1) Load from local cache (fast; gives you a body list even when FSS won't re-fire)
+        CachedSystem cs = systemCache.get(addr, name);
+        if (cs != null) {
+            systemCache.loadInto(state, cs);
+        }
+
+        // 2) Enrich from EDSM (best-effort; fills legacy gaps)
+        if (edsmClient != null && name != null && !name.isEmpty()) {
+            try {
+                BodiesResponse edsmBodies = edsmClient.showBodies(name);
+                if (edsmBodies != null) {
+                    systemCache.mergeBodiesFromEdsm(state, edsmBodies);
+                }
+            } catch (Exception ex) {
+                // best-effort only; never block system state updates
+                ex.printStackTrace();
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -148,24 +171,21 @@ public class SystemEventProcessor {
         }
 
         BodyInfo info = state.getOrCreateBody(e.getBodyId());
-        
-        
+
         info.setBodyId(e.getBodyId());
         info.setBodyName(e.getBodyName());
         info.setStarSystem(e.getStarSystem());
-        
+
         info.setBodyShortName(state.computeShortName(e.getStarSystem(), e.getBodyName()));
 
         info.setDistanceLs(e.getDistanceFromArrivalLs());
         info.setLandable(e.isLandable());
         info.setGravityMS(e.getSurfaceGravity());
-        
+
         info.setSurfacePressure(e.getSurfacePressure());
-        
+
         info.setAtmoOrType(chooseAtmoOrType(e));
         info.setHighValue(isHighValue(e));
-        
-
 
         info.setPlanetClass(e.getPlanetClass());
         info.setAtmosphere(e.getAtmosphere());
@@ -177,6 +197,7 @@ public class SystemEventProcessor {
         if (e.getVolcanism() != null && !e.getVolcanism().isEmpty()) {
             info.setVolcanism(e.getVolcanism());
         }
+
         state.getBodies().put(e.getBodyId(), info);
         updatePredictions(info);
     }
@@ -254,7 +275,6 @@ public class SystemEventProcessor {
             state.setSystemAddress(e.getSystemAddress());
         }
 
-        // If we don't already know the total bodies, use Count from this event.
         if (state.getTotalBodies() == null && e.getBodyCount() > 0) {
             state.setTotalBodies(e.getBodyCount());
         }
@@ -262,25 +282,20 @@ public class SystemEventProcessor {
         state.setAllBodiesFound(Boolean.TRUE);
     }
 
-    
     // ---------------------------------------------------------------------
     // ScanOrganic – the most important exobiology event
     // ---------------------------------------------------------------------
 
     private void handleScanOrganic(ScanOrganicEvent e) {
-    	// Tighten system address if needed
         if (e.getSystemAddress() != 0L && state.getSystemAddress() == 0L) {
             state.setSystemAddress(e.getSystemAddress());
         }
-
-        // If we don't know the system name yet but have a body name, infer it
-//        state.setSystemNameIfEmptyFromBodyName(e.getBodyName());
 
         BodyInfo info = state.getOrCreateBody(e.getBodyId());
         info.setHasBio(true);
 
         CachedSystem system = SystemCache.getInstance().get(e.getSystemAddress(), null);
-        // Make sure the body has a name / short name
+
         String bodyName = e.getBodyName();
         if (bodyName != null && !bodyName.isEmpty()) {
             if (info.getBodyName() == null || info.getBodyName().isEmpty()) {
@@ -291,20 +306,17 @@ public class SystemEventProcessor {
             }
         }
 
-        // --- Genus + species handling ---
         String genusName = firstNonBlank(e.getGenusLocalised(), e.getGenus());
         String speciesName = firstNonBlank(e.getSpeciesLocalised(), e.getSpecies());
 
         if (speciesName.contains(" ")) {
-        	speciesName = speciesName.split(" ")[1];
-        	System.out.println("Sketchy, is this the right place to do this?");
+            speciesName = speciesName.split(" ")[1];
+            System.out.println("Sketchy, is this the right place to do this?");
         }
-        
+
         if (genusName != null && !genusName.isEmpty()) {
-            // used for narrowing predictions
             info.addObservedGenusPrefix(genusName);
 
-            // "truth" display name: "Bacterium Nebulus", "Stratum Tectonicas", etc.
             String displayName;
             if (speciesName != null && !speciesName.isEmpty()) {
                 displayName = genusName + " " + speciesName;
@@ -325,23 +337,8 @@ public class SystemEventProcessor {
         return null;
     }
 
-    
     private static String toLower(String s) {
         return (s == null) ? "" : s.toLowerCase(java.util.Locale.ROOT);
-    }
-
-    private static boolean isEmpty(String s) {
-        return s == null || s.isEmpty();
-    }
-
-    private static String firstNonEmpty(String a, String b) {
-        if (a != null && !a.isEmpty()) {
-            return a;
-        }
-        if (b != null && !b.isEmpty()) {
-            return b;
-        }
-        return null;
     }
 
     // ---------------------------------------------------------------------
@@ -351,28 +348,27 @@ public class SystemEventProcessor {
     private void updatePredictions(BodyInfo info) {
         BodyAttributes attrs = info.buildBodyAttributes();
         if (attrs == null) {
-            return; // insufficient data
+            return;
         }
-        if (info.getPredictions() != null && info.getPredictions().size() > 0)
-        	return;
-        
+
+        if (info.getPredictions() != null && info.getPredictions().size() > 0) {
+            return;
+        }
+
         List<BioCandidate> candidates = ExobiologyData.predict(attrs);
         if (candidates == null || candidates.isEmpty()) {
             info.clearPredictions();
             return;
         }
 
-        // If we know specific observed genera, filter predictions
         if (info.getObservedGenusPrefixes() != null && !info.getObservedGenusPrefixes().isEmpty()) {
-            List<ExobiologyData.BioCandidate> filtered =
-                    new java.util.ArrayList<>();
+            List<BioCandidate> filtered = new java.util.ArrayList<>();
 
             for (ExobiologyData.BioCandidate cand : candidates) {
                 String lower = toLower(cand.getDisplayName());
                 boolean match = false;
                 for (String genusPrefix : info.getObservedGenusPrefixes()) {
-                    if (lower.startsWith(genusPrefix + " ")
-                            || lower.equals(genusPrefix)) {
+                    if (lower.startsWith(genusPrefix + " ") || lower.equals(genusPrefix)) {
                         match = true;
                         break;
                     }
@@ -387,29 +383,24 @@ public class SystemEventProcessor {
                 return;
             }
         }
-        
+
         BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
-        		Instant.now(),
-        		null,
-        		info.getBodyName(),
-        		info.getBodyId(),
-        		info.getStarSystem(),
-        		candidates);
-        		
+                Instant.now(),
+                null,
+                info.getBodyName(),
+                info.getBodyId(),
+                info.getStarSystem(),
+                candidates);
+
         LiveJournalMonitor.getInstance().dispatch(bioScanPredictionEvent);
-        
+
         info.setPredictions(candidates);
     }
 
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
-    /**
-     * Ensure this body has up-to-date exobiology predictions.
-     * Called whenever we either:
-     *  - process a detailed Scan, or
-     *  - learn that the body has biological signals.
-     */
+
     private boolean isBeltOrRing(String bodyName) {
         if (bodyName == null) {
             return false;
@@ -427,7 +418,10 @@ public class SystemEventProcessor {
         if (e.getPlanetClass() != null && !e.getPlanetClass().isEmpty()) {
             return e.getPlanetClass();
         }
-        return e.getStarType() != null ? e.getStarType() : "";
+        if (e.getStarType() != null) {
+            return e.getStarType();
+        }
+        return "";
     }
 
     private boolean isHighValue(ScanEvent e) {
@@ -438,5 +432,4 @@ public class SystemEventProcessor {
                 || pc.contains("ammonia world")
                 || tf.contains("terraformable");
     }
-
 }
