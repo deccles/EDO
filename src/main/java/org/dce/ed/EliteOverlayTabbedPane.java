@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map.Entry;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -29,6 +30,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
@@ -94,12 +96,10 @@ public class EliteOverlayTabbedPane extends JPanel {
         RouteTabPanel routeTab = new RouteTabPanel();
         SystemTabPanel systemTab = new SystemTabPanel();
         BiologyTabPanel biologyTab = new BiologyTabPanel();
-        LogTabPanel logTab = new LogTabPanel();
 
         cardPanel.add(routeTab, CARD_ROUTE);
         cardPanel.add(systemTab, CARD_SYSTEM);
         cardPanel.add(biologyTab, CARD_BIOLOGY);
-        cardPanel.add(logTab, CARD_LOG);
 
         systemButton.setSelected(true);
         systemTab.refreshFromCache();
@@ -147,7 +147,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         
         // Hook live journal monitoring into System tab (existing behavior)
         try {
-            org.dce.ed.logreader.LiveJournalMonitor monitor = org.dce.ed.logreader.LiveJournalMonitor.getInstance();
+            LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
 
             monitor.addListener(event -> {
             	
@@ -161,7 +161,7 @@ public class EliteOverlayTabbedPane extends JPanel {
                 }
                 
                 // Log tab (if you added a live handler there)
-                 logTab.handleLogEvent(event);
+//                 logTab.handleLogEvent(event);
 
                 // System tab
                  systemTab.handleLogEvent(event);

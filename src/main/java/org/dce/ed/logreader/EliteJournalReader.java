@@ -31,8 +31,8 @@ public class EliteJournalReader {
      * Use auto-detected journal directory (via OverlayPreferences / EliteLogFileLocator).
      * @throws IllegalStateException if the directory cannot be located.
      */
-    public EliteJournalReader() {
-        this(OverlayPreferences.resolveJournalDirectory());
+    public EliteJournalReader(String clientKey) {
+    	this(OverlayPreferences.resolveJournalDirectory(clientKey));
     }
 
     /**
@@ -208,15 +208,15 @@ public class EliteJournalReader {
         }
 
         ZoneId zone = ZoneId.systemDefault();
-        List<EliteLogEvent> filteredByDate =
-                events.stream()
-                        .filter(e -> {
-                            Instant ts = e.getTimestamp();
-                            LocalDate eventDate = ts.atZone(zone).toLocalDate();
-                            return eventDate.equals(date);
-                        })
-                        .sorted(Comparator.comparing(EliteLogEvent::getTimestamp))
-                        .collect(Collectors.toList());
+//        List<EliteLogEvent> filteredByDate =
+//                events.stream()
+//                        .filter(e -> {
+//                            Instant ts = e.getTimestamp();
+//                            LocalDate eventDate = ts.atZone(zone).toLocalDate();
+//                            return eventDate.equals(date);
+//                        })
+//                        .sorted(Comparator.comparing(EliteLogEvent::getTimestamp))
+//                        .collect(Collectors.toList());
 
         // Also consider Status.json if its timestamp matches the given date.
         Path status = EliteLogFileLocator.findStatusFile(journalDirectory);
@@ -225,17 +225,17 @@ public class EliteJournalReader {
                 String json = Files.readString(status, StandardCharsets.UTF_8);
                 EliteLogEvent statusEvent = parser.parseRecord(json);
                 Instant ts = statusEvent.getTimestamp();
-                LocalDate statusDate = ts.atZone(zone).toLocalDate();
-                if (statusDate.equals(date)) {
-                    filteredByDate.add(statusEvent);
-                    filteredByDate.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
-                }
+//                LocalDate statusDate = ts.atZone(zone).toLocalDate();
+//                if (statusDate.equals(date)) {
+                    events.add(statusEvent);
+                    events.sort(Comparator.comparing(EliteLogEvent::getTimestamp));
+//                }
             } catch (Exception ex) {
                 // ignore status parsing errors for this filtered view
             }
         }
 
-        return filteredByDate;
+        return events;
     }
 
     /**

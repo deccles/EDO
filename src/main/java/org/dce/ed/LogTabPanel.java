@@ -1,6 +1,8 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -8,6 +10,7 @@ import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.ComponentAdapter;
@@ -16,6 +19,8 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -26,6 +31,9 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -40,6 +48,7 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -47,9 +56,11 @@ import javax.swing.JToolBar;
 import javax.swing.JViewport;
 import javax.swing.KeyStroke;
 import javax.swing.RowFilter;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
@@ -67,6 +78,8 @@ import org.dce.ed.logreader.event.ReceiveTextEvent;
 import org.dce.ed.logreader.event.SaasignalsFoundEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.logreader.sim.JournalSimulator;
+import org.dce.ed.logreader.sim.JournalSimulatorPreferences;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -118,7 +131,20 @@ public class LogTabPanel extends JPanel {
     private RowFilter<TableModel, Integer> baseRowFilter;   // whatever your existing "Filter..." button sets
     private RowFilter<LogTableModel, Integer> searchRowFilter; // regex search filter
 
+ // --- Simulator ---
+    private JournalSimulator simulator;
+
+    private JButton simSetStartButton;
+    private JButton simStepButton;
+    private JButton simPlayButton;
+    private JButton simPauseButton;
+
+    private int simCurrentViewRow = -1;
+
     
+    private ScheduledExecutorService simExecutor;
+    private volatile boolean simRunning;
+
     /** A single row in the table: either an event or a message row (event == null). */
     private static class LogRow {
         final EliteLogEvent event; // may be null for info/error row
@@ -211,6 +237,9 @@ public class LogTabPanel extends JPanel {
             rows.add(row);
             fireTableRowsInserted(idx, idx);
         }
+    	public String getRawLineAt(int modelRow) {
+    	    return extractRawJournalLine(rows.get(modelRow).event);
+    	}
     }
 
     private final LogTableModel tableModel;
@@ -229,7 +258,7 @@ public class LogTabPanel extends JPanel {
 
         // Try to initialize the journal reader, but don't die if it fails.
         try {
-            this.journalReader = new EliteJournalReader();
+            this.journalReader = new EliteJournalReader(StandaloneLogViewer.clientKey);
             this.journalReaderAvailable = true;
         } catch (Exception ex) {
             this.journalReaderAvailable = false;
@@ -267,6 +296,29 @@ public class LogTabPanel extends JPanel {
         searchField.addActionListener(e -> applySearchFromField());
         toolBar.add(searchField);
 
+        
+        toolBar.add(Box.createHorizontalStrut(16));
+        toolBar.add(new JSeparator(SwingConstants.VERTICAL));
+        toolBar.add(Box.createHorizontalStrut(8));
+
+        simSetStartButton = new JButton("Set Start");
+        simStepButton = new JButton("Step");
+        simPlayButton = new JButton("Play");
+        simPauseButton = new JButton("Pause");
+
+        simPauseButton.setEnabled(false);
+
+        toolBar.add(simSetStartButton);
+        toolBar.add(Box.createHorizontalStrut(4));
+        toolBar.add(simStepButton);
+        toolBar.add(Box.createHorizontalStrut(4));
+        toolBar.add(simPlayButton);
+        toolBar.add(Box.createHorizontalStrut(4));
+        toolBar.add(simPauseButton);
+
+        
+        
+        
         add(toolBar, BorderLayout.NORTH);
 
 
@@ -384,6 +436,57 @@ public class LogTabPanel extends JPanel {
             }
         });
 
+        logTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(
+                    JTable table,
+                    Object value,
+                    boolean isSelected,
+                    boolean hasFocus,
+                    int row,
+                    int column) {
+
+                Component c = super.getTableCellRendererComponent(
+                        table, value, isSelected, hasFocus, row, column);
+
+                if (!isSelected) {
+                    if (row == simCurrentViewRow) {
+                        c.setBackground(new Color(255, 235, 200)); // simulator cursor
+                    } else {
+                        c.setBackground(Color.WHITE);
+                    }
+                }
+
+                return c;
+            }
+        });
+
+        
+        simSetStartButton.addActionListener(e -> {
+            buildSimulatorFromView();
+
+            int viewRow = logTable.getSelectedRow();
+            if (viewRow < 0)
+                return;
+
+            simulator.setCurrentIndex(viewRow);
+            syncCursorToSimulator();
+        });
+
+simStepButton.addActionListener(e -> {
+            try {
+                if (simulator.emitNext()) {
+                    syncCursorToSimulator();
+                }
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                stopSimulation();
+            }
+        });
+
+simPlayButton.addActionListener(e -> startSimulation());
+        simPauseButton.addActionListener(e -> stopSimulation());
+
         
         JScrollPane scrollPane = new JScrollPane(logTable);
         scrollPane.setPreferredSize(new Dimension(400, 600));
@@ -398,11 +501,81 @@ public class LogTabPanel extends JPanel {
 
         lockFirstTwoColumnsAndStretchLast(logTable, scrollPane);
         
+        buildSimulatorFromView();
+        
         // Initial date setup & load
         initAvailableDates();
         reloadLogs();
     }
+    private void buildSimulatorFromView() {
+        List<String> lines = new ArrayList<>();
 
+        int viewRowCount = logTable.getRowCount();
+        for (int viewRow = 0; viewRow < viewRowCount; viewRow++) {
+            int modelRow = logTable.convertRowIndexToModel(viewRow);
+            LogRow row = tableModel.getRow(modelRow);
+
+            if (row == null || row.event == null)
+                continue;
+
+            lines.add(extractRawJournalLine(row.event));
+        }
+
+        simulator = new JournalSimulator(lines);
+
+        try {
+            Path outDir = Paths.get(JournalSimulatorPreferences.getSimulatorOutputDir());
+            simulator.setOutputDirectory(outDir);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        simCurrentViewRow = -1;
+        logTable.repaint();
+    }
+
+    private void startSimulation() {
+        if (simRunning)
+            return;
+
+        simRunning = true;
+
+        simPlayButton.setEnabled(false);
+        simPauseButton.setEnabled(true);
+        simStepButton.setEnabled(false);
+
+        double seconds = JournalSimulatorPreferences.getSimulatorIntervalSeconds();
+        long delayMs = Math.max(1L, (long) (seconds * 1000.0));
+
+        simExecutor = Executors.newSingleThreadScheduledExecutor();
+        simExecutor.scheduleAtFixedRate(() -> {
+            try {
+                if (simulator.emitNext()) {
+                    SwingUtilities.invokeLater(this::syncCursorToSimulator);
+                } else {
+                    SwingUtilities.invokeLater(this::stopSimulation);
+                }
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                SwingUtilities.invokeLater(this::stopSimulation);
+            }
+        }, 0, delayMs, TimeUnit.MILLISECONDS);
+
+}
+
+    private void stopSimulation() {
+        simRunning = false;
+
+        if (simExecutor != null) {
+            simExecutor.shutdownNow();
+            simExecutor = null;
+        }
+
+        simPlayButton.setEnabled(true);
+        simPauseButton.setEnabled(false);
+        simStepButton.setEnabled(true);
+    }
+
+    
     private void showJsonPopup(EliteLogEvent event) {
         String pretty = toPrettyJson(event);
 
@@ -657,7 +830,7 @@ public class LogTabPanel extends JPanel {
         // Recreate the journal reader so Logging preferences (auto vs custom folder)
         // take effect each time we reload.
         try {
-            this.journalReader = new EliteJournalReader();
+            this.journalReader = new EliteJournalReader(StandaloneLogViewer.clientKey);
             this.journalReaderAvailable = true;
             this.journalReaderErrorMessage = null;
         } catch (Exception ex) {
@@ -731,6 +904,8 @@ public class LogTabPanel extends JPanel {
                 logTable.scrollRectToVisible(logTable.getCellRect(last, 0, true));
             }
         });
+        buildSimulatorFromView();
+        
     }
 
     /**
@@ -1211,10 +1386,11 @@ public class LogTabPanel extends JPanel {
 	    text = text.trim();
 
 	    if (text.isEmpty()) {
-	        searchRowFilter = null;
-	        rowSorter.setRowFilter(null);
-	        return;
-	    }
+            searchRowFilter = null;
+            rowSorter.setRowFilter(null);
+            buildSimulatorFromView();
+            return;
+        }
 
 	    final Pattern p;
 	    try {
@@ -1246,6 +1422,53 @@ public class LogTabPanel extends JPanel {
 	    };
 
 	    rowSorter.setRowFilter(searchRowFilter);
+        buildSimulatorFromView();
+    }
+	
+	private static final Gson GSON = new Gson();
+	private static String extractRawJournalLine(EliteLogEvent event) {
+		return GSON.toJson(event.getRawJson());
+	}
+	private void syncCursorToSimulator() {
+        if (simulator == null)
+            return;
+
+        int idx = simulator.getCurrentIndex();
+        if (idx < 0 || idx >= logTable.getRowCount()) {
+            simCurrentViewRow = -1;
+            logTable.repaint();
+            return;
+        }
+
+        setSimulatorCursor(idx);
+    }
+
+    private void setSimulatorCursor(int viewRow) {
+	    simCurrentViewRow = viewRow;
+	    repaintSimulatorCursor();
+	}
+
+	private void advanceSimulatorCursor() {
+	    if (simCurrentViewRow < 0)
+	        return;
+
+	    simCurrentViewRow++;
+
+	    if (simCurrentViewRow >= logTable.getRowCount()) {
+	        stopSimulation();
+	        return;
+	    }
+
+	    repaintSimulatorCursor();
+	}
+
+	private void repaintSimulatorCursor() {
+	    logTable.repaint();
+
+	    if (simCurrentViewRow >= 0 && simCurrentViewRow < logTable.getRowCount()) {
+	        Rectangle r = logTable.getCellRect(simCurrentViewRow, 0, true);
+	        logTable.scrollRectToVisible(r);
+	    }
 	}
 
 }

@@ -24,6 +24,7 @@ import javax.swing.border.EmptyBorder;
  */
 public class PreferencesDialog extends JDialog {
 
+	public final String clientKey;
     // Overlay-tab fields so OK can read them
     private JCheckBox overlayTransparentCheckBox;
 
@@ -51,8 +52,9 @@ public class PreferencesDialog extends JDialog {
             "Salli"
     };
     
-    public PreferencesDialog(OverlayFrame owner) {
+    public PreferencesDialog(OverlayFrame owner, String clientKey) {
         super(owner, "Overlay Preferences", true);
+        this.clientKey = clientKey;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         setMinimumSize(new Dimension(560, 380));
@@ -150,7 +152,7 @@ public class PreferencesDialog extends JDialog {
         autoDetectCheckBox.setOpaque(false);
 
         // Load current prefs
-        boolean auto = OverlayPreferences.isAutoLogDir();
+        boolean auto = OverlayPreferences.isAutoLogDir(clientKey);
         autoDetectCheckBox.setSelected(auto);
 
         content.add(journalLabel, gbc);
@@ -168,7 +170,7 @@ public class PreferencesDialog extends JDialog {
         pathPanel.setOpaque(false);
 
         customPathField = new JTextField(28);
-        customPathField.setText(OverlayPreferences.getCustomLogDir());
+        customPathField.setText(OverlayPreferences.getCustomLogDir(clientKey));
 
         JButton browseButton = new JButton("Browse.");
         browseButton.addActionListener(e -> {
@@ -366,9 +368,9 @@ public class PreferencesDialog extends JDialog {
         // Logging tab
         if (autoDetectCheckBox != null && customPathField != null) {
             boolean auto = autoDetectCheckBox.isSelected();
-            OverlayPreferences.setAutoLogDir(auto);
+            OverlayPreferences.setAutoLogDir(clientKey, auto);
             if (!auto) {
-                OverlayPreferences.setCustomLogDir(customPathField.getText().trim());
+                OverlayPreferences.setCustomLogDir(clientKey, customPathField.getText().trim());
             }
         }
 

@@ -35,13 +35,17 @@ import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.edsm.EdsmClient;
+import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.event.BioScanPredictionEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
+import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 
 /**
  * System tab – now a *pure UI* renderer.
@@ -66,7 +70,7 @@ public class SystemTabPanel extends JPanel {
     private final SystemBodiesTableModel tableModel;
 
     private final SystemState state = new SystemState();
-    private final SystemEventProcessor processor = new SystemEventProcessor(state, new EdsmClient());
+    private final SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state, new EdsmClient());
 
     private final EdsmClient edsmClient = new EdsmClient();
 
@@ -287,6 +291,18 @@ public class SystemTabPanel extends JPanel {
 
         // 2) If we jumped, do the heavy load/merge off the EDT,
         //    then refresh UI on the EDT.
+        if (event instanceof BioScanPredictionEvent) {
+        	BioScanPredictionEvent e = (BioScanPredictionEvent)event;
+        	
+        	List<BioCandidate> candidates = e.getCandidates();
+        	
+        	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
+        	ttsSprintf.speakf("{n} valuable species discovered on planetary body {body}",
+        			candidates.size(),
+        			e.getBodyName());
+
+        	
+        }
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
 
@@ -314,7 +330,7 @@ public class SystemTabPanel extends JPanel {
 
     public void refreshFromCache() {
         try {
-            EliteJournalReader reader = new EliteJournalReader();
+            EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
 
             String systemName = null;
             long systemAddress = 0L;

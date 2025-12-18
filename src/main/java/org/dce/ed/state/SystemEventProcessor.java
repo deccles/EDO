@@ -34,12 +34,14 @@ public class SystemEventProcessor {
     private final SystemState state;
     private final SystemCache systemCache;
     private final EdsmClient edsmClient; // optional; may be null
+	private String clientKey;
 
-    public SystemEventProcessor(SystemState state) {
-        this(state, null);
+    public SystemEventProcessor(String clientKey, SystemState state) {
+        this(clientKey, state, null);
     }
 
-    public SystemEventProcessor(SystemState state, EdsmClient edsmClient) {
+    public SystemEventProcessor(String clientKey, SystemState state, EdsmClient edsmClient) {
+    	this.clientKey = clientKey;
         this.state = state;
         this.edsmClient = edsmClient;
         this.systemCache = SystemCache.getInstance();
@@ -49,6 +51,7 @@ public class SystemEventProcessor {
      * Entry point: consume any event and update SystemState.
      */
     public void handleEvent(EliteLogEvent event) {
+    	System.out.println("Handle event :" + event);
         if (event instanceof LocationEvent) {
             LocationEvent e = (LocationEvent) event;
             enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
@@ -351,6 +354,9 @@ public class SystemEventProcessor {
             return;
         }
 
+//        System.out.println("Remove this line!!!");
+//        info.setPredictions(null);
+//        
         if (info.getPredictions() != null && info.getPredictions().size() > 0) {
             return;
         }
@@ -392,7 +398,7 @@ public class SystemEventProcessor {
                 info.getStarSystem(),
                 candidates);
 
-        LiveJournalMonitor.getInstance().dispatch(bioScanPredictionEvent);
+        LiveJournalMonitor.getInstance(clientKey).dispatch(bioScanPredictionEvent);
 
         info.setPredictions(candidates);
     }

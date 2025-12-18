@@ -42,23 +42,23 @@ public final class OverlayPreferences {
         PREFS.putBoolean(KEY_IS_OVERLAY_TRANSPARENT, transparent);
     }
 
-    public static boolean isAutoLogDir() {
-        return PREFS.getBoolean(KEY_LOG_AUTO, true);
+    public static boolean isAutoLogDir(String clientKey) {
+        return PREFS.getBoolean(KEY_LOG_AUTO + "." +clientKey, true);
     }
 
-    public static void setAutoLogDir(boolean auto) {
-        PREFS.putBoolean(KEY_LOG_AUTO, auto);
+    public static void setAutoLogDir(String clientKey, boolean auto) {
+        PREFS.putBoolean(KEY_LOG_AUTO + "." +clientKey, auto);
     }
 
-    public static String getCustomLogDir() {
-        return PREFS.get(KEY_LOG_CUSTOM_DIR, "");
+    public static String getCustomLogDir(String clientKey) {
+        return PREFS.get(KEY_LOG_CUSTOM_DIR + "." +clientKey, "");
     }
 
-    public static void setCustomLogDir(String path) {
+    public static void setCustomLogDir(String clientKey, String path) {
         if (path == null) {
             path = "";
         }
-        PREFS.put(KEY_LOG_CUSTOM_DIR, path);
+        PREFS.put(KEY_LOG_CUSTOM_DIR + "." +clientKey, path);
     }
 
     /**
@@ -67,12 +67,12 @@ public final class OverlayPreferences {
      * - Otherwise, try the custom path; if it looks valid, use it.
      * - If custom is invalid, fall back to the default journal folder.
      */
-    public static Path resolveJournalDirectory() {
-        if (isAutoLogDir()) {
+    public static Path resolveJournalDirectory(String clientKey) {
+        if (isAutoLogDir(clientKey)) {
             return EliteLogFileLocator.findDefaultJournalDirectory();
         }
 
-        String custom = getCustomLogDir();
+        String custom = getCustomLogDir(clientKey);
         if (custom != null && !custom.isBlank()) {
             Path p = Paths.get(custom.trim());
             if (Files.isDirectory(p) && EliteLogFileLocator.looksLikeJournalDirectory(p)) {

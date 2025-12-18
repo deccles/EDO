@@ -19,19 +19,12 @@ import org.dce.ed.logreader.LiveJournalMonitor;
  */
 public class StandaloneLogViewer {
 
-    public static void main(String[] args) {
-//        // Best-effort: keep Nimbus if available, otherwise leave default.
-//        try {
-//            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
-//                if ("Nimbus".equals(info.getName())) {
-//                    UIManager.setLookAndFeel(info.getClassName());
-//                    break;
-//                }
-//            }
-//        } catch (Exception ignored) {
-//            // no-op
-//        }
+    public static String clientKey = "LOG";
 
+	public static void main(String[] args) {
+		OverlayPreferences.setAutoLogDir(clientKey, true);
+		OverlayPreferences.setCustomLogDir(clientKey, "C:/Users/User/git-EliteDangerousOverlay/EDO/logs");
+		
         EventQueue.invokeLater(() -> {
             LogTabPanel panel = new LogTabPanel();
 
@@ -43,7 +36,7 @@ public class StandaloneLogViewer {
             frame.setLocationRelativeTo(null);
 
             // Live tail of the current journal file; feed into the same handler LogTabPanel uses.
-            LiveJournalMonitor monitor = LiveJournalMonitor.getInstance();
+            LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(clientKey);
             monitor.addListener((EliteLogEvent e) -> {
                 // Ensure all UI updates occur on the EDT
                 SwingUtilities.invokeLater(() -> panel.handleLogEvent(e));

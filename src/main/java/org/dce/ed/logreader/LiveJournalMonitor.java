@@ -8,13 +8,16 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.dce.ed.OverlayPreferences;
 import org.dce.ed.logreader.event.StatusEvent;
 
 import com.google.gson.JsonArray;
@@ -41,7 +44,7 @@ public final class LiveJournalMonitor {
     private int lastStatusFlags  = Integer.MIN_VALUE;
     private int lastStatusFlags2 = Integer.MIN_VALUE;
     
-    private static final LiveJournalMonitor INSTANCE = new LiveJournalMonitor();
+    private static Map<String,LiveJournalMonitor> INSTANCE = new HashMap<String,LiveJournalMonitor>();
 
     private final CopyOnWriteArrayList<Consumer<EliteLogEvent>> listeners =
             new CopyOnWriteArrayList<>();
@@ -50,12 +53,19 @@ public final class LiveJournalMonitor {
 
     private volatile boolean running = false;
     private Thread workerThread;
+    
+	private String clientKey;
 
-    private LiveJournalMonitor() {
+    private LiveJournalMonitor(String clientKey) {
+    	this.clientKey = clientKey;
     }
 
-    public static LiveJournalMonitor getInstance() {
-        return INSTANCE;
+    public static LiveJournalMonitor getInstance(String clientKey) {
+        LiveJournalMonitor liveJournalMonitor = INSTANCE.get(clientKey);
+        if (liveJournalMonitor == null) {
+        	INSTANCE.put(clientKey,  new LiveJournalMonitor(clientKey));
+        }
+        return INSTANCE.get(clientKey);
     }
 
     public void addListener(Consumer<EliteLogEvent> listener) {
@@ -92,7 +102,13 @@ public final class LiveJournalMonitor {
     }
 
     private void runLoop() {
-        Path journalDir = EliteLogFileLocator.findDefaultJournalDirectory();
+        Path journalDir = null;
+        
+        if (OverlayPreferences.isAutoLogDir(clientKey)) { 
+        	journalDir = EliteLogFileLocator.findDefaultJournalDirectory();
+        } else {
+        	journalDir = Path.of(OverlayPreferences.getCustomLogDir(clientKey));
+        }
         if (journalDir == null || !Files.isDirectory(journalDir)) {
             running = false;
             return;
@@ -107,7 +123,6 @@ public final class LiveJournalMonitor {
         while (running) {
             try {
                 Path latest = findLatestJournalFile(journalDir);
-
                 if (!Objects.equals(latest, currentFile)) {
                     // new or rotated file: start tailing from the end
                     currentFile = latest;
@@ -151,7 +166,6 @@ public final class LiveJournalMonitor {
         if (statusFile == null || !Files.isRegularFile(statusFile)) {
             return;
         }
-
         try {
             String json = Files.readString(statusFile, StandardCharsets.UTF_8).trim();
             if (json.isEmpty()) {

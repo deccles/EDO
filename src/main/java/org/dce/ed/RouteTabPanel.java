@@ -404,7 +404,7 @@ public class RouteTabPanel extends JPanel {
     }
 
     private void reloadFromNavRouteFile() {
-        Path dir = OverlayPreferences.resolveJournalDirectory();
+        Path dir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
         if (dir == null) {
             headerLabel.setText("No journal directory.");
             tableModel.setEntries(new ArrayList<>());

@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
@@ -66,7 +67,7 @@ public class ExobiologyAuditMain {
         System.out.println("Auditing exobiology predictions vs observed biology...");
         System.out.println("Using EliteJournalReader to scan all available journals...");
 
-        EliteJournalReader reader = new EliteJournalReader();
+        EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
         List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
 
         System.out.println("Loaded " + events.size() + " events from journal files.");

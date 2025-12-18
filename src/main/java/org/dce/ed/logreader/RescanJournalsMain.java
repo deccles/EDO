@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 
+import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
@@ -73,8 +74,7 @@ public class RescanJournalsMain {
     }
 
     public static void rescanJournals(boolean forceFull) throws IOException {
-        EliteJournalReader reader = new EliteJournalReader();
-
+        EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
         Path journalDirectory = reader.getJournalDirectory();
         Instant lastImport = null;
         if (!forceFull) {
@@ -100,7 +100,7 @@ public class RescanJournalsMain {
         SystemCache cache = SystemCache.getInstance();
 
         SystemState state = new SystemState();
-        SystemEventProcessor processor = new SystemEventProcessor(state);
+        SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state);
 
         Instant newestEventTimestamp = lastImport;
 
