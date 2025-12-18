@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.dce.ed.state.BodyInfo;
@@ -500,138 +501,148 @@ public class EdsmClient {
             return;
         }
 
-        // Update total body count if unknown
         if (state.getTotalBodies() == null) {
             state.setTotalBodies(edsm.bodies.size());
         }
 
-        Map<Integer, BodyInfo> localBodies = state.getBodies();
-        if (localBodies == null) {
+        Map<Integer, BodyInfo> local = state.getBodies();
+        if (local == null) {
             return;
         }
 
-        // Build quick access by ID and name
-        Map<Integer, BodyInfo> byId = new HashMap<>();
-        Map<String, BodyInfo> byName = new HashMap<>();
-
-        for (BodyInfo bi : localBodies.values()) {
-//            if (bi.getBodyId() != null) {
-                byId.put(bi.getBodyId(), bi);
-//            }
-
-            if (bi.getBodyName() != null && !bi.getBodyName().isEmpty()) {
-                byName.put(strip(bi.getBodyName()), bi);
+        // EDSM "parents" uses {"Star": <bodyId>} where that id corresponds to the same numeric id in the body list.
+        Map<Integer, String> starNameById = new HashMap<>();
+        for (BodiesResponse.Body b : edsm.bodies) {
+            if (b == null || b.type == null) {
+                continue;
+            }
+            if ("Star".equalsIgnoreCase(b.type)) {
+                Integer id = safeToInt(b.id);
+                if (id != null && b.name != null && !b.name.isEmpty()) {
+                    starNameById.put(id, b.name);
+                }
             }
         }
 
-        // Determine next synthetic ID
-        int nextSyntheticId = -1;
-        for (Integer id : localBodies.keySet()) {
-            if (id != null && id < nextSyntheticId) {
-                nextSyntheticId = id;
-            }
-        }
-        if (nextSyntheticId > -1) {
-            nextSyntheticId = -1;
-        } else {
-            nextSyntheticId = nextSyntheticId - 1;
-        }
-
-        // ----- MAIN MERGE LOOP -----
         for (BodiesResponse.Body remote : edsm.bodies) {
-            if (remote == null) continue;
-
-            BodyInfo local = null;
-
-            // 1) BEST: match by EDSM body ID
-            if ( byId.containsKey(remote.id)) {
-                local = byId.get(remote.id);
+            if (remote == null || remote.name == null || remote.name.isEmpty()) {
+                continue;
             }
 
-            // 2) FALLBACK: match by normalized name
-            if (local == null && remote.name != null) {
-                String rn = strip(remote.name);
-                if (byName.containsKey(rn)) {
-                    local = byName.get(rn);
+            Integer bodyId = safeToInt(remote.id);
+            if (bodyId == null) {
+                continue;
+            }
+
+            BodyInfo info = local.get(bodyId);
+            if (info == null) {
+                info = new BodyInfo();
+                info.setBodyId(bodyId);
+                local.put(bodyId, info);
+            }
+
+            // Identity / names
+            if (info.getBodyName() == null || info.getBodyName().isEmpty()) {
+                info.setBodyName(remote.name);
+            }
+
+            String sysName = state.getSystemName();
+            if ((sysName == null || sysName.isEmpty()) && edsm.name != null && !edsm.name.isEmpty()) {
+                sysName = edsm.name;
+                state.setSystemName(sysName);
+            }
+
+            if (sysName != null && !sysName.isEmpty()) {
+                info.setStarSystem(sysName);
+
+                if (info.getShortName() == null || info.getShortName().isEmpty()) {
+                    info.setBodyShortName(state.computeShortName(sysName, remote.name));
                 }
             }
 
-            // 3) If still null → create new BodyInfo
-            if (local == null) {
-                local = new BodyInfo();
-                local.setBodyId(nextSyntheticId);
-                local.setBodyName(remote.name);  // EDSM names are canonical
-                localBodies.put(nextSyntheticId, local);
-                byId.put(nextSyntheticId, local);
-                byName.put(strip(remote.name), local);
-                nextSyntheticId--;
+            // Best-effort: copy system starPos onto each body (EDSM doesn't provide it per body)
+            if (info.getStarPos() == null && state.getStarPos() != null) {
+                info.setStarPos(state.getStarPos());
             }
 
-            // ---------- MERGE FIELDS ----------
-
-            // Discovery commander
-            if ((local.getDiscoveryCommander() == null || local.getDiscoveryCommander().isEmpty()) &&
-                remote.discovery!= null && remote.discovery.commander != null
-                && remote.discovery.commander.length() > 0) {
-
-                local.setDiscoveryCommander(remote.discovery.commander);
+            // Fields you said were missing, but DO exist in the EDSM payload
+            if (remote.gravity != null) {
+                info.setGravityMS(remote.gravity);
             }
-
-            // Distance to arrival (ls)
-            if (remote.distanceToArrival != null) {
-                local.setDistanceLs(remote.distanceToArrival);
-            }
-            
-            local.setStarSystem(edsm.name);
-            
-            // Landable
             if (remote.isLandable != null) {
-                local.setLandable(remote.isLandable);
+                info.setLandable(remote.isLandable.booleanValue());
             }
-
-            // Gravity
-            if (remote.surfaceGravity != null) {
-                local.setGravityMS(remote.surfaceGravity);
-            }
-
-            if (remote.getSurfacePressure() != null) {
-            	local.setSurfacePressure(remote.getSurfacePressure());
-            }
-            
-            // Surface temperature
-            if (remote.surfaceTemperature != null) {
-                local.setSurfaceTempK(remote.surfaceTemperature);
-            }
-
-            // Atmosphere description
-            if (remote.atmosphereType != null && !remote.atmosphereType.isEmpty()) {
-                local.setAtmosphere(remote.atmosphereType);
-            }
-
-            // Volcanism / geology
-            if (remote.volcanismType != null && !remote.volcanismType.isEmpty()) {
-                local.setVolcanism(remote.volcanismType);
-            }
-
-            // Axial tilt
-            if (remote.axialTilt != null) {
-                local.setAxialTilt(remote.axialTilt);
-            }
-
-            // Radius (if your BodyInfo stores radius)
             if (remote.radius != null) {
-                local.setRadius(remote.radius);
+                info.setRadius(remote.radius);
+            }
+            if (remote.getSurfacePressure() != null) {
+                info.setSurfacePressure(remote.getSurfacePressure());
             }
 
-            // Rings (if desired)
-            // if (remote.rings != null) {
-            //     local.setRings(remote.rings);
-            // }
-            
-            if (remote.getSurfacePressure() != null) {
-            	local.setSurfacePressure(remote.getSurfacePressure());
+            // Planet class from EDSM subType (only makes sense for planets)
+            if ("Planet".equalsIgnoreCase(remote.type)
+                    && remote.subType != null
+                    && !remote.subType.isEmpty()) {
+                info.setPlanetClass(remote.subType);
+
+                // If you want a display fallback similar to your ScanEvent logic
+                if (info.getAtmoOrType() == null || info.getAtmoOrType().isEmpty()) {
+                    info.setAtmoOrType(remote.subType);
+                }
+            }
+
+            // Parent star: parents[].Star contains the star id (same numeric id as in the list)
+            if ((info.getParentStar() == null || info.getParentStar().isEmpty())
+                    && remote.parents != null
+                    && !remote.parents.isEmpty()) {
+                Integer parentStarId = null;
+                for (BodiesResponse.ParentRef p : remote.parents) {
+                    if (p != null && p.Star != null) {
+                        parentStarId = p.Star;
+                        break;
+                    }
+                }
+                if (parentStarId != null) {
+                    String parentStarName = starNameById.get(parentStarId);
+                    if (parentStarName != null && !parentStarName.isEmpty()) {
+                        info.setParentStar(parentStarName);
+                    }
+                }
+            }
+
+            // High-value heuristic (same as your ScanEvent-based logic)
+            String pc = toLower(remote.subType);
+            String tf = toLower(remote.terraformingState);
+            boolean highValue =
+                    pc.contains("earth-like")
+                            || pc.contains("water world")
+                            || pc.contains("ammonia world")
+                            || tf.contains("terraformable");
+            info.setHighValue(highValue);
+
+            // NOTE:
+            // hasBio / hasGeo are NOT in this EDSM body payload -> must come from journal events.
+            // nebula is NOT in this payload -> must come from your own system classification.
+        }
+    }
+
+    private static Integer safeToInt(long v) {
+        if (v < Integer.MIN_VALUE || v > Integer.MAX_VALUE) {
+            return null;
+        }
+        return (int) v;
+    }
+
+    private static String toLower(String s) {
+        return (s == null) ? "" : s.toLowerCase(Locale.ROOT);
+    }
+    private static BodyInfo findBodyByName(Map<Integer, BodyInfo> bodies, String name) {
+        for (BodyInfo b : bodies.values()) {
+            if (b != null && name.equals(b.getBodyName())) {
+                return b;
             }
         }
+        return null;
     }
 
     /** Utility to normalize names */
