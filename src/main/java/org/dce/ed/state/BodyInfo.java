@@ -6,10 +6,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
-import org.dce.ed.exobiology.ExobiologyData.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 
 /**
@@ -280,7 +280,7 @@ public class BodyInfo {
      * Convert this body into ExobiologyData.BodyAttributes.
      * Returns null if insufficient data is present.
      */
-    public ExobiologyData.BodyAttributes buildBodyAttributes() {
+    public BodyAttributes buildBodyAttributes() {
         double gravityG = Double.NaN;
         if (getGravityMS() != null && !Double.isNaN(getGravityMS())) {
             gravityG = getGravityMS() / 9.80665;
