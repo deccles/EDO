@@ -191,7 +191,6 @@ public final class SystemCache {
         save();
     }
 
-
     
     public void loadInto(SystemState state, CachedSystem cs) {
         if (state == null || cs == null) {
@@ -247,6 +246,7 @@ public final class SystemCache {
             }
             state.getBodies().put(info.getBodyId(), info);
         }
+        
     }
     /**
      * Merge EDSM bodies information into the current SystemState.
@@ -259,100 +259,157 @@ public final class SystemCache {
      * bodies that already exist in the SystemState and matches by name.
      */
     public void mergeBodiesFromEdsm(SystemState state, BodiesResponse edsm) {
-        if (state == null || edsm == null) {
+        if (state == null || edsm == null || edsm.bodies == null || edsm.bodies.isEmpty()) {
             return;
         }
 
         // If we don't already know how many bodies there are, use EDSM's list size.
-        if (state.getTotalBodies() == null && edsm.bodies != null) {
+        if (state.getTotalBodies() == null) {
             state.setTotalBodies(edsm.bodies.size());
         }
 
-        if (edsm.bodies == null || edsm.bodies.isEmpty()) {
+        // Build a lookup of star name by EDSM *bodyId* (NOT EDSM "id")
+        Map<Long, String> starNameByBodyId = new HashMap<>();
+        for (BodiesResponse.Body b : edsm.bodies) {
+            if (b == null) {
+                continue;
+            }
+            if (b.type != null && b.type.equalsIgnoreCase("Star")) {
+                starNameByBodyId.put(b.id, b.name);
+            }
+        }
+
+        Map<Integer, BodyInfo> local = state.getBodies();
+        if (local == null) {
             return;
         }
 
-        Map<Integer, BodyInfo> localBodies = state.getBodies();
-        if (localBodies == null || localBodies.isEmpty()) {
-            // For now we only enrich existing bodies (from logs/cache).
-            return;
-        }
-
-        for (BodyInfo local : localBodies.values()) {
-            String localName = local.getBodyName();
-            if (localName == null || localName.isEmpty()) {
+        for (BodiesResponse.Body remote : edsm.bodies) {
+            if (remote == null || remote.name == null || remote.name.isEmpty()) {
                 continue;
             }
 
-            Map<Long, String> starNameByBodyId = new HashMap<>();
-            for (BodiesResponse.Body b : edsm.bodies) {
-                if (b.id != 0L && b.type != null && b.type.equalsIgnoreCase("Star")) {
-                    starNameByBodyId.put(b.id, b.name);
+            // Prefer EDSM bodyId as the key (matches journal BodyID in practice)
+            Integer remoteBodyId = toBodyKey(remote.id);
+            BodyInfo info;
+
+            if (remoteBodyId != null) {
+                info = local.get(remoteBodyId);
+                if (info == null) {
+                    info = new BodyInfo();
+                    info.setBodyId(remoteBodyId);
+                    local.put(remoteBodyId, info);
+                }
+            } else {
+                // Fallback: id is missing/unusable, match by name or create synthetic id
+                info = findBodyByName(local, remote.name);
+                if (info == null) {
+                    info = new BodyInfo();
+                    info.setBodyId(-1 * (local.size() + 1));
+                    local.put(info.getBodyId(), info);
                 }
             }
-            BodiesResponse.Body remote = null;
-            for (BodiesResponse.Body b : edsm.bodies) {
-                if (localName.equals(b.name)) {
-                    remote = b;
-                    break;
+
+
+            // Basic identity fields
+            if (info.getBodyName() == null || info.getBodyName().isEmpty()) {
+                info.setBodyName(remote.name);
+            }
+
+            String sysName = state.getSystemName();
+            if (sysName == null || sysName.isEmpty()) {
+                sysName = edsm.name;
+                if (sysName != null && !sysName.isEmpty()) {
+                    state.setSystemName(sysName);
                 }
-                
             }
-            if (remote == null) {
-                continue;
+            if (sysName != null && !sysName.isEmpty()) {
+                info.setStarSystem(sysName);
+                if (info.getShortName() == null || info.getShortName().isEmpty()) {
+                    info.setBodyShortName(state.computeShortName(sysName, remote.name));
+                }
             }
-            if (local.getParentStar() == null && remote.parents != null) {
-                Integer parentStarId = null;
+
+            // Copy system starPos onto bodies (EDSM won't provide per-body starPos)
+            if (info.getStarPos() == null && state.getStarPos() != null) {
+                info.setStarPos(state.getStarPos());
+            }
+
+            // Landable / gravity / radius / surface pressure
+            if (remote.isLandable != null) {
+                info.setLandable(remote.isLandable.booleanValue());
+            }
+            if (remote.gravity != null) {
+                info.setGravityMS(remote.gravity);
+            }
+            if (remote.radius != null) {
+                info.setRadius(remote.radius);
+            }
+            if (remote.getSurfacePressure() != null) {
+                info.setSurfacePressure(remote.getSurfacePressure());
+            }
+
+            // Atmosphere / planet class
+            if (remote.atmosphereType != null && !remote.atmosphereType.isEmpty()) {
+                info.setAtmosphere(remote.atmosphereType);
+                if (info.getAtmoOrType() == null || info.getAtmoOrType().isEmpty()) {
+                    info.setAtmoOrType(remote.atmosphereType);
+                }
+            }
+            if (remote.subType != null && !remote.subType.isEmpty()
+                    && remote.type != null && remote.type.equalsIgnoreCase("Planet")) {
+                info.setPlanetClass(remote.subType);
+                if (info.getAtmoOrType() == null || info.getAtmoOrType().isEmpty()) {
+                    info.setAtmoOrType(remote.subType);
+                }
+            }
+
+            if ((info.getDistanceLs() <= 0 || Double.isNaN(info.getDistanceLs()))
+                    && remote.distanceToArrival != null) {
+                info.setDistanceLs(remote.distanceToArrival);
+            }
+            
+            // Parent star: EDSM parents list uses {"Star": <bodyId>}
+            if ((info.getParentStar() == null || info.getParentStar().isEmpty())
+                    && remote.parents != null && !remote.parents.isEmpty()) {
+                Integer parentStarBodyId = null;
                 for (BodiesResponse.ParentRef p : remote.parents) {
                     if (p != null && p.Star != null) {
-                        parentStarId = p.Star;
+                        parentStarBodyId = p.Star;
                         break;
                     }
                 }
-                if (parentStarId != null) {
-                    String parentStarName = starNameByBodyId.get(parentStarId);
-                    if (parentStarName != null) {
-                        local.setParentStar(parentStarName);
+                if (parentStarBodyId != null) {
+                    String parentStarName = starNameByBodyId.get(parentStarBodyId);
+                    if (parentStarName != null && !parentStarName.isEmpty()) {
+                        info.setParentStar(parentStarName);
                     }
                 }
             }
 
-            // ----- Discovery commander -----
-            String existingCmdr = local.getDiscoveryCommander();
-            if ((existingCmdr == null || existingCmdr.isEmpty())
-                    && remote.discovery.commander != null
-                    && !remote.discovery.commander.isEmpty()) {
-                local.setDiscoveryCommander(remote.discovery.commander);
-            }
-
-            // ----- Distance to arrival (Ls) -----
-//            if (local.getDistanceLs() == null && remote.distanceToArrival != null) {
-                local.setDistanceLs(remote.distanceToArrival);
-//            }
-
-            // ----- Surface temperature (K) -----
-            if (local.getSurfaceTempK() == null && remote.surfaceTemperature != null) {
-                local.setSurfaceTempK(remote.surfaceTemperature);
-            }
-
-            // ----- Volcanism string -----
-            if (local.getVolcanism() == null
-                    && remote.volcanismType != null
-                    && !remote.volcanismType.isEmpty()) {
-                local.setVolcanism(remote.volcanismType);
-            }
-
-            // ----- Atmosphere description -----
-            if (local.getAtmosphere() == null
-                    && remote.atmosphereType != null
-                    && !remote.atmosphereType.isEmpty()) {
-                local.setAtmosphere(remote.atmosphereType);
-            }
-
-            // NOTE: we intentionally do NOT touch landable / gravity / etc yet,
-            // because BodyInfo may already be populated from logs and we don't
-            // have a clear "unknown" sentinel. Easy to extend later if you want.
+            // High value (EDSM-only bodies won't hit your ScanEvent logic)
+            String pc = toLower(remote.subType);
+            String tf = toLower(remote.terraformingState);
+            boolean highValue =
+                    pc.contains("earth-like")
+                            || pc.contains("water world")
+                            || pc.contains("ammonia world")
+                            || tf.contains("terraformable");
+            info.setHighValue(highValue);
         }
+    }
+
+    private static BodyInfo findBodyByName(Map<Integer, BodyInfo> bodies, String name) {
+        for (BodyInfo b : bodies.values()) {
+            if (b != null && name.equals(b.getBodyName())) {
+                return b;
+            }
+        }
+        return null;
+    }
+
+    private static String toLower(String s) {
+        return (s == null) ? "" : s.toLowerCase(Locale.ROOT);
     }
 
     public void storeSystem(SystemState state) {
@@ -446,7 +503,20 @@ public final class SystemCache {
             // ignore; cache is best-effort
         }
     }
-    
+    private static Integer toBodyKey(Long id) {
+        if (id == null) {
+            return null;
+        }
+        long v = id.longValue();
+        if (v <= 0L) { // treat 0 / negatives as unusable
+            return null;
+        }
+        if (v < Integer.MIN_VALUE || v > Integer.MAX_VALUE) {
+            return null;
+        }
+        return (int) v;
+    }
+
     /**
      * Merge discovery information (from EDSM or other sources) into the
      * current SystemState, keyed by full body name.
