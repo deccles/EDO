@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 
 /**
@@ -172,7 +173,7 @@ public class SystemState {
                 continue;
             }
 
-            ExobiologyData.BodyAttributes attrs = b.buildBodyAttributes();
+            BodyAttributes attrs = b.buildBodyAttributes();
             if (attrs == null) {
                 b.clearPredictions();
                 continue;

@@ -416,7 +416,7 @@ public final class LiveJournalMonitor {
         return newPos;
     }
 
-    private void dispatch(EliteLogEvent event) {
+    public void dispatch(EliteLogEvent event) {
         for (Consumer<EliteLogEvent> l : listeners) {
             try {
                 l.accept(event);

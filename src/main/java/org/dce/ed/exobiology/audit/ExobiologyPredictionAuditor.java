@@ -10,13 +10,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
+import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
-import org.dce.ed.exobiology.ExobiologyData.BodyAttributes;
 import org.dce.ed.state.BodyInfo;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 /**
  * Utility to audit exobiology predictions vs. observed species.

@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.dce.ed.SystemTabPanel.Row;
+import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.state.BodyInfo;
 
@@ -44,7 +45,7 @@ final class BioTableBuilder {
 
             // If there are no predictions yet, try a one-shot calculation here
             if (preds == null || preds.isEmpty()) {
-            	ExobiologyData.BodyAttributes attrs = null;
+            	BodyAttributes attrs = null;
             	try {
             	    attrs = b.buildBodyAttributes();
             	} catch (RuntimeException ex) {

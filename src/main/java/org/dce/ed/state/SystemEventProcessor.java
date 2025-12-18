@@ -1,12 +1,17 @@
 package org.dce.ed.state;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
+import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
+import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.LiveJournalMonitor;
+import org.dce.ed.logreader.event.BioScanPredictionEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.event.FssBodySignalsEvent;
@@ -344,12 +349,14 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
 
     private void updatePredictions(BodyInfo info) {
-        ExobiologyData.BodyAttributes attrs = info.buildBodyAttributes();
+        BodyAttributes attrs = info.buildBodyAttributes();
         if (attrs == null) {
             return; // insufficient data
         }
-
-        List<ExobiologyData.BioCandidate> candidates = ExobiologyData.predict(attrs);
+        if (info.getPredictions() != null && info.getPredictions().size() > 0)
+        	return;
+        
+        List<BioCandidate> candidates = ExobiologyData.predict(attrs);
         if (candidates == null || candidates.isEmpty()) {
             info.clearPredictions();
             return;
@@ -380,7 +387,17 @@ public class SystemEventProcessor {
                 return;
             }
         }
-
+        
+        BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
+        		Instant.now(),
+        		null,
+        		info.getBodyName(),
+        		info.getBodyId(),
+        		info.getStarSystem(),
+        		candidates);
+        		
+        LiveJournalMonitor.getInstance().dispatch(bioScanPredictionEvent);
+        
         info.setPredictions(candidates);
     }
 
