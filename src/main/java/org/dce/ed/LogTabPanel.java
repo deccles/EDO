@@ -360,6 +360,31 @@ public class LogTabPanel extends JPanel {
             }
         });
 
+        logTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (!SwingUtilities.isLeftMouseButton(e))
+                    return;
+
+                if (e.getClickCount() != 2)
+                    return;
+
+                int viewRow = logTable.rowAtPoint(e.getPoint());
+                if (viewRow < 0)
+                    return;
+
+                logTable.setRowSelectionInterval(viewRow, viewRow);
+
+                int modelRow = logTable.convertRowIndexToModel(viewRow);
+                LogRow row = tableModel.getRow(modelRow);
+                if (row == null || row.event == null)
+                    return;
+
+                showJsonPopup(row.event);
+            }
+        });
+
+        
         JScrollPane scrollPane = new JScrollPane(logTable);
         scrollPane.setPreferredSize(new Dimension(400, 600));
         add(scrollPane, BorderLayout.CENTER);
