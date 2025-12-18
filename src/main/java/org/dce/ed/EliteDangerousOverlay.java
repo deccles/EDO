@@ -24,6 +24,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     private static final String PREF_WINDOW_Y = "windowY";
     private static final String PREF_WINDOW_WIDTH = "windowWidth";
     private static final String PREF_WINDOW_HEIGHT = "windowHeight";
+	public static String clientKey = "EDO";
 
     private final Preferences prefs;
     private final OverlayFrame overlayFrame;
@@ -36,8 +37,8 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     public static void main(String[] args) {
     	String commander = "villanous";
     	
-    	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
-    	ttsSprintf.speakf("{n} species discovered including one kickass {species}", 5, "stratum tectonicus");
+//    	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
+//    	ttsSprintf.speakf("{n} species discovered including one kickass {species}", 5, "stratum tectonicus");
     	
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");

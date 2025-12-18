@@ -14,12 +14,12 @@ import com.google.gson.JsonObject;
  * Backed by the journal "Scan" event.
  */
 public class BioScanPredictionEvent extends EliteLogEvent {
-	
-    private final String bodyName;
+
+	private final String bodyName;
     private final int bodyId;
     private final String starSystem;
     private final List<BioCandidate> candidates;
-
+    
     public BioScanPredictionEvent(Instant timestamp,
                      JsonObject rawJson,
                      String bodyName,
@@ -33,8 +33,12 @@ public class BioScanPredictionEvent extends EliteLogEvent {
         this.candidates = candidates;
     }
 
+    public List<BioCandidate> getCandidates() {
+		return candidates;
+	}
+    
 	public String getBodyName() {
-        return bodyName;
+        return bodyName.replaceAll(starSystem,  "");
     }
 
     public int getBodyId() {
