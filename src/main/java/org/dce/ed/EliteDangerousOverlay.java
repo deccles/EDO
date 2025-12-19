@@ -45,7 +45,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     	
     	try {
 			RescanJournalsMain.rescanJournals(false);
-		} catch (IOException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
     	

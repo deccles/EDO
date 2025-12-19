@@ -71,6 +71,7 @@ public class BodyInfo {
 	private Double surfacePressure;
 	private String parentStar;
 	private String nebula;
+	private int numberOfBioSignals;
     
     // ------------------------------------------------------------
     // Accessors
@@ -253,7 +254,10 @@ public class BodyInfo {
             getPredictions().clear();
         }
     }
-
+	public int getNumberOfBioSignals() {
+		return numberOfBioSignals;
+	}
+	
     public void setObservedGenusPrefixes(Set<String> observedGenusPrefixes) {
         this.observedGenusPrefixes = observedGenusPrefixes;
     }
@@ -396,6 +400,10 @@ public class BodyInfo {
 
 	public void setPredictions(ArrayList<BioCandidate> predictions) {
 		this.predictions = predictions;		
+	}
+
+	public void setNumberOfBioSignals(int num) {
+		numberOfBioSignals = num;
 	}
 
 }

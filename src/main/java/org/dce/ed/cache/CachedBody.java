@@ -38,11 +38,19 @@ public class CachedBody {
     public String discoveryCommander;
 
     public List<BioCandidate> predictions;
+    public int numberOfBioSignals;
     
     // NEW: confirmed genera observed (ScanOrganic / DSS)
     public Set<String> observedGenusPrefixes;   // may be null if none known
     
     // Full "truth" names like "Bacterium Nebulus", "Stratum Tectonicas", etc.
     public Set<String> observedBioDisplayNames;  // may be null
+
+	public int getNumberOfBioSignals() {
+		return numberOfBioSignals;
+	}
+	public void setNumberOfBioSignals(int i) {
+		this.numberOfBioSignals = i;
+	}
 
 }

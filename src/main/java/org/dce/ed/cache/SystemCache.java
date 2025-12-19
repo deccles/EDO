@@ -229,6 +229,7 @@ public final class SystemCache {
             info.setAtmosphere(cb.atmosphere);
             info.setSurfaceTempK(cb.surfaceTempK);
             info.setVolcanism(cb.volcanism);
+            info.setNumberOfBioSignals(cb.getNumberOfBioSignals());
             info.setDiscoveryCommander(cb.discoveryCommander);
 
             info.setNebula(cb.nebula);
@@ -248,21 +249,22 @@ public final class SystemCache {
         }
         
     }
+   
     /**
      * Merge EDSM bodies information into the current SystemState.
      *
-     * We treat BodiesResponse as the single source of truth for what EDSM
-     * knows about this system and enrich our local SystemState where we
-     * have gaps (bodyCount, discovery commander, some physical attributes).
-     *
-     * This does NOT create new BodyInfo entries yet; it only decorates
-     * bodies that already exist in the SystemState and matches by name.
+     * If allowEdsmStandalone is true, EDSM bodies may create new BodyInfo entries.
+     * If allowEdsmStandalone is false, EDSM bodies ONLY supplement existing local bodies:
+     *   - We match by EDSM bodyId (remote.id) / journal BodyID.
+     *   - If there is no local body with the same BodyID, the EDSM body is ignored.
      */
     public void mergeBodiesFromEdsm(SystemState state, BodiesResponse edsm) {
         if (state == null || edsm == null || edsm.bodies == null || edsm.bodies.isEmpty()) {
             return;
         }
 
+        boolean allowEdsmStandalone=false;
+        
         // If we don't already know how many bodies there are, use EDSM's list size.
         if (state.getTotalBodies() == null) {
             state.setTotalBodies(edsm.bodies.size());
@@ -291,17 +293,34 @@ public final class SystemCache {
 
             // Prefer EDSM bodyId as the key (matches journal BodyID in practice)
             Integer remoteBodyId = toBodyKey(remote.id);
-            BodyInfo info;
+            if (remoteBodyId == null) {
+                // If we can't determine a BodyID, we can't "same-id" match.
+                if (!allowEdsmStandalone) {
+                    continue;
+                }
+            }
+
+            BodyInfo info = null;
 
             if (remoteBodyId != null) {
                 info = local.get(remoteBodyId);
+
                 if (info == null) {
+                    if (!allowEdsmStandalone) {
+                        // EDSM can only supplement existing local bodies: drop unmatched.
+                        continue;
+                    }
                     info = new BodyInfo();
                     info.setBodyId(remoteBodyId);
                     local.put(remoteBodyId, info);
                 }
             } else {
-                // Fallback: id is missing/unusable, match by name or create synthetic id
+                // Fallback: id is missing/unusable
+                if (!allowEdsmStandalone) {
+                    continue;
+                }
+
+                // Standalone allowed: match by name or create synthetic id
                 info = findBodyByName(local, remote.name);
                 if (info == null) {
                     info = new BodyInfo();
@@ -309,7 +328,6 @@ public final class SystemCache {
                     local.put(info.getBodyId(), info);
                 }
             }
-
 
             // Basic identity fields
             if (info.getBodyName() == null || info.getBodyName().isEmpty()) {
@@ -368,7 +386,7 @@ public final class SystemCache {
                     && remote.distanceToArrival != null) {
                 info.setDistanceLs(remote.distanceToArrival);
             }
-            
+
             // Parent star: EDSM parents list uses {"Star": <bodyId>}
             if ((info.getParentStar() == null || info.getParentStar().isEmpty())
                     && remote.parents != null && !remote.parents.isEmpty()) {
@@ -380,7 +398,7 @@ public final class SystemCache {
                     }
                 }
                 if (parentStarBodyId != null) {
-                    String parentStarName = starNameByBodyId.get(parentStarBodyId);
+                    String parentStarName = starNameByBodyId.get(parentStarBodyId.longValue());
                     if (parentStarName != null && !parentStarName.isEmpty()) {
                         info.setParentStar(parentStarName);
                     }
@@ -443,7 +461,7 @@ public final class SystemCache {
             cb.surfacePressure = b.getSurfacePressure();
             cb.nebula = b.getNebula();
             cb.parentStar = b.getParentStar();
-            
+            cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
             if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
                 cb.predictions = b.getPredictions();
             }

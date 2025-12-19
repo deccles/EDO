@@ -257,6 +257,7 @@ public class SystemEventProcessor {
 
                 if (type.contains("biological") || loc.contains("biological")) {
                     info.setHasBio(true);
+                    info.setNumberOfBioSignals(s.getCount());
                 } else if (type.contains("geological") || loc.contains("geological")) {
                     info.setHasGeo(true);
                 }
@@ -393,6 +394,7 @@ public class SystemEventProcessor {
         BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
                 Instant.now(),
                 null,
+                
                 info.getBodyName(),
                 info.getBodyId(),
                 info.getStarSystem(),

@@ -728,6 +728,8 @@ simPlayButton.addActionListener(e -> startSimulation());
             }
         } catch (Exception ex) {
             System.err.println("[LogTabPanel] Failed to list available dates: " + ex.getMessage());
+            ex.printStackTrace();
+            
             availableDates = new ArrayList<>();
             currentDate = null;
             dateLabel.setText("-");
