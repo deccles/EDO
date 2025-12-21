@@ -51,7 +51,6 @@ public class SystemEventProcessor {
      * Entry point: consume any event and update SystemState.
      */
     public void handleEvent(EliteLogEvent event) {
-    	System.out.println("Handle event :" + event);
         if (event instanceof LocationEvent) {
             LocationEvent e = (LocationEvent) event;
             enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
@@ -175,6 +174,10 @@ public class SystemEventProcessor {
 
         BodyInfo info = state.getOrCreateBody(e.getBodyId());
 
+        if (info.getStarPos() == null && state.getStarPos() != null) {
+            info.setStarPos(state.getStarPos());
+        }
+        
         info.setBodyId(e.getBodyId());
         info.setBodyName(e.getBodyName());
         info.setStarSystem(e.getStarSystem());
@@ -202,7 +205,10 @@ public class SystemEventProcessor {
         }
 
         state.getBodies().put(e.getBodyId(), info);
-        updatePredictions(info);
+        
+        for (BodyInfo body : state.getBodies().values()) {
+        	updatePredictions(body);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -237,9 +243,10 @@ public class SystemEventProcessor {
                     info.addObservedGenus(genusName);
                 }
             }
+            updatePredictions(info);
         }
 
-        updatePredictions(info);
+
     }
 
     // ---------------------------------------------------------------------
@@ -258,13 +265,13 @@ public class SystemEventProcessor {
                 if (type.contains("biological") || loc.contains("biological")) {
                     info.setHasBio(true);
                     info.setNumberOfBioSignals(s.getCount());
+                    
                 } else if (type.contains("geological") || loc.contains("geological")) {
                     info.setHasGeo(true);
                 }
             }
-        }
 
-        updatePredictions(info);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -313,9 +320,8 @@ public class SystemEventProcessor {
         String genusName = firstNonBlank(e.getGenusLocalised(), e.getGenus());
         String speciesName = firstNonBlank(e.getSpeciesLocalised(), e.getSpecies());
 
-        if (speciesName.contains(" ")) {
-            speciesName = speciesName.split(" ")[1];
-            System.out.println("Sketchy, is this the right place to do this?");
+        if (speciesName.startsWith(genusName + " ")) {
+            speciesName = speciesName.replace(genusName,"").trim(); 
         }
 
         if (genusName != null && !genusName.isEmpty()) {
@@ -350,59 +356,63 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
 
     private void updatePredictions(BodyInfo info) {
-        BodyAttributes attrs = info.buildBodyAttributes();
-        if (attrs == null) {
-            return;
-        }
+    	if (!info.hasBio()) {
+    		return;
+    	}
+    	BodyAttributes attrs = info.buildBodyAttributes();
+    	if (attrs == null) {
+    		return;
+    	}
 
-//        System.out.println("Remove this line!!!");
-//        info.setPredictions(null);
-//        
-        if (info.getPredictions() != null && info.getPredictions().size() > 0) {
-            return;
-        }
+    	//        System.out.println("Remove this line!!!");
+    	//        info.setPredictions(null);
+    	//        
+    	//        if (info.getPredictions() != null && info.getPredictions().size() > 0) {
+    	//            return;
+    	//        }
 
-        List<BioCandidate> candidates = ExobiologyData.predict(attrs);
-        if (candidates == null || candidates.isEmpty()) {
-            info.clearPredictions();
-            return;
-        }
+    	List<BioCandidate> candidates = ExobiologyData.predict(attrs);
+    	if (candidates == null || candidates.isEmpty()) {
+    		info.clearPredictions();
+    		return;
+    	}
 
-        if (info.getObservedGenusPrefixes() != null && !info.getObservedGenusPrefixes().isEmpty()) {
-            List<BioCandidate> filtered = new java.util.ArrayList<>();
+    	if (info.getObservedGenusPrefixes() != null && !info.getObservedGenusPrefixes().isEmpty()) {
+    		List<BioCandidate> filtered = new java.util.ArrayList<>();
 
-            for (ExobiologyData.BioCandidate cand : candidates) {
-                String lower = toLower(cand.getDisplayName());
-                boolean match = false;
-                for (String genusPrefix : info.getObservedGenusPrefixes()) {
-                    if (lower.startsWith(genusPrefix + " ") || lower.equals(genusPrefix)) {
-                        match = true;
-                        break;
-                    }
-                }
-                if (match) {
-                    filtered.add(cand);
-                }
-            }
+    		for (ExobiologyData.BioCandidate cand : candidates) {
+    			String lower = toLower(cand.getDisplayName());
+    			boolean match = false;
+    			for (String genusPrefix : info.getObservedGenusPrefixes()) {
+    				if (lower.startsWith(genusPrefix + " ") || lower.equals(genusPrefix)) {
+    					match = true;
+    					break;
+    				}
+    			}
+    			if (match) {
+    				filtered.add(cand);
+    			}
+    		}
 
-            if (!filtered.isEmpty()) {
-                info.setPredictions(filtered);
-                return;
-            }
-        }
+    		if (!filtered.isEmpty()) {
+    			info.setPredictions(filtered);
+    			return;
+    		}
+    	}
+    	if (candidates.size() > 0) {
+    		BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
+    				Instant.now(),
+    				null,
 
-        BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
-                Instant.now(),
-                null,
-                
-                info.getBodyName(),
-                info.getBodyId(),
-                info.getStarSystem(),
-                candidates);
+    				info.getBodyName(),
+    				info.getBodyId(),
+    				info.getStarSystem(),
+    				candidates);
 
-        LiveJournalMonitor.getInstance(clientKey).dispatch(bioScanPredictionEvent);
+    		LiveJournalMonitor.getInstance(clientKey).dispatch(bioScanPredictionEvent);
 
-        info.setPredictions(candidates);
+    		info.setPredictions(candidates);
+    	}
     }
 
     // ---------------------------------------------------------------------

@@ -448,8 +448,17 @@ public class RouteTabPanel extends JPanel {
                         double x = pos.get(0).getAsDouble();
                         double y = pos.get(1).getAsDouble();
                         double z = pos.get(2).getAsDouble();
+
+                        entry.x = Double.valueOf(x);
+                        entry.y = Double.valueOf(y);
+                        entry.z = Double.valueOf(z);
+
                         coords.add(new double[] { x, y, z });
                     } else {
+                        entry.x = null;
+                        entry.y = null;
+                        entry.z = null;
+
                         coords.add(null);
                     }
                 }
@@ -703,23 +712,38 @@ public class RouteTabPanel extends JPanel {
     }
 
     private static final class RouteEntry {
-    	public RouteEntry() {
-    		
-    	}
-    	
-        public RouteEntry(int i, String systemNameIn, long systemAddressIn, String starClassIn, double dLy, ScanStatus scanStatusIn) {
-        	index = i;
-        	systemName = systemNameIn;
-        	systemAddress = systemAddressIn;
-        	starClass = starClassIn;
-        	distanceLy = dLy;
-        	status = scanStatusIn;
+        public RouteEntry() {
+
         }
-		int index;
+
+        public RouteEntry(int i, String systemNameIn, long systemAddressIn, String starClassIn, double dLy, ScanStatus scanStatusIn) {
+            index = i;
+            systemName = systemNameIn;
+            systemAddress = systemAddressIn;
+            starClass = starClassIn;
+            distanceLy = dLy;
+            status = scanStatusIn;
+        }
+
+        int index;
         String systemName;
         long systemAddress;
         String starClass;
+
+        /**
+         * StarPos coordinates (x,y,z) for this system, in Ly, when available (NavRoute.json provides these).
+         * Used for "straight line" distance calculations.
+         */
+        Double x;
+        Double y;
+        Double z;
+
+        /**
+         * Per-leg distance (Ly) from the previous entry to this entry.
+         * Null for the origin row.
+         */
         Double distanceLy;
+
         ScanStatus status;
     }
 
@@ -806,14 +830,16 @@ public class RouteTabPanel extends JPanel {
                 case COL_STATUS:
                     return e.status;
                 case COL_DISTANCE: {
+                    // Toggle locally while you iterate:
+                    // true  = along-track distance (sum of legs between current row and this row)
+                    // false = straight-line distance from current system to this system (uses StarPos)
+                    final boolean useAlongTrackDistance = true;
+
                     int currentRow = findCurrentSystemRow();
 
-                    // If we don't know where the current system is, keep old per-leg behavior
+                    // If we truly don't know where we are, don't guess.
                     if (currentRow < 0) {
-                        if (e.distanceLy == null) {
-                            return "";
-                        }
-                        return String.format("%.2f Ly", e.distanceLy.doubleValue());
+                        return "";
                     }
 
                     // Current system row: show blank
@@ -821,11 +847,27 @@ public class RouteTabPanel extends JPanel {
                         return "";
                     }
 
+                    if (!useAlongTrackDistance) {
+                        RouteEntry cur = entries.get(currentRow);
+                        RouteEntry dst = entries.get(rowIndex);
+
+                        if (cur.x == null || cur.y == null || cur.z == null
+                                || dst.x == null || dst.y == null || dst.z == null) {
+                            return "";
+                        }
+
+                        double dx = dst.x.doubleValue() - cur.x.doubleValue();
+                        double dy = dst.y.doubleValue() - cur.y.doubleValue();
+                        double dz = dst.z.doubleValue() - cur.z.doubleValue();
+                        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                        return String.format("%.2f Ly", dist);
+                    }
+
                     int from = Math.min(rowIndex, currentRow);
-                    int to   = Math.max(rowIndex, currentRow);
+                    int to = Math.max(rowIndex, currentRow);
 
                     double total = 0.0;
-                    boolean hasDistance = false;
 
                     // distanceLy at index i is the distance from (i-1) -> i
                     for (int i = from + 1; i <= to; i++) {
@@ -835,17 +877,11 @@ public class RouteTabPanel extends JPanel {
                             return "";
                         }
                         total += d.doubleValue();
-                        hasDistance = true;
-                    }
-
-                    if (!hasDistance) {
-                        return "";
                     }
 
                     return String.format("%.2f Ly", total);
                 }
-
-                default:
+default:
                     return "";
             }
         }
@@ -855,6 +891,20 @@ public class RouteTabPanel extends JPanel {
             if (newEntries != null) {
                 entries.addAll(newEntries);
             }
+
+            /*
+             * If we just plotted a route, we still want a deterministic "current row"
+             * even before we have a Location/FSD event to tell us where we are.
+             *
+             * - If currentSystemName is null, default to the origin (row 0).
+             * - If currentSystemName doesn't exist in the new route, also default to row 0.
+             */
+            if (!entries.isEmpty()) {
+                if (currentSystemName == null || findCurrentSystemRow() < 0) {
+                    currentSystemName = entries.get(0).systemName;
+                }
+            }
+
             fireTableDataChanged();
         }
         RouteEntry getEntries(int row) {

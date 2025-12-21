@@ -51,42 +51,42 @@ final class BioTableBuilder {
             	} catch (RuntimeException ex) {
             	    System.out.println("Bio attrs not ready for " + b.getShortName() + " (" + b.getBodyId() + "): " + ex);
             	}
-                if (attrs != null) {
-                    List<ExobiologyData.BioCandidate> base = ExobiologyData.predict(attrs);
-                    if (base != null && !base.isEmpty()) {
-                        // If we know which genera are present, narrow to those
-                        Set<String> genusPrefixes = b.getObservedGenusPrefixes();
-                        if (genusPrefixes != null && !genusPrefixes.isEmpty()) {
-                            Set<String> lower = new HashSet<>();
-                            for (String g : genusPrefixes) {
-                                if (g != null && !g.isEmpty()) {
-                                    lower.add(g.toLowerCase(Locale.ROOT));
-                                }
-                            }
-
-                            List<ExobiologyData.BioCandidate> filtered = new ArrayList<>();
-                            for (ExobiologyData.BioCandidate cand : base) {
-                                String nameLower = cand.getDisplayName()
-                                                       .toLowerCase(Locale.ROOT);
-                                boolean matches = false;
-                                for (String prefix : lower) {
-                                    if (nameLower.startsWith(prefix + " ")
-                                            || nameLower.equals(prefix)) {
-                                        matches = true;
-                                        break;
-                                    }
-                                }
-                                if (matches) {
-                                    filtered.add(cand);
-                                }
-                            }
-
-                            preds = filtered.isEmpty() ? base : filtered;
-                        } else {
-                            preds = base;
-                        }
-                    }
-                }
+//                if (attrs != null) {
+//                    List<ExobiologyData.BioCandidate> base = ExobiologyData.predict(attrs);
+//                    if (base != null && !base.isEmpty()) {
+//                        // If we know which genera are present, narrow to those
+//                        Set<String> genusPrefixes = b.getObservedGenusPrefixes();
+//                        if (genusPrefixes != null && !genusPrefixes.isEmpty()) {
+//                            Set<String> lower = new HashSet<>();
+//                            for (String g : genusPrefixes) {
+//                                if (g != null && !g.isEmpty()) {
+//                                    lower.add(g.toLowerCase(Locale.ROOT));
+//                                }
+//                            }
+//
+//                            List<ExobiologyData.BioCandidate> filtered = new ArrayList<>();
+//                            for (ExobiologyData.BioCandidate cand : base) {
+//                                String nameLower = cand.getDisplayName()
+//                                                       .toLowerCase(Locale.ROOT);
+//                                boolean matches = false;
+//                                for (String prefix : lower) {
+//                                    if (nameLower.startsWith(prefix + " ")
+//                                            || nameLower.equals(prefix)) {
+//                                        matches = true;
+//                                        break;
+//                                    }
+//                                }
+//                                if (matches) {
+//                                    filtered.add(cand);
+//                                }
+//                            }
+//
+//                            preds = filtered.isEmpty() ? base : filtered;
+//                        } else {
+//                            preds = base;
+//                        }
+//                    }
+//                }
             }
 
             Set<String> genusPrefixes = b.getObservedGenusPrefixes();

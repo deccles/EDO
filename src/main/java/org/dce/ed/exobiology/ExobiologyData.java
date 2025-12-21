@@ -383,20 +383,27 @@ public final class ExobiologyData {
                 }
             }
 
-            double[] starPos = body.starPos;
-            int regionId = RegionResolver.findRegionId(starPos[0], starPos[1]);
-            String regionName = RegionMapData.REGIONS[regionId].toLowerCase().replaceAll(" ", "-");
-            
             if (regions != null && !regions.isEmpty()) {
-                if (regionName == null) {
-                    warn("Rule requires region constraint but body.region was null");
-                    return false;
-                }
-                if (!RegionSlugMatcher.matchesAnySlug(regionId, regions)) {
-                    return false;
-                }
-            }
 
+
+            	double[] starPos = body.starPos;
+            	if (starPos == null || starPos.length < 2) {
+            		warn("Rule requires region constraint but body.starPos was null/short");
+            		return false;
+            	}
+            	int regionId = RegionResolver.findRegionId(starPos[0], starPos[1]);
+            	String regionName = RegionMapData.REGIONS[regionId].toLowerCase().replaceAll(" ", "-");
+
+            	if (regions != null && !regions.isEmpty()) {
+            		if (regionName == null) {
+            			warn("Rule requires region constraint but body.region was null");
+            			return false;
+            		}
+            		if (!RegionSlugMatcher.matchesAnySlug(regionId, regions)) {
+            			return false;
+            		}
+            	}
+            }
             
             if (starClasses != null && !starClasses.isEmpty()) {
                 if (body.starClass == null) {
