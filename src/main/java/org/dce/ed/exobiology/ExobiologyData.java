@@ -895,7 +895,72 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
     /* =====================================================================
      * Prediction
      * ===================================================================== */
+    public static List<BioCandidate> predict(BodyAttributes attrs, Set<String> allowedSpeciesKeys) {
+        if (allowedSpeciesKeys == null || allowedSpeciesKeys.isEmpty()) {
+            return predict(attrs);
+        }
 
+        if (attrs == null) {
+            return Collections.emptyList();
+        }
+
+        List<BioCandidate> result = new ArrayList<>();
+
+        for (SpeciesConstraint sc : CONSTRAINTS.values()) {
+            String key = sc.genus + " " + sc.species;
+            if (!allowedSpeciesKeys.contains(key)) {
+                continue;
+            }
+
+            SpeciesRule bestRule = null;
+            double bestScore = 0.0;
+            String bestReason = null;
+
+            for (SpeciesRule rule : sc.getRules()) {
+                if (!rule.matches(key, attrs)) {
+                    continue;
+                }
+
+                Double gScore = scoreInRange(attrs.gravity, rule.minGravity, rule.maxGravity);
+                double tScore = scoreInRange(
+                        0.5 * (attrs.tempKMin + attrs.tempKMax),
+                        rule.minTempK,
+                        rule.maxTempK
+                );
+
+                double score = 0.5 * (gScore + tScore);
+
+                String reason = String.format(
+                        Locale.ROOT,
+                        "gravity=%.3f (%.3f–%.3f); temp=%.0f–%.0f K (%.0f–%.0f); atmo=%s; score=%.3f",
+                        attrs.gravity, rule.minGravity, rule.maxGravity,
+                        attrs.tempKMin, attrs.tempKMax,
+                        rule.minTempK, rule.maxTempK,
+                        attrs.atmosphere,
+                        score
+                );
+
+                if (bestRule == null || score > bestScore) {
+                    bestRule = rule;
+                    bestScore = score;
+                    bestReason = reason;
+                }
+            }
+
+            if (bestRule != null) {
+                result.add(new BioCandidate(sc, bestScore, bestReason));
+            }
+        }
+
+        result.sort(
+                Comparator.comparingDouble(BioCandidate::getScore).reversed()
+                        .thenComparingLong(BioCandidate::getBaseValue).reversed()
+        );
+
+        return result;
+    }
+
+    
     /**
      * Predict possible exobiology candidates for the given body.
      * Returns a list sorted by descending score and then baseValue.
