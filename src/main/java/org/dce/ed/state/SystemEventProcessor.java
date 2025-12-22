@@ -368,9 +368,9 @@ public class SystemEventProcessor {
     	//        System.out.println("Remove this line!!!");
     	//        info.setPredictions(null);
     	//        
-    	//        if (info.getPredictions() != null && info.getPredictions().size() > 0) {
-    	//            return;
-    	//        }
+    	if (info.getPredictions() != null && info.getPredictions().size() > 0) {
+    		return;
+    	}
 
     	List<BioCandidate> candidates = ExobiologyData.predict(attrs);
     	if (candidates == null || candidates.isEmpty()) {
