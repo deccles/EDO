@@ -172,7 +172,7 @@ public class SystemEventProcessor {
             return;
         }
 
-        BodyInfo info = state.getOrCreateBody(e.getBodyId());
+        BodyInfo info = getOrCreateBody(e.getBodyId(), e.getBodyName());
 
         if (info.getStarPos() == null && state.getStarPos() != null) {
             info.setStarPos(state.getStarPos());
@@ -216,7 +216,7 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
 
     private void handleSaaSignals(SaasignalsFoundEvent e) {
-        BodyInfo info = state.getOrCreateBody(e.getBodyId());
+    	BodyInfo info = getOrCreateBody(e.getBodyId(), e.getBodyName());
 
         List<SaasignalsFoundEvent.Signal> signals = e.getSignals();
         if (signals != null) {
@@ -254,7 +254,7 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
 
     private void handleFssBodySignals(FssBodySignalsEvent e) {
-        BodyInfo info = state.getOrCreateBody(e.getBodyId());
+    	BodyInfo info = getOrCreateBody(e.getBodyId(), e.getBodyName());
 
         List<SaasignalsFoundEvent.Signal> signals = e.getSignals();
         if (signals != null) {
@@ -302,7 +302,7 @@ public class SystemEventProcessor {
             state.setSystemAddress(e.getSystemAddress());
         }
 
-        BodyInfo info = state.getOrCreateBody(e.getBodyId());
+        BodyInfo info = getOrCreateBody(e.getBodyId(), e.getBodyName());
         info.setHasBio(true);
 
         CachedSystem system = SystemCache.getInstance().get(e.getSystemAddress(), null);
@@ -334,6 +334,7 @@ public class SystemEventProcessor {
                 displayName = genusName;
             }
             info.addObservedBioDisplayName(displayName);
+            info.recordBioSample(displayName, e.getScanType());
         }
     }
 
@@ -450,4 +451,106 @@ public class SystemEventProcessor {
                 || pc.contains("ammonia world")
                 || tf.contains("terraformable");
     }
+    
+    private static int tempBodyKey(String bodyName) {
+        if (bodyName == null) {
+            return Integer.MIN_VALUE;
+        }
+
+        // Force negative so we never collide with real bodyIds (which are >= 0 in practice).
+        int h = bodyName.trim().toLowerCase(Locale.ROOT).hashCode();
+        return h | 0x80000000;
+    }
+
+    private BodyInfo getOrCreateBody(int bodyId, String bodyName) {
+        if (bodyId >= 0) {
+            // If we previously created a temp entry for this same body name, migrate it now.
+            migrateTempBodyIfPresent(bodyId, bodyName);
+            return state.getOrCreateBody(bodyId);
+        }
+
+        int key = tempBodyKey(bodyName);
+        return state.getOrCreateBody(key);
+    }
+
+    private void migrateTempBodyIfPresent(int realBodyId, String bodyName) {
+        if (bodyName == null || bodyName.isBlank()) {
+            return;
+        }
+
+        int tmpKey = tempBodyKey(bodyName);
+
+        BodyInfo tmp = state.getBodies().get(tmpKey);
+        if (tmp == null) {
+            return;
+        }
+
+        BodyInfo real = state.getBodies().get(realBodyId);
+
+        if (real == null) {
+            // Move temp -> real
+            state.getBodies().remove(tmpKey);
+            tmp.setBodyId(realBodyId);
+            state.getBodies().put(realBodyId, tmp);
+            return;
+        }
+
+        // Real already exists: merge a few fields then drop temp
+        // (Keep it minimal; merge only "additive" fields so we don't overwrite good data.)
+
+        if (real.getBodyName() == null && tmp.getBodyName() != null) {
+            real.setBodyName(tmp.getBodyName());
+        }
+        if (real.getStarSystem() == null && tmp.getStarSystem() != null) {
+            real.setStarSystem(tmp.getStarSystem());
+        }
+        if (Double.isNaN(real.getDistanceLs()) && !Double.isNaN(tmp.getDistanceLs())) {
+            real.setDistanceLs(tmp.getDistanceLs());
+        }
+        if (real.getGravityMS() == null && tmp.getGravityMS() != null) {
+            real.setGravityMS(tmp.getGravityMS());
+        }
+        if (real.getSurfaceTempK() == null && tmp.getSurfaceTempK() != null) {
+            real.setSurfaceTempK(tmp.getSurfaceTempK());
+        }
+        if (real.getSurfacePressure() == null && tmp.getSurfacePressure() != null) {
+            real.setSurfacePressure(tmp.getSurfacePressure());
+        }
+
+        if (!real.hasBio() && tmp.hasBio()) {
+            real.setHasBio(true);
+        }
+        if (!real.hasGeo() && tmp.hasGeo()) {
+            real.setHasGeo(true);
+        }
+        if (!real.isLandable() && tmp.isLandable()) {
+            real.setLandable(true);
+        }
+
+        if (real.getObservedGenusPrefixes() == null || real.getObservedGenusPrefixes().isEmpty()) {
+            if (tmp.getObservedGenusPrefixes() != null && !tmp.getObservedGenusPrefixes().isEmpty()) {
+                real.setObservedGenusPrefixes(new java.util.HashSet<>(tmp.getObservedGenusPrefixes()));
+            }
+        } else if (tmp.getObservedGenusPrefixes() != null) {
+            for (String g : tmp.getObservedGenusPrefixes()) {
+                real.addObservedGenus(g);
+            }
+        }
+
+        if (tmp.getObservedBioDisplayNames() != null) {
+            for (String n : tmp.getObservedBioDisplayNames()) {
+                real.addObservedBioDisplayName(n);
+            }
+        }
+
+        // If temp had predictions and real doesn't yet, copy them
+        if ((real.getPredictions() == null || real.getPredictions().isEmpty())
+                && tmp.getPredictions() != null
+                && !tmp.getPredictions().isEmpty()) {
+            real.setPredictions(tmp.getPredictions());
+        }
+
+        state.getBodies().remove(tmpKey);
+    }
+
 }

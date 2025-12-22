@@ -1,9 +1,12 @@
 package org.dce.ed.state;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.dce.ed.exobiology.BodyAttributes;
@@ -72,7 +75,10 @@ public class BodyInfo {
 	private String parentStar;
 	private String nebula;
 	private int numberOfBioSignals;
-    
+	// Odyssey exobiology sample progress per species (1..3).
+	// Key should be the display name you show in the Bio table (canonicalized if you do that elsewhere).
+	private final Map<String, Integer> bioSampleCountsByDisplayName = new HashMap<>();
+
     // ------------------------------------------------------------
     // Accessors
     // ------------------------------------------------------------
@@ -184,6 +190,55 @@ public class BodyInfo {
         return getDiscoveryCommander() != null && !getDiscoveryCommander().isBlank();
     }
 
+    public int getBioSampleCount(String displayName) {
+        if (displayName == null) {
+            return 0;
+        }
+        String key = canonBioName(displayName);
+        return bioSampleCountsByDisplayName.getOrDefault(key, 0);
+    }
+
+    public boolean hasAnyBioSamples() {
+        for (Integer v : bioSampleCountsByDisplayName.values()) {
+            if (v != null && v.intValue() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Records a new sample for this species.
+     *
+     * ScanType behavior:
+     *  - "Log" typically occurs for each sample taken.
+     *  - "Analyse" indicates completion (3/3).
+     */
+    public void recordBioSample(String displayName, String scanType) {
+        if (displayName == null || displayName.isBlank()) {
+            return;
+        }
+
+        String key = canonBioName(displayName);
+
+        int current = bioSampleCountsByDisplayName.getOrDefault(key, 0);
+        int next = current;
+
+        if (scanType != null) {
+            String st = scanType.toLowerCase(Locale.ROOT);
+            if ("analyse".equals(st) || "analyze".equals(st)) {
+                next = 3;
+            } else if ("log".equals(st)) {
+                next = Math.min(3, current + 1);
+            }
+        } else {
+            next = Math.min(3, current + 1);
+        }
+
+        if (next != current) {
+            bioSampleCountsByDisplayName.put(key, next);
+        }
+    }
 
     // ------------------------------------------------------------
     // Mutators
@@ -254,7 +309,7 @@ public class BodyInfo {
             getPredictions().clear();
         }
     }
-	public int getNumberOfBioSignals() {
+	public Integer getNumberOfBioSignals() {
 		return numberOfBioSignals;
 	}
 	
@@ -405,5 +460,65 @@ public class BodyInfo {
 	public void setNumberOfBioSignals(int num) {
 		numberOfBioSignals = num;
 	}
+	
+	private static String canonBioName(String raw) {
+	    if (raw == null) {
+	        return "";
+	    }
+	    String s = raw.trim();
+	    if (s.isEmpty()) {
+	        return s;
+	    }
+
+	    String[] parts = s.split("\\s+");
+	    if (parts.length >= 3 && parts[0].equalsIgnoreCase(parts[1])) {
+	        StringBuilder sb = new StringBuilder(parts[0]);
+	        for (int i = 2; i < parts.length; i++) {
+	            sb.append(' ').append(parts[i]);
+	        }
+	        return sb.toString();
+	    }
+
+	    return s;
+	}
+	public Map<String, Integer> getBioSampleCountsSnapshot() {
+	    if (bioSampleCountsByDisplayName.isEmpty()) {
+	        return Collections.emptyMap();
+	    }
+	    return new HashMap<>(bioSampleCountsByDisplayName);
+	}
+
+	public void setBioSampleCounts(Map<String, Integer> counts) {
+	    bioSampleCountsByDisplayName.clear();
+
+	    if (counts == null || counts.isEmpty()) {
+	        return;
+	    }
+
+	    for (Map.Entry<String, Integer> e : counts.entrySet()) {
+	        String key = e.getKey();
+	        if (key == null || key.isBlank()) {
+	            continue;
+	        }
+
+	        Integer vObj = e.getValue();
+	        if (vObj == null) {
+	            continue;
+	        }
+
+	        int v = vObj.intValue();
+	        if (v <= 0) {
+	            continue;
+	        }
+
+	        // Clamp to 1..3
+	        if (v > 3) {
+	            v = 3;
+	        }
+
+	        bioSampleCountsByDisplayName.put(key, Integer.valueOf(v));
+	    }
+	}
+
 
 }

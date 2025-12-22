@@ -235,6 +235,10 @@ public final class SystemCache {
             info.setNebula(cb.nebula);
             info.setParentStar(cb.parentStar);
             
+            if (cb.bioSampleCountsByDisplayName != null && !cb.bioSampleCountsByDisplayName.isEmpty()) {
+                info.setBioSampleCounts(cb.bioSampleCountsByDisplayName);
+            }
+            
             if (cb.predictions != null && !cb.predictions.isEmpty()) {
                 info.setPredictions(new ArrayList<BioCandidate>(cb.predictions));
             }
@@ -464,6 +468,13 @@ public final class SystemCache {
             cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
             if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
                 cb.predictions = b.getPredictions();
+            }
+            
+            Map<String, Integer> counts = b.getBioSampleCountsSnapshot();
+            if (counts != null && !counts.isEmpty()) {
+                cb.bioSampleCountsByDisplayName = counts;
+            } else {
+                cb.bioSampleCountsByDisplayName = null;
             }
             
             if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {

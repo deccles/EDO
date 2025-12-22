@@ -1,8 +1,6 @@
 package org.dce.ed;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,15 +19,39 @@ final class BioTableBuilder {
         // utility
     }
 
-    static List<Row> buildRows(Collection<BodyInfo> bodies) {
+    static List<Row> buildRows(java.util.Collection<BodyInfo> bodies) {
         return buildRows(bodies, false);
     }
 
-    static List<Row> buildRows(Collection<BodyInfo> bodies, boolean shouldCollapse) {
+    static List<Row> buildRows(java.util.Collection<BodyInfo> bodies, boolean shouldCollapse) {
         List<BodyInfo> sorted = new ArrayList<>(bodies);
-        sorted.sort(Comparator.comparingDouble(b -> Double.isNaN(b.getDistanceLs())
-                ? Double.MAX_VALUE
-                : b.getDistanceLs()));
+
+        // Sorting priority:
+        //   1) Any body that has an on-foot sampled biological (green rows)
+        //      should float to the top.
+        //   2) Otherwise, sort by maximum predicted (or confirmed) payout
+        //      descending.
+        //   3) Tie-breaker: distance from arrival ascending.
+        sorted.sort((a, b) -> {
+            boolean aObserved = hasObservedSample(a);
+            boolean bObserved = hasObservedSample(b);
+
+            if (aObserved != bObserved) {
+                return aObserved ? -1 : 1;
+            }
+
+            long aVal = maxBioValue(a);
+            long bVal = maxBioValue(b);
+
+            int cmp = Long.compare(bVal, aVal);
+            if (cmp != 0) {
+                return cmp;
+            }
+
+            double aDist = Double.isNaN(a.getDistanceLs()) ? Double.MAX_VALUE : a.getDistanceLs();
+            double bDist = Double.isNaN(b.getDistanceLs()) ? Double.MAX_VALUE : b.getDistanceLs();
+            return Double.compare(aDist, bDist);
+        });
 
         List<Row> rows = new ArrayList<>();
 
@@ -45,48 +67,14 @@ final class BioTableBuilder {
 
             // If there are no predictions yet, try a one-shot calculation here
             if (preds == null || preds.isEmpty()) {
-            	BodyAttributes attrs = null;
-            	try {
-            	    attrs = b.buildBodyAttributes();
-            	} catch (RuntimeException ex) {
-            	    System.out.println("Bio attrs not ready for " + b.getShortName() + " (" + b.getBodyId() + "): " + ex);
-            	}
-//                if (attrs != null) {
-//                    List<ExobiologyData.BioCandidate> base = ExobiologyData.predict(attrs);
-//                    if (base != null && !base.isEmpty()) {
-//                        // If we know which genera are present, narrow to those
-//                        Set<String> genusPrefixes = b.getObservedGenusPrefixes();
-//                        if (genusPrefixes != null && !genusPrefixes.isEmpty()) {
-//                            Set<String> lower = new HashSet<>();
-//                            for (String g : genusPrefixes) {
-//                                if (g != null && !g.isEmpty()) {
-//                                    lower.add(g.toLowerCase(Locale.ROOT));
-//                                }
-//                            }
-//
-//                            List<ExobiologyData.BioCandidate> filtered = new ArrayList<>();
-//                            for (ExobiologyData.BioCandidate cand : base) {
-//                                String nameLower = cand.getDisplayName()
-//                                                       .toLowerCase(Locale.ROOT);
-//                                boolean matches = false;
-//                                for (String prefix : lower) {
-//                                    if (nameLower.startsWith(prefix + " ")
-//                                            || nameLower.equals(prefix)) {
-//                                        matches = true;
-//                                        break;
-//                                    }
-//                                }
-//                                if (matches) {
-//                                    filtered.add(cand);
-//                                }
-//                            }
-//
-//                            preds = filtered.isEmpty() ? base : filtered;
-//                        } else {
-//                            preds = base;
-//                        }
-//                    }
-//                }
+                BodyAttributes attrs = null;
+                try {
+                    attrs = b.buildBodyAttributes();
+                } catch (RuntimeException ex) {
+                    System.out.println("Bio attrs not ready for " + b.getShortName() + " (" + b.getBodyId() + "): " + ex);
+                }
+                // Intentionally not doing one-shot compute here (you were experimenting with this).
+                // Predictions should normally already be present on BodyInfo via SystemEventProcessor.
             }
 
             Set<String> genusPrefixes = b.getObservedGenusPrefixes();
@@ -114,7 +102,6 @@ final class BioTableBuilder {
 
             //
             // CASE A: Predictions only, no genus info from scan yet.
-            //   -> collapse by genus: "Genus (n)" with max value.
             //
             if (!hasGenusPrefixes && !hasObservedNames) {
 
@@ -168,7 +155,6 @@ final class BioTableBuilder {
 
                     return aName.compareToIgnoreCase(bName);
                 });
-
 
                 if (!shouldCollapse) {
                     for (BioRowData br : bioRows) {
@@ -231,11 +217,6 @@ final class BioTableBuilder {
 
             //
             // CASE B: We have genus info and/or observed species.
-            //   -> Expand by genus, then species.
-            //   Rules:
-            //     - For a genus with confirmed species: show ONLY confirmed species rows
-            //       (truth replaces predictions for that genus).
-            //     - For a genus with no confirmed species: show predicted species.
             //
 
             // Predictions indexed by canonical name and genus
@@ -293,8 +274,28 @@ final class BioTableBuilder {
                 }
             }
 
+            // Sort genus blocks by value, with any confirmed (green) genus first.
+            // This keeps already-sampled biology at the top even if the payout is lower.
+            genusOrder.sort((g1, g2) -> {
+                boolean g1Observed = isGenusObserved(confirmedByGenus.get(g1));
+                boolean g2Observed = isGenusObserved(confirmedByGenus.get(g2));
+
+                if (g1Observed != g2Observed) {
+                    return g1Observed ? -1 : 1;
+                }
+
+                long g1Val = genusMaxValue(g1, predictedByGenus, predictedByCanonName, confirmedByGenus);
+                long g2Val = genusMaxValue(g2, predictedByGenus, predictedByCanonName, confirmedByGenus);
+
+                int cmp = Long.compare(g2Val, g1Val);
+                if (cmp != 0) {
+                    return cmp;
+                }
+
+                return g1.compareToIgnoreCase(g2);
+            });
+
             if (genusOrder.isEmpty()) {
-                // Should be rare, but fall back to generic message
                 rows.add(Row.bio(b.getBodyId(),
                         "Biological signals detected",
                         ""));
@@ -309,11 +310,8 @@ final class BioTableBuilder {
                         (confirmedForGenus != null && !confirmedForGenus.isEmpty()) ||
                         (predictedForGenus != null && !predictedForGenus.isEmpty());
 
-                // If we *only* know the genus name and have no species/predictions,
-                // show a single genus row (very rare).
                 if (!hasAnySpecies) {
                     String displayGenus;
-                    // Fall back to capitalized key (since we have no examples)
                     if (genusKey.isEmpty()) {
                         displayGenus = genusKey;
                     } else {
@@ -323,10 +321,6 @@ final class BioTableBuilder {
                     rows.add(Row.bio(b.getBodyId(), displayGenus, ""));
                     continue;
                 }
-
-                // From here on, we have at least one species (predicted or confirmed),
-                // so we do NOT add a genus-only header line.
-                // This is what removes the "Bacterium" header in stages 2 and 3.
 
                 // If we have confirmed species for this genus, they REPLACE predictions.
                 if (confirmedForGenus != null && !confirmedForGenus.isEmpty()) {
@@ -363,14 +357,13 @@ final class BioTableBuilder {
                             long millions = Math.round(sr.cr / 1_000_000.0);
                             valueText = String.format(Locale.US, "%dM Cr", millions);
                         }
+                        int samples = b.getBioSampleCount(sr.name);
+                        Row bio = Row.bio(b.getBodyId(), sr.name, valueText, samples);
 
-                        Row bio = Row.bio(b.getBodyId(), sr.name, valueText);
-                        // Keep the green styling you liked.
-                        bio.setObservedGenusHeader(true);
+                        bio.setObservedGenusHeader(true); // green styling
                         rows.add(bio);
                     }
                 } else if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
-                    // No confirmed species for this genus -> show predicted species
                     predictedForGenus.sort((c1, c2) -> {
                         long v1 = c1.getEstimatedPayout(true);
                         long v2 = c2.getEstimatedPayout(true);
@@ -397,6 +390,89 @@ final class BioTableBuilder {
         return rows;
     }
 
+    private static boolean hasObservedSample(BodyInfo b) {
+        if (b == null) {
+            return false;
+        }
+        Set<String> observed = b.getObservedBioDisplayNames();
+        if (observed == null) {
+            return false;
+        }
+        return !observed.isEmpty();
+    }
+
+    private static long maxBioValue(BodyInfo b) {
+        if (b == null) {
+            return Long.MIN_VALUE;
+        }
+
+        List<ExobiologyData.BioCandidate> preds = b.getPredictions();
+        if (preds == null || preds.isEmpty()) {
+            return Long.MIN_VALUE;
+        }
+
+        long max = Long.MIN_VALUE;
+        for (ExobiologyData.BioCandidate c : preds) {
+            if (c == null) {
+                continue;
+            }
+            long v = c.getEstimatedPayout(true);
+            if (v > max) {
+                max = v;
+            }
+        }
+        return max;
+    }
+
+    private static boolean isGenusObserved(List<String> confirmedForGenus) {
+        if (confirmedForGenus == null) {
+            return false;
+        }
+        return !confirmedForGenus.isEmpty();
+    }
+
+    private static long genusMaxValue(String genusKey,
+                                      Map<String, List<ExobiologyData.BioCandidate>> predictedByGenus,
+                                      Map<String, ExobiologyData.BioCandidate> predictedByCanonName,
+                                      Map<String, List<String>> confirmedByGenus) {
+        if (genusKey == null) {
+            return Long.MIN_VALUE;
+        }
+
+        List<String> confirmed = confirmedByGenus.get(genusKey);
+        if (confirmed != null && !confirmed.isEmpty()) {
+            long max = Long.MIN_VALUE;
+            for (String canon : confirmed) {
+                ExobiologyData.BioCandidate cand = predictedByCanonName.get(canon);
+                if (cand == null) {
+                    continue;
+                }
+                long v = cand.getEstimatedPayout(true);
+                if (v > max) {
+                    max = v;
+                }
+            }
+            return max;
+        }
+
+        List<ExobiologyData.BioCandidate> predicted = predictedByGenus.get(genusKey);
+        if (predicted == null || predicted.isEmpty()) {
+            return Long.MIN_VALUE;
+        }
+
+        long max = Long.MIN_VALUE;
+        for (ExobiologyData.BioCandidate cand : predicted) {
+            if (cand == null) {
+                continue;
+            }
+            long v = cand.getEstimatedPayout(true);
+            if (v > max) {
+                max = v;
+            }
+        }
+        return max;
+    }
+
     private static String canonicalBioName(String raw) {
         if (raw == null) {
             return "";
@@ -407,7 +483,6 @@ final class BioTableBuilder {
         }
 
         String[] parts = s.split("\\s+");
-        // Collapse "Genus Genus Species..." -> "Genus Species..."
         if (parts.length >= 3 && parts[0].equalsIgnoreCase(parts[1])) {
             StringBuilder sb = new StringBuilder(parts[0]);
             for (int i = 2; i < parts.length; i++) {

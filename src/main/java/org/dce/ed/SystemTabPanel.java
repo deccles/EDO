@@ -11,8 +11,10 @@ import java.awt.Rectangle;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.JLabel;
@@ -180,10 +182,15 @@ public class SystemTabPanel extends JPanel {
                 if (isSelected) {
                     c.setForeground(Color.BLACK);
                 } else if (isBioRow) {
-                	if (r.isObservedGenusHeader()) {
-                		c.setForeground(Color.green);
-                	}else 
-                    c.setForeground(new Color(180, 180, 180)); // gray for biologicals
+                    int samples = r.getBioSampleCount();
+
+                    if (samples >= 3) {
+                        c.setForeground(Color.GREEN);
+                    } else if (samples > 0) {
+                        c.setForeground(Color.YELLOW);
+                    } else {
+                        c.setForeground(new Color(180, 180, 180)); // gray for biologicals
+                    }
                 } else {
                     c.setForeground(ED_ORANGE);
                 }
@@ -259,20 +266,31 @@ public class SystemTabPanel extends JPanel {
         add(headerPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
-        // Column widths preserved
+     // Column widths preserved
         TableColumnModel columns = table.getColumnModel();
         columns.getColumn(0).setPreferredWidth(40);
         columns.getColumn(1).setPreferredWidth(60);
-        columns.getColumn(2).setPreferredWidth(220);
-        columns.getColumn(3).setPreferredWidth(70);
+
+        // Resize "Atmo / Body" down to ~60% and give the space to "Bio".
+        int atmoBodyOld = 220;
+        int bioOld = 70;
+
+        int atmoBodyNew = (int) Math.round(atmoBodyOld * 0.60); // 132
+        int delta = atmoBodyOld - atmoBodyNew;                  // 88
+        int bioNew = bioOld + delta;                            // 158
+
+        columns.getColumn(2).setPreferredWidth(atmoBodyNew); // "Atmo / Body"
+        columns.getColumn(3).setPreferredWidth(bioNew);      // "Bio"
+
+        // Keep Value column as-is (same place, same width constraints)
         columns.getColumn(4).setPreferredWidth(20);
         columns.getColumn(4).setMinWidth(60);
         columns.getColumn(4).setMaxWidth(80);
         columns.getColumn(4).setResizable(false);
-        
-        
+
         columns.getColumn(5).setPreferredWidth(30);
         columns.getColumn(6).setPreferredWidth(80);
+
 
         refreshFromCache();
     }
@@ -414,6 +432,7 @@ public class SystemTabPanel extends JPanel {
         });
     }
     private void rebuildTable() {
+        dedupeBodiesByName();
         updateHeaderLabel();
 
         List<Row> rows = BioTableBuilder.buildRows(state.getBodies().values());
@@ -505,6 +524,8 @@ public class SystemTabPanel extends JPanel {
         final int parentId;
         final String bioText;
         final String bioValue;
+        private int bioSampleCount;
+        
         private boolean observedGenusHeader;
 
         boolean isObservedGenusHeader() {
@@ -524,8 +545,21 @@ public class SystemTabPanel extends JPanel {
             this.parentId = parentId;
             this.bioText = bioText;
             this.bioValue = bioValue;
+            this.bioSampleCount = 0;
+        }
+        int getBioSampleCount() {
+            return bioSampleCount;
         }
 
+        void setBioSampleCount(int bioSampleCount) {
+            this.bioSampleCount = bioSampleCount;
+        }
+
+        static Row bio(int parentId, String text, String val, int bioSampleCount) {
+            Row r = new Row(null, true, parentId, text, val);
+            r.setBioSampleCount(bioSampleCount);
+            return r;
+        }
         static Row body(BodyInfo b) {
             return new Row(b, false, -1, null, null);
         }
@@ -663,4 +697,148 @@ public class SystemTabPanel extends JPanel {
             return false;
         }
     }
+    private void dedupeBodiesByName() {
+
+        Map<Integer, BodyInfo> bodies = state.getBodies();
+        if (bodies == null || bodies.isEmpty()) {
+            return;
+        }
+
+        Map<String, Integer> nameToKey = new HashMap<>();
+        List<Integer> keysToRemove = new ArrayList<>();
+
+        for (Map.Entry<Integer, BodyInfo> e : bodies.entrySet()) {
+
+            Integer key = e.getKey();
+            BodyInfo bi = e.getValue();
+
+            if (bi == null) {
+                continue;
+            }
+
+            String name = bi.getBodyName();
+            if (name == null) {
+                continue;
+            }
+
+            String canon = name.trim().toLowerCase(Locale.ROOT);
+            if (canon.isEmpty()) {
+                continue;
+            }
+
+            Integer existingKey = nameToKey.get(canon);
+            if (existingKey == null) {
+                nameToKey.put(canon, key);
+                continue;
+            }
+
+            BodyInfo keep = bodies.get(existingKey);
+            BodyInfo drop = bi;
+
+            if (keep == null) {
+                nameToKey.put(canon, key);
+                continue;
+            }
+
+            // Prefer the entry with a non-negative bodyId as the "keeper"
+            // (some paths still create temp/unknown ids during rescan).
+            if (keep.getBodyId() < 0 && drop.getBodyId() >= 0) {
+                BodyInfo tmp = keep;
+                keep = drop;
+                drop = tmp;
+
+                // Swap which key is considered the keeper for later duplicates
+                nameToKey.put(canon, key);
+                keysToRemove.add(existingKey);
+            } else {
+                keysToRemove.add(key);
+            }
+
+            mergeBodiesKeepBest(keep, drop);
+
+            // Useful debug to prove what's happening (leave it in until stable)
+            System.out.println("DEDUP body name='" + name + "' keepId=" + keep.getBodyId()
+                    + " dropId=" + drop.getBodyId());
+        }
+
+        for (Integer k : keysToRemove) {
+            bodies.remove(k);
+        }
+    }
+
+    private static void mergeBodiesKeepBest(BodyInfo keep, BodyInfo drop) {
+
+        if (keep == null || drop == null) {
+            return;
+        }
+
+        if (keep.getStarSystem() == null && drop.getStarSystem() != null) {
+            keep.setStarSystem(drop.getStarSystem());
+        }
+        if (keep.getBodyName() == null && drop.getBodyName() != null) {
+            keep.setBodyName(drop.getBodyName());
+        }
+
+        if (keep.getStarPos() == null && drop.getStarPos() != null) {
+            keep.setStarPos(drop.getStarPos());
+        }
+
+        if (Double.isNaN(keep.getDistanceLs()) && !Double.isNaN(drop.getDistanceLs())) {
+            keep.setDistanceLs(drop.getDistanceLs());
+        }
+
+        if (keep.getGravityMS() == null && drop.getGravityMS() != null) {
+            keep.setGravityMS(drop.getGravityMS());
+        }
+        if (keep.getSurfaceTempK() == null && drop.getSurfaceTempK() != null) {
+            keep.setSurfaceTempK(drop.getSurfaceTempK());
+        }
+        if (keep.getSurfacePressure() == null && drop.getSurfacePressure() != null) {
+            keep.setSurfacePressure(drop.getSurfacePressure());
+        }
+
+        if (keep.getPlanetClass() == null && drop.getPlanetClass() != null) {
+            keep.setPlanetClass(drop.getPlanetClass());
+        }
+        if (keep.getAtmosphere() == null && drop.getAtmosphere() != null) {
+            keep.setAtmosphere(drop.getAtmosphere());
+        }
+        if (keep.getAtmoOrType() == null && drop.getAtmoOrType() != null) {
+            keep.setAtmoOrType(drop.getAtmoOrType());
+        }
+
+        if (!keep.isLandable() && drop.isLandable()) {
+            keep.setLandable(true);
+        }
+        if (!keep.hasBio() && drop.hasBio()) {
+            keep.setHasBio(true);
+        }
+        if (!keep.hasGeo() && drop.hasGeo()) {
+            keep.setHasGeo(true);
+        }
+
+        if (keep.getNumberOfBioSignals() == null && drop.getNumberOfBioSignals() != null) {
+            keep.setNumberOfBioSignals(drop.getNumberOfBioSignals());
+        }
+
+        // Merge observed genus/species if present
+        if (drop.getObservedGenusPrefixes() != null) {
+            for (String g : drop.getObservedGenusPrefixes()) {
+                keep.addObservedGenus(g);
+            }
+        }
+        if (drop.getObservedBioDisplayNames() != null) {
+            for (String n : drop.getObservedBioDisplayNames()) {
+                keep.addObservedBioDisplayName(n);
+            }
+        }
+
+        // Keep predictions if keep doesn't have them yet
+        if ((keep.getPredictions() == null || keep.getPredictions().isEmpty())
+                && drop.getPredictions() != null
+                && !drop.getPredictions().isEmpty()) {
+            keep.setPredictions(drop.getPredictions());
+        }
+    }
+
 }

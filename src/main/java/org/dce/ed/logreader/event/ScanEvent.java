@@ -12,11 +12,6 @@ import com.google.gson.JsonObject;
  * Backed by the journal "Scan" event.
  */
 public final class ScanEvent extends EliteLogEvent {
-
-
-	
-	
-	
     private final String bodyName;
     private final int bodyId;
     private final String starSystem;

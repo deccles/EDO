@@ -1,6 +1,9 @@
 package org.dce.ed.cache;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
@@ -37,6 +40,8 @@ public class CachedBody {
     // NEW: raw EDSM discovery info
     public String discoveryCommander;
 
+    public Map<String, Integer> bioSampleCountsByDisplayName;
+    
     public List<BioCandidate> predictions;
     public int numberOfBioSignals;
     
@@ -51,6 +56,31 @@ public class CachedBody {
 	}
 	public void setNumberOfBioSignals(int i) {
 		this.numberOfBioSignals = i;
+	}
+	public Map<String, Integer> getBioSampleCountsSnapshot() {
+	    if (bioSampleCountsByDisplayName == null || bioSampleCountsByDisplayName.isEmpty()) {
+	        return Collections.emptyMap();
+	    }
+	    return new HashMap<>(bioSampleCountsByDisplayName);
+	}
+
+	public void setBioSampleCounts(Map<String, Integer> counts) {
+	    bioSampleCountsByDisplayName.clear();
+
+	    if (counts == null || counts.isEmpty()) {
+	        return;
+	    }
+
+	    for (Map.Entry<String, Integer> e : counts.entrySet()) {
+	        if (e.getKey() == null || e.getKey().isBlank()) {
+	            continue;
+	        }
+	        int v = (e.getValue() == null) ? 0 : e.getValue().intValue();
+	        if (v <= 0) {
+	            continue;
+	        }
+	        bioSampleCountsByDisplayName.put(e.getKey(), Integer.valueOf(Math.min(3, v)));
+	    }
 	}
 
 }

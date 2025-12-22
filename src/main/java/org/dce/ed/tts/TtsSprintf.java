@@ -73,6 +73,9 @@ public class TtsSprintf {
      */
     public void speakf(String template, Object... args) {
         List<String> chunks = formatToUtteranceChunks(template, args);
+        for (String s : chunks) {
+        	System.out.print(s + " ");
+        }
         if (chunks.isEmpty()) {
             return;
         }

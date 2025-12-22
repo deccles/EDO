@@ -395,7 +395,7 @@ public class EliteLogParser {
 
         Double surfacePressure = obj.has("SurfacePressure")
         		? obj.get("SurfacePressure").getAsDouble(): null;
-        
+
         return new ScanEvent(
                 ts,
                 obj,
