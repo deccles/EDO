@@ -357,63 +357,124 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
 
     private void updatePredictions(BodyInfo info) {
-    	if (!info.hasBio()) {
-    		return;
-    	}
-    	BodyAttributes attrs = info.buildBodyAttributes();
-    	if (attrs == null) {
-    		return;
-    	}
+        if (!info.hasBio()) {
+            return;
+        }
 
-    	//        System.out.println("Remove this line!!!");
-    	//        info.setPredictions(null);
-    	//        
-    	if (info.getPredictions() != null && info.getPredictions().size() > 0) {
-    		return;
-    	}
+        // If DSS/SAASignalsFound gave us observed genus, use it to FILTER existing predictions
+        // even if we already predicted earlier.
+        if (info.getPredictions() != null && !info.getPredictions().isEmpty()
+                && info.getObservedGenusPrefixes() != null && !info.getObservedGenusPrefixes().isEmpty()) {
 
-    	List<BioCandidate> candidates = ExobiologyData.predict(attrs);
-    	if (candidates == null || candidates.isEmpty()) {
-    		info.clearPredictions();
-    		return;
-    	}
+            List<BioCandidate> filtered = new java.util.ArrayList<>();
 
-    	if (info.getObservedGenusPrefixes() != null && !info.getObservedGenusPrefixes().isEmpty()) {
-    		List<BioCandidate> filtered = new java.util.ArrayList<>();
+            for (BioCandidate cand : info.getPredictions()) {
+                String display = toLower(cand.getDisplayName());
 
-    		for (ExobiologyData.BioCandidate cand : candidates) {
-    			String lower = toLower(cand.getDisplayName());
-    			boolean match = false;
-    			for (String genusPrefix : info.getObservedGenusPrefixes()) {
-    				if (lower.startsWith(genusPrefix + " ") || lower.equals(genusPrefix)) {
-    					match = true;
-    					break;
-    				}
-    			}
-    			if (match) {
-    				filtered.add(cand);
-    			}
-    		}
+                // Take the "genus" as the first token of the prediction display name.
+                // e.g. "Bacterium ..." -> "bacterium"
+                String predictedGenus = display;
+                int idx = display.indexOf(' ');
+                if (idx > 0) {
+                    predictedGenus = display.substring(0, idx).trim();
+                }
 
-    		if (!filtered.isEmpty()) {
-    			info.setPredictions(filtered);
-    			return;
-    		}
-    	}
-    	if (candidates.size() > 0) {
-    		BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
-    				Instant.now(),
-    				null,
+                boolean match = false;
+                for (String observed : info.getObservedGenusPrefixes()) {
+                    String obs = toLower(observed).trim();
 
-    				info.getBodyName(),
-    				info.getBodyId(),
-    				info.getStarSystem(),
-    				candidates);
+                    // Normalize a bit (some events/strings are inconsistent: bacterium/bacteria, stratum/strata)
+                    obs = normalizeGenus(obs);
+                    String pred = normalizeGenus(predictedGenus);
 
-    		LiveJournalMonitor.getInstance(clientKey).dispatch(bioScanPredictionEvent);
+                    if (pred.equals(obs)) {
+                        match = true;
+                        break;
+                    }
+                }
 
-    		info.setPredictions(candidates);
-    	}
+                if (match) {
+                    filtered.add(cand);
+                }
+            }
+
+            // If we found any matches, replace the list with only observed-genus matches.
+            // If we found none, fall through and allow fresh prediction computation below.
+            if (!filtered.isEmpty()) {
+                info.setPredictions(filtered);
+                return;
+            }
+        }
+
+        // If we already have predictions and no observed-genus filtering changed anything, keep them.
+        if (info.getPredictions() != null && !info.getPredictions().isEmpty()) {
+            return;
+        }
+
+        BodyAttributes attrs = info.buildBodyAttributes();
+        if (attrs == null) {
+            return;
+        }
+
+        List<BioCandidate> candidates = ExobiologyData.predict(attrs);
+        if (candidates == null || candidates.isEmpty()) {
+            info.clearPredictions();
+            return;
+        }
+
+        // If we have observed genus, filter fresh candidates too.
+        if (info.getObservedGenusPrefixes() != null && !info.getObservedGenusPrefixes().isEmpty()) {
+            List<BioCandidate> filtered = new java.util.ArrayList<>();
+
+            for (BioCandidate cand : candidates) {
+                String display = toLower(cand.getDisplayName());
+                String predictedGenus = display;
+                int idx = display.indexOf(' ');
+                if (idx > 0) {
+                    predictedGenus = display.substring(0, idx).trim();
+                }
+
+                boolean match = false;
+                for (String observed : info.getObservedGenusPrefixes()) {
+                    String obs = normalizeGenus(toLower(observed).trim());
+                    String pred = normalizeGenus(predictedGenus);
+
+                    if (pred.equals(obs)) {
+                        match = true;
+                        break;
+                    }
+                }
+
+                if (match) {
+                    filtered.add(cand);
+                }
+            }
+
+            if (!filtered.isEmpty()) {
+                info.setPredictions(filtered);
+                return;
+            }
+        }
+
+        info.setPredictions(candidates);
+    }
+
+    private static String normalizeGenus(String s) {
+        if (s == null) {
+            return "";
+        }
+
+        String x = s.trim().toLowerCase();
+
+        // Common genus plural/singular inconsistencies you will see in various sources
+        if (x.equals("bacteria")) {
+            return "bacterium";
+        }
+        if (x.equals("strata")) {
+            return "stratum";
+        }
+
+        return x;
     }
 
     // ---------------------------------------------------------------------
