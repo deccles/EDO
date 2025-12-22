@@ -2,15 +2,40 @@ package org.dce.ed.exobiology;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.prefs.Preferences;
 
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JDialog;
+import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
 import org.dce.ed.cache.CachedBody;
@@ -25,17 +50,28 @@ import com.google.gson.reflect.TypeToken;
 public final class BioPredictFromCacheMain {
 
     private static final String CACHE_FILE_NAME = ".edOverlaySystems.json";
+    private static final Preferences PREFS = Preferences.userNodeForPackage(BioPredictFromCacheMain.class);
+
+    private static final String PREF_BODY_NAME = "bodyName";
+    private static final String PREF_FILTER_ENABLED = "filterEnabled";
+
+    // Single pocket list selection stored as pipe-delimited values:
+    //   "G: <Genus>" and "S: <Genus Species>"
+    private static final String PREF_SELECTED_POCKET = "selectedPocket";
+
+    // Back-compat keys (older versions stored separate lists)
+    private static final String PREF_SELECTED_GENUS = "selectedGenus";
+    private static final String PREF_SELECTED_SPECIES = "selectedSpecies";
 
     public static void main(String[] args) throws Exception {
 
-        String defaultBodyName = "Sifi WK-C c27-5 C 5";
-
-        String bodyName = promptForBodyName(defaultBodyName);
-        if (bodyName == null || bodyName.trim().isEmpty()) {
+        UiSelection ui = promptForInputs();
+        if (ui == null || ui.bodyName == null || ui.bodyName.trim().isEmpty()) {
             System.out.println("No body name entered. Exiting.");
             return;
         }
-        bodyName = bodyName.trim();
+
+        String bodyName = ui.bodyName.trim();
 
         Path cachePath = defaultCachePath();
         System.out.println("Using cache: " + cachePath.toAbsolutePath());
@@ -75,7 +111,20 @@ public final class BioPredictFromCacheMain {
             return;
         }
 
-        List<BioCandidate> candidates = ExobiologyData.predict(attrs);
+        List<BioCandidate> candidates;
+        try {
+            candidates = predictWithOptionalFilter(attrs, ui);
+        } catch (RuntimeException ex) {
+            ex.printStackTrace();
+            SwingUtilities.invokeLater(() -> {
+                JOptionPane.showMessageDialog(
+                        null,
+                        ex.getMessage(),
+                        "Prediction Failed",
+                        JOptionPane.ERROR_MESSAGE);
+            });
+            return;
+        }
 
         System.out.println("Predictions: " + (candidates == null ? 0 : candidates.size()));
         if (candidates == null || candidates.isEmpty()) {
@@ -95,22 +144,523 @@ public final class BioPredictFromCacheMain {
         }
     }
 
-    private static String promptForBodyName(String defaultValue) throws Exception {
-        final String[] result = new String[1];
+    private static UiSelection promptForInputs() throws Exception {
+        final UiSelection[] out = new UiSelection[1];
 
         SwingUtilities.invokeAndWait(() -> {
-            result[0] = (String) JOptionPane.showInputDialog(
-                    null,
-                    "Enter body name (exact match from cache):",
-                    "Predict Exobiology From Cache",
-                    JOptionPane.QUESTION_MESSAGE,
-                    null,
-                    null,
-                    defaultValue
-            );
+            String lastBody = PREFS.get(PREF_BODY_NAME, "Sifi WK-C c27-5 C 5");
+            boolean lastEnabled = PREFS.getBoolean(PREF_FILTER_ENABLED, false);
+
+            Set<String> lastPocket = splitPipe(PREFS.get(PREF_SELECTED_POCKET, ""));
+            if (lastPocket.isEmpty()) {
+                Set<String> lastGenus = splitPipe(PREFS.get(PREF_SELECTED_GENUS, ""));
+                Set<String> lastSpecies = splitPipe(PREFS.get(PREF_SELECTED_SPECIES, ""));
+
+                lastPocket = new LinkedHashSet<>();
+                for (String g : lastGenus) {
+                    lastPocket.add(pocketGenus(g));
+                }
+                for (String s : lastSpecies) {
+                    lastPocket.add(pocketSpecies(s));
+                }
+            }
+
+            SpeciesIndex index = SpeciesIndex.buildBestEffort();
+
+            JDialog dlg = new JDialog();
+            dlg.setTitle("Predict Exobiology From Cache");
+            dlg.setModal(true);
+
+            JPanel root = new JPanel();
+            root.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            root.setLayout(new BoxLayout(root, BoxLayout.Y_AXIS));
+
+            JPanel bodyRow = new JPanel();
+            bodyRow.setLayout(new BoxLayout(bodyRow, BoxLayout.X_AXIS));
+            bodyRow.add(new JLabel("Body name:"));
+            bodyRow.add(Box.createHorizontalStrut(8));
+            JTextField bodyField = new JTextField(lastBody, 40);
+            bodyRow.add(bodyField);
+            root.add(bodyRow);
+            root.add(Box.createVerticalStrut(10));
+
+            JCheckBox filterEnabled = new JCheckBox("Limit rules to selected Genus/Species pocket (pre-filter)");
+            filterEnabled.setSelected(lastEnabled);
+            root.add(filterEnabled);
+            root.add(Box.createVerticalStrut(8));
+
+            JPanel pocketPanel = new JPanel();
+            pocketPanel.setLayout(new BoxLayout(pocketPanel, BoxLayout.Y_AXIS));
+            pocketPanel.add(new JLabel("Genus / Species pocket"));
+
+            JList<String> pocketList = new JList<>(index.pocketEntries.toArray(new String[0]));
+            pocketList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+            selectListItems(pocketList, lastPocket);
+            pocketPanel.add(new JScrollPane(pocketList));
+
+            root.add(pocketPanel);
+            root.add(Box.createVerticalStrut(10));
+
+            JLabel hint = new JLabel("Pick one or more Genus and/or Species. The union becomes the rule whitelist.");
+            hint.setHorizontalAlignment(SwingConstants.LEFT);
+            root.add(hint);
+
+            if (index.pocketEntries.isEmpty()) {
+                JLabel warn = new JLabel("No genus/species list found (constraints not introspectable). Filter will be ignored.");
+                warn.setHorizontalAlignment(SwingConstants.LEFT);
+                root.add(Box.createVerticalStrut(6));
+                root.add(warn);
+            }
+
+            root.add(Box.createVerticalStrut(10));
+
+            JPanel buttons = new JPanel();
+            buttons.setLayout(new BoxLayout(buttons, BoxLayout.X_AXIS));
+            JButton ok = new JButton("Run");
+            JButton cancel = new JButton("Cancel");
+            buttons.add(Box.createHorizontalGlue());
+            buttons.add(ok);
+            buttons.add(Box.createHorizontalStrut(10));
+            buttons.add(cancel);
+            root.add(buttons);
+
+            ok.addActionListener(evt -> {
+                String body = bodyField.getText() == null ? "" : bodyField.getText().trim();
+                if (body.isEmpty()) {
+                    JOptionPane.showMessageDialog(dlg, "Body name is required.");
+                    return;
+                }
+
+                Set<String> selPocket = new LinkedHashSet<>(pocketList.getSelectedValuesList());
+                UiSelection ui = UiSelection.fromPocket(body, filterEnabled.isSelected(), selPocket);
+
+                PREFS.put(PREF_BODY_NAME, ui.bodyName);
+                PREFS.putBoolean(PREF_FILTER_ENABLED, ui.filterEnabled);
+                PREFS.put(PREF_SELECTED_POCKET, joinPipe(selPocket));
+
+                // keep old keys in sync (handy if you run older versions)
+                PREFS.put(PREF_SELECTED_GENUS, joinPipe(ui.selectedGenus));
+                PREFS.put(PREF_SELECTED_SPECIES, joinPipe(ui.selectedSpecies));
+
+                out[0] = ui;
+                dlg.dispose();
+            });
+
+            cancel.addActionListener(evt -> {
+                out[0] = null;
+                dlg.dispose();
+            });
+
+            Runnable applyEnabled = () -> {
+                boolean en = filterEnabled.isSelected();
+
+                if (index.pocketEntries.isEmpty()) {
+                    en = false;
+                }
+
+                pocketList.setEnabled(en);
+            };
+            filterEnabled.addActionListener(evt -> applyEnabled.run());
+            applyEnabled.run();
+
+            dlg.setContentPane(root);
+            dlg.pack();
+            dlg.setLocationRelativeTo(null);
+            dlg.setVisible(true);
         });
 
-        return result[0];
+        return out[0];
+    }
+
+    private static List<BioCandidate> predictWithOptionalFilter(BodyAttributes attrs, UiSelection ui) {
+        if (ui == null) {
+            return ExobiologyData.predict(attrs);
+        }
+
+        if (!ui.filterEnabled) {
+            return ExobiologyData.predict(attrs);
+        }
+
+        Set<String> allowedKeys = buildAllowedKeys(ui);
+        if (allowedKeys.isEmpty()) {
+            return ExobiologyData.predict(attrs);
+        }
+
+        Method m = findPredictWithWhitelistMethod();
+        if (m == null) {
+            throw new IllegalStateException(
+                    "Filter is enabled, but ExobiologyData does not expose a whitelist predict(...) overload. " +
+                    "Add predict(BodyAttributes, Set<String>) (or similar) so this tool can pre-filter rule execution.");
+        }
+
+        try {
+            Object result = m.invoke(null, attrs, allowedKeys);
+            @SuppressWarnings("unchecked")
+            List<BioCandidate> out = (List<BioCandidate>) result;
+            return out;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed invoking filtered ExobiologyData prediction method: " + m, e);
+        }
+    }
+
+    private static Method findPredictWithWhitelistMethod() {
+        for (Method m : ExobiologyData.class.getDeclaredMethods()) {
+            if (!m.getName().equals("predict")) {
+                continue;
+            }
+
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length != 2) {
+                continue;
+            }
+
+            if (!BodyAttributes.class.isAssignableFrom(p[0])) {
+                continue;
+            }
+
+            if (Set.class.isAssignableFrom(p[1])) {
+                m.setAccessible(true);
+                return m;
+            }
+        }
+
+        for (String name : Arrays.asList("predictFiltered", "predictWithWhitelist", "predictWithFilter")) {
+            for (Method m : ExobiologyData.class.getDeclaredMethods()) {
+                if (!m.getName().equals(name)) {
+                    continue;
+                }
+
+                Class<?>[] p = m.getParameterTypes();
+                if (p.length != 2) {
+                    continue;
+                }
+
+                if (!BodyAttributes.class.isAssignableFrom(p[0])) {
+                    continue;
+                }
+
+                if (Set.class.isAssignableFrom(p[1])) {
+                    m.setAccessible(true);
+                    return m;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static Set<String> buildAllowedKeys(UiSelection ui) {
+        Set<String> allowed = new LinkedHashSet<>();
+
+        if (ui.selectedSpecies != null && !ui.selectedSpecies.isEmpty()) {
+            allowed.addAll(ui.selectedSpecies);
+        }
+
+        if (ui.selectedGenus != null && !ui.selectedGenus.isEmpty()) {
+            SpeciesIndex index = SpeciesIndex.buildBestEffort();
+            for (String genus : ui.selectedGenus) {
+                Set<String> species = index.genusToSpecies.get(genus);
+                if (species != null && !species.isEmpty()) {
+                    allowed.addAll(species);
+                }
+            }
+        }
+
+        return allowed;
+    }
+
+    private static String pocketGenus(String genus) {
+        if (genus == null) {
+            return "G: ";
+        }
+        return "G: " + genus.trim();
+    }
+
+    private static String pocketSpecies(String genusSpeciesKey) {
+        if (genusSpeciesKey == null) {
+            return "S: ";
+        }
+        return "S: " + genusSpeciesKey.trim();
+    }
+
+    private static void selectListItems(JList<String> list, Set<String> selected) {
+        if (list == null || selected == null || selected.isEmpty()) {
+            return;
+        }
+
+        List<Integer> idx = new ArrayList<>();
+        for (int i = 0; i < list.getModel().getSize(); i++) {
+            String v = list.getModel().getElementAt(i);
+            if (selected.contains(v)) {
+                idx.add(i);
+            }
+        }
+
+        if (idx.isEmpty()) {
+            return;
+        }
+
+        int[] out = new int[idx.size()];
+        for (int i = 0; i < idx.size(); i++) {
+            out[i] = idx.get(i);
+        }
+
+        list.setSelectedIndices(out);
+        list.ensureIndexIsVisible(out[0]);
+    }
+
+    private static String joinPipe(Set<String> values) {
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return String.join("|", values);
+    }
+
+    private static Set<String> splitPipe(String s) {
+        if (s == null || s.trim().isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> out = new LinkedHashSet<>();
+        for (String part : s.split("\\|")) {
+            String t = part == null ? "" : part.trim();
+            if (!t.isEmpty()) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    private static final class UiSelection {
+        private final String bodyName;
+        private final boolean filterEnabled;
+        private final Set<String> selectedGenus;
+        private final Set<String> selectedSpecies;
+
+        private UiSelection(String bodyName, boolean filterEnabled, Set<String> selectedGenus, Set<String> selectedSpecies) {
+            this.bodyName = bodyName;
+            this.filterEnabled = filterEnabled;
+            this.selectedGenus = selectedGenus == null ? Collections.emptySet() : selectedGenus;
+            this.selectedSpecies = selectedSpecies == null ? Collections.emptySet() : selectedSpecies;
+        }
+
+        private static UiSelection fromPocket(String bodyName, boolean filterEnabled, Set<String> selPocket) {
+            Set<String> genus = new LinkedHashSet<>();
+            Set<String> species = new LinkedHashSet<>();
+
+            if (selPocket != null) {
+                for (String v : selPocket) {
+                    if (v == null) {
+                        continue;
+                    }
+
+                    if (v.startsWith("G: ")) {
+                        String g = v.substring(3).trim();
+                        if (!g.isEmpty()) {
+                            genus.add(g);
+                        }
+                    } else if (v.startsWith("S: ")) {
+                        String s = v.substring(3).trim();
+                        if (!s.isEmpty()) {
+                            species.add(s);
+                        }
+                    }
+                }
+            }
+
+            return new UiSelection(bodyName, filterEnabled, genus, species);
+        }
+    }
+
+    /**
+     * Best-effort index of genus/species from your constraint data.
+     */
+    private static final class SpeciesIndex {
+        private final Map<String, Set<String>> genusToSpecies;
+        private final List<String> pocketEntries;
+
+        private SpeciesIndex(Map<String, Set<String>> genusToSpecies, List<String> pocketEntries) {
+            this.genusToSpecies = genusToSpecies;
+            this.pocketEntries = pocketEntries;
+        }
+
+        private static SpeciesIndex buildBestEffort() {
+            try {
+                return buildFromConstraints();
+            } catch (Exception e) {
+                return new SpeciesIndex(Collections.emptyMap(), Collections.emptyList());
+            }
+        }
+
+        private static SpeciesIndex buildFromConstraints() throws Exception {
+            List<?> constraints = loadConstraintsObjects();
+            if (constraints == null || constraints.isEmpty()) {
+                return new SpeciesIndex(Collections.emptyMap(), Collections.emptyList());
+            }
+
+            Map<String, Set<String>> genusToSpecies = new LinkedHashMap<>();
+            Set<String> genusSet = new LinkedHashSet<>();
+            Set<String> speciesSet = new LinkedHashSet<>();
+
+            for (Object sc : constraints) {
+                if (sc == null) {
+                    continue;
+                }
+
+                String genus = readStringProperty(sc, "getGenus", "genus", "genusName", "getGenusName");
+                String species = readStringProperty(sc, "getSpecies", "species", "speciesName", "getSpeciesName");
+
+                if (genus == null) {
+                    continue;
+                }
+                genus = genus.trim();
+                if (genus.isEmpty()) {
+                    continue;
+                }
+
+                genusSet.add(genus);
+
+                if (species != null) {
+                    species = species.trim();
+                    if (!species.isEmpty()) {
+                        String key = genus + " " + species;
+                        speciesSet.add(key);
+                        genusToSpecies.computeIfAbsent(genus, k -> new LinkedHashSet<>()).add(key);
+                    }
+                }
+            }
+
+            List<String> genusList = new ArrayList<>(genusSet);
+            Collections.sort(genusList);
+
+            List<String> speciesList = new ArrayList<>(speciesSet);
+            Collections.sort(speciesList);
+
+            List<String> pocket = new ArrayList<>(genusList.size() + speciesList.size());
+            for (String g : genusList) {
+                pocket.add(pocketGenus(g));
+            }
+            for (String s : speciesList) {
+                pocket.add(pocketSpecies(s));
+            }
+
+            return new SpeciesIndex(genusToSpecies, pocket);
+        }
+
+        private static List<?> loadConstraintsObjects() throws Exception {
+            Class<?> c = Class.forName("org.dce.ed.exobiology.ExobiologyDataConstraints");
+
+            // Newer generated constraint files expose initConstraints(Map<String, SpeciesConstraint>)
+            // rather than any getters/fields. Prefer that when present.
+            try {
+                Method init = c.getDeclaredMethod("initConstraints", Map.class);
+                init.setAccessible(true);
+                Map<String, Object> map = new LinkedHashMap<>();
+                init.invoke(null, map);
+                if (!map.isEmpty()) {
+                    return new ArrayList<>(map.values());
+                }
+            } catch (NoSuchMethodException ignored) {
+                // continue
+            }
+
+            // Known method names first
+            for (String methodName : Arrays.asList("getSpeciesConstraints", "getConstraints", "allSpeciesConstraints", "allConstraints")) {
+                try {
+                    Method m = c.getDeclaredMethod(methodName);
+                    m.setAccessible(true);
+                    Object v = m.invoke(null);
+                    if (v instanceof List) {
+                        return (List<?>) v;
+                    }
+                } catch (NoSuchMethodException ignored) {
+                    // continue
+                }
+            }
+
+            // Any no-arg static method returning List
+            for (Method m : c.getDeclaredMethods()) {
+                if (!Modifier.isStatic(m.getModifiers())) {
+                    continue;
+                }
+                if (m.getParameterCount() != 0) {
+                    continue;
+                }
+                if (!List.class.isAssignableFrom(m.getReturnType())) {
+                    continue;
+                }
+
+                m.setAccessible(true);
+                Object v = m.invoke(null);
+                if (v instanceof List) {
+                    return (List<?>) v;
+                }
+            }
+
+            // Known field name first
+            try {
+                Field f = c.getDeclaredField("CONSTRAINTS");
+                f.setAccessible(true);
+                Object v = f.get(null);
+                if (v instanceof List) {
+                    return (List<?>) v;
+                }
+            } catch (NoSuchFieldException ignored) {
+                // continue
+            }
+
+            // Any static field that is a List
+            for (Field f : c.getDeclaredFields()) {
+                if (!Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                if (!List.class.isAssignableFrom(f.getType())) {
+                    continue;
+                }
+
+                f.setAccessible(true);
+                Object v = f.get(null);
+                if (v instanceof List) {
+                    return (List<?>) v;
+                }
+            }
+
+            return Collections.emptyList();
+        }
+    }
+
+    private static String readStringProperty(Object obj, String... candidates) {
+        Objects.requireNonNull(obj, "obj");
+
+        for (String name : candidates) {
+            if (name == null || name.trim().isEmpty()) {
+                continue;
+            }
+
+            // Try getter
+            try {
+                Method m = obj.getClass().getMethod(name);
+                Object v = m.invoke(obj);
+                if (v != null) {
+                    return v.toString();
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+
+            // Try field
+            try {
+                Field f = obj.getClass().getDeclaredField(name);
+                f.setAccessible(true);
+                Object v = f.get(obj);
+                if (v != null) {
+                    return v.toString();
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+
+        return null;
     }
 
     private static Path defaultCachePath() {
@@ -162,7 +712,6 @@ public final class BioPredictFromCacheMain {
         info.setBodyName(cb.name);
         info.setStarSystem(cb.starSystem);
 
-        // StarPos is stored at system level in the cache; BodyInfo.buildBodyAttributes() uses it.
         info.setStarPos(cs.starPos);
 
         info.setBodyId(cb.bodyId);

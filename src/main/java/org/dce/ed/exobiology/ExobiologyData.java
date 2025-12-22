@@ -224,15 +224,14 @@ public final class ExobiologyData {
          * until BodyAttributes carries matching data and we decide
          * how to enforce them.
          */
-        public boolean matches(String name, BodyAttributes body) {
+		public boolean matches(String name, BodyAttributes body) {
             if (body == null) {
                 warn("BodyAttributes was null");
                 return false;
             }
-
-//            if (name.equals("Frutexa Acus") && body.bodyName.equals(body.starSystem + " 4 a")) {
+            if (name.contains("Aleoida Laminiae")) {
 //            		System.out.println("Found it");
-//            }
+            }
             
             
             if (!bodyTypes.isEmpty() && (body.planetType == null || !bodyTypes.contains(body.planetType))) {

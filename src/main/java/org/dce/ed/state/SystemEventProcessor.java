@@ -188,7 +188,11 @@ public class SystemEventProcessor {
         info.setLandable(e.isLandable());
         info.setGravityMS(e.getSurfaceGravity());
 
-        info.setSurfacePressure(e.getSurfacePressure());
+        Double pPa = e.getSurfacePressure();
+        if (pPa != null && !Double.isNaN(pPa)) {
+            // Journal SurfacePressure is in Pascals; store in atmospheres for rules/UI
+            info.setSurfacePressure(pPa / 101325.0);
+        }
 
         info.setAtmoOrType(chooseAtmoOrType(e));
         info.setHighValue(isHighValue(e));
