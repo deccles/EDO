@@ -234,6 +234,8 @@ public final class SystemCache {
 
             info.setNebula(cb.nebula);
             info.setParentStar(cb.parentStar);
+            info.setParentStarBodyId(cb.parentStarBodyId);
+            info.setStarType(cb.starType);
             
             if (cb.bioSampleCountsByDisplayName != null && !cb.bioSampleCountsByDisplayName.isEmpty()) {
                 info.setBioSampleCounts(cb.bioSampleCountsByDisplayName);
@@ -357,6 +359,15 @@ public final class SystemCache {
                 info.setStarPos(state.getStarPos());
             }
 
+            if (remote.type != null && remote.type.equalsIgnoreCase("Star")) {
+                if (info.getStarType() == null || info.getStarType().isEmpty()) {
+                    String sc = parseStarClassFromEdsmSubType(remote.subType);
+                    if (sc != null && !sc.isEmpty()) {
+                        info.setStarType(sc);
+                    }
+                }
+            }
+
             // Landable / gravity / radius / surface pressure
             if (remote.isLandable != null) {
                 info.setLandable(remote.isLandable.booleanValue());
@@ -434,6 +445,22 @@ public final class SystemCache {
         return (s == null) ? "" : s.toLowerCase(Locale.ROOT);
     }
 
+    private static String parseStarClassFromEdsmSubType(String subType) {
+        if (subType == null) {
+            return null;
+        }
+        String s = subType.trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        // Common EDSM format: "M (Red dwarf) Star", "G (White-Yellow) Star", etc.
+        char c = s.charAt(0);
+        if (Character.isLetter(c)) {
+            return String.valueOf(Character.toUpperCase(c));
+        }
+        return null;
+    }
+
     public void storeSystem(SystemState state) {
         if (state == null || state.getSystemName() == null || state.getSystemAddress() == 0L) {
             return;
@@ -465,6 +492,8 @@ public final class SystemCache {
             cb.surfacePressure = b.getSurfacePressure();
             cb.nebula = b.getNebula();
             cb.parentStar = b.getParentStar();
+            cb.parentStarBodyId = b.getParentStarBodyId();
+            cb.starType = b.getStarType();
             cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
             if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
                 cb.predictions = b.getPredictions();

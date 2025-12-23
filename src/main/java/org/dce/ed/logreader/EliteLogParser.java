@@ -2,7 +2,9 @@ package org.dce.ed.logreader;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.dce.ed.logreader.EliteLogEvent.GenericEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
@@ -393,6 +395,8 @@ public class EliteLogParser {
         boolean wasMapped = obj.has("WasMapped") && obj.get("WasMapped").getAsBoolean();
         String starType = getString(obj, "StarType");
 
+        List<ScanEvent.ParentRef> parents = parseParentRefs(obj);
+
         Double surfacePressure = obj.has("SurfacePressure")
         		? obj.get("SurfacePressure").getAsDouble(): null;
 
@@ -414,8 +418,53 @@ public class EliteLogParser {
                 volcanism,
                 wasDiscovered,
                 wasMapped,
-                starType
+                starType,
+                parents
         );
+    }
+
+    /**
+     * Parse the journal Scan event's Parents field.
+     *
+     * Parents is an array of objects, where each object has exactly one entry.
+     * Example: [ {"Planet":17}, {"Star":5}, {"Null":0} ]
+     */
+    private static List<ScanEvent.ParentRef> parseParentRefs(JsonObject obj) {
+        if (obj == null || !obj.has("Parents") || obj.get("Parents").isJsonNull()) {
+            return Collections.emptyList();
+        }
+
+        JsonElement el = obj.get("Parents");
+        if (!el.isJsonArray()) {
+            return Collections.emptyList();
+        }
+
+        List<ScanEvent.ParentRef> out = new ArrayList<>();
+        for (JsonElement parentEl : el.getAsJsonArray()) {
+            if (parentEl == null || !parentEl.isJsonObject()) {
+                continue;
+            }
+            JsonObject parentObj = parentEl.getAsJsonObject();
+            if (parentObj.entrySet().isEmpty()) {
+                continue;
+            }
+
+            // Each element should be a single-entry object like {"Star": 5}
+            for (Map.Entry<String, JsonElement> e : parentObj.entrySet()) {
+                String type = e.getKey();
+                JsonElement v = e.getValue();
+                if (type == null || type.isEmpty() || v == null || !v.isJsonPrimitive()) {
+                    continue;
+                }
+                try {
+                    int bodyId = v.getAsInt();
+                    out.add(new ScanEvent.ParentRef(type, bodyId));
+                } catch (Exception ignore) {
+                    // Ignore malformed entries; keep parsing others
+                }
+            }
+        }
+        return out;
     }
 
     private FssDiscoveryScanEvent parseFssDiscoveryScan(Instant ts, JsonObject obj) {

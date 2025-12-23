@@ -1,6 +1,8 @@
 package org.dce.ed.logreader.event;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
 
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteLogEvent;
@@ -12,6 +14,35 @@ import com.google.gson.JsonObject;
  * Backed by the journal "Scan" event.
  */
 public final class ScanEvent extends EliteLogEvent {
+
+    /**
+     * One entry from the journal Parents[] array.
+     *
+     * Example JSON element: {"Star": 5}
+     */
+    public static final class ParentRef {
+        private final String type;
+        private final int bodyId;
+
+        public ParentRef(String type, int bodyId) {
+            this.type = type;
+            this.bodyId = bodyId;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public int getBodyId() {
+            return bodyId;
+        }
+
+        @Override
+        public String toString() {
+            return type + ":" + bodyId;
+        }
+    }
+
     private final String bodyName;
     private final int bodyId;
     private final String starSystem;
@@ -31,6 +62,7 @@ public final class ScanEvent extends EliteLogEvent {
     private final boolean wasDiscovered;
     private final boolean wasMapped;
     private final String starType;
+    private final List<ParentRef> parents;
 	private Double surfacePressure;
 
     public ScanEvent(Instant timestamp,
@@ -50,7 +82,8 @@ public final class ScanEvent extends EliteLogEvent {
                      String volcanism,
                      boolean wasDiscovered,
                      boolean wasMapped,
-                     String starType) {
+                     String starType,
+                     List<ParentRef> parents) {
 
         super(timestamp, EliteEventType.SCAN, rawJson);
         this.bodyName = bodyName;
@@ -69,6 +102,7 @@ public final class ScanEvent extends EliteLogEvent {
         this.wasDiscovered = wasDiscovered;
         this.wasMapped = wasMapped;
         this.starType = starType;
+        this.parents = (parents == null) ? Collections.emptyList() : parents;
     }
 
     public String getBodyName() {
@@ -127,6 +161,10 @@ public final class ScanEvent extends EliteLogEvent {
 
     public String getStarType() {
         return starType;
+    }
+
+    public List<ParentRef> getParents() {
+        return parents;
     }
 
 	public Double getSurfacePressure() {

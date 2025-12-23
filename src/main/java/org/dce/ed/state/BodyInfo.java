@@ -30,13 +30,13 @@ import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 public class BodyInfo {
 
 
-    private String name;
-    private String shortName;
-    private int bodyId = -1;
+	private String name;
+	private String shortName;
+	private int bodyId = -1;
 	private String starSystem;
 	double starPos[];
-	
-    public double[] getStarPos() {
+
+	public double[] getStarPos() {
 		return starPos;
 	}
 
@@ -45,385 +45,427 @@ public class BodyInfo {
 	}
 
 	private double distanceLs = Double.NaN;
-    private Double gravityMS;     // in m/s^2
-    private boolean landable;
+	private Double gravityMS;     // in m/s^2
+	private boolean landable;
 
-    private boolean hasBio;
-    private boolean hasGeo;
-    private boolean highValue;
+	private boolean hasBio;
+	private boolean hasGeo;
+	private boolean highValue;
 
-    private String atmoOrType;    // primarily for display
-    private String planetClass;
-    private String atmosphere;
+	private String atmoOrType;    // primarily for display
+	private String planetClass;
+	private String atmosphere;
 
-    private Double surfaceTempK;
-    private String volcanism;
+	private Double surfaceTempK;
+	private String volcanism;
 
-    Double axialTilt;
-    Double radius;
-    // Derived biological prediction data
-    private List<BioCandidate> predictions;
+	Double axialTilt;
+	Double radius;
+	// Derived biological prediction data
+	private List<BioCandidate> predictions;
 
-    private java.util.Set<String> observedBioDisplayNames;
-    
-    // Observed genera from DSS or ScanOrganic
-    private Set<String> observedGenusPrefixes;
-    
-    private String discoveryCommander;  // may be null or empty
-    
+	private java.util.Set<String> observedBioDisplayNames;
+
+	// Observed genera from DSS or ScanOrganic
+	private Set<String> observedGenusPrefixes;
+
+	private String discoveryCommander;  // may be null or empty
+
 	private Double surfacePressure;
 	private String parentStar;
+	private int parentStarBodyId = -1;
+	private String starType;
 	private String nebula;
 	private int numberOfBioSignals;
 	// Odyssey exobiology sample progress per species (1..3).
 	// Key should be the display name you show in the Bio table (canonicalized if you do that elsewhere).
 	private final Map<String, Integer> bioSampleCountsByDisplayName = new HashMap<>();
 
-    // ------------------------------------------------------------
-    // Accessors
-    // ------------------------------------------------------------
+	// ------------------------------------------------------------
+	// Accessors
+	// ------------------------------------------------------------
 
 	public String getStarSystem() {
 		return starSystem;
 	}
 
 	public void setParentStar(String parentStar) {
-	    this.parentStar = parentStar;
+		this.parentStar = parentStar;
 	}
 
 	public String getParentStar() {
-	    return parentStar;
+		return parentStar;
+	}
+
+	public int getParentStarBodyId() {
+		return parentStarBodyId;
+	}
+
+	public void setParentStarBodyId(int parentStarBodyId) {
+		this.parentStarBodyId = parentStarBodyId;
+	}
+
+	public String getStarType() {
+		return starType;
+	}
+
+	public void setStarType(String starType) {
+		this.starType = starType;
 	}
 
 	public void setNebula(String nebula) {
-	    this.nebula = nebula;
+		this.nebula = nebula;
 	}
 
 	public String getNebula() {
-	    return nebula;
+		return nebula;
 	}
-	
-    public String getBodyName() {
-        return name;
-    }
 
-    public String getShortName() {
-        return shortName;
-    }
+	public String getBodyName() {
+		return name;
+	}
 
-    public int getBodyId() {
-        return bodyId;
-    }
+	public String getShortName() {
+		return shortName;
+	}
 
-    public double getDistanceLs() {
-        return distanceLs;
-    }
+	public int getBodyId() {
+		return bodyId;
+	}
 
-    public Double getGravityMS() {
-        return gravityMS;
-    }
+	public double getDistanceLs() {
+		return distanceLs;
+	}
 
-    public boolean isLandable() {
-        return landable;
-    }
+	public Double getGravityMS() {
+		return gravityMS;
+	}
 
-    public boolean hasBio() {
-        return isHasBio();
-    }
+	public boolean isLandable() {
+		return landable;
+	}
 
-    public boolean hasGeo() {
-        return isHasGeo();
-    }
+	public boolean hasBio() {
+		return isHasBio();
+	}
 
-    public boolean isHighValue() {
-        return highValue;
-    }
+	public boolean hasGeo() {
+		return isHasGeo();
+	}
 
-    public String getAtmoOrType() {
-        return atmoOrType;
-    }
+	public boolean isHighValue() {
+		return highValue;
+	}
 
-    public String getPlanetClass() {
-        return planetClass;
-    }
+	public String getAtmoOrType() {
+		return atmoOrType;
+	}
 
-    public String getAtmosphere() {
-        return atmosphere;
-    }
+	public String getPlanetClass() {
+		return planetClass;
+	}
 
-    public Double getSurfaceTempK() {
-        return surfaceTempK;
-    }
+	public String getAtmosphere() {
+		return atmosphere;
+	}
 
-    public String getVolcanism() {
-        return volcanism;
-    }
+	public Double getSurfaceTempK() {
+		return surfaceTempK;
+	}
 
-    public List<ExobiologyData.BioCandidate> getPredictions() {
-        return predictions;
-    }
+	public String getVolcanism() {
+		return volcanism;
+	}
 
-    public Set<String> getObservedGenusPrefixes() {
-        return observedGenusPrefixes;
-    }
-    
-    public java.util.Set<String> getObservedBioDisplayNames() {
-        return observedBioDisplayNames;
-    }
+	public List<ExobiologyData.BioCandidate> getPredictions() {
+		return predictions;
+	}
 
-    public void setObservedBioDisplayNames(java.util.Set<String> observedBioDisplayNames) {
-        this.observedBioDisplayNames = observedBioDisplayNames;
-    }
-    public String getDiscoveryCommander() {
-        return discoveryCommander;
-    }
+	public Set<String> getObservedGenusPrefixes() {
+		return observedGenusPrefixes;
+	}
 
-    public void setDiscoveryCommander(String discoveryCommander) {
-        this.discoveryCommander = discoveryCommander;
-    }
+	public java.util.Set<String> getObservedBioDisplayNames() {
+		return observedBioDisplayNames;
+	}
 
-    /**
-     * Convenience helper: true if EDSM reports a non-empty discovery.commander
-     * for this body.
-     */
-    public boolean hasDiscoveryCommander() {
-        return getDiscoveryCommander() != null && !getDiscoveryCommander().isBlank();
-    }
+	public void setObservedBioDisplayNames(java.util.Set<String> observedBioDisplayNames) {
+		this.observedBioDisplayNames = observedBioDisplayNames;
+	}
+	public String getDiscoveryCommander() {
+		return discoveryCommander;
+	}
 
-    public int getBioSampleCount(String displayName) {
-        if (displayName == null) {
-            return 0;
-        }
-        String key = canonBioName(displayName);
-        return bioSampleCountsByDisplayName.getOrDefault(key, 0);
-    }
+	public void setDiscoveryCommander(String discoveryCommander) {
+		this.discoveryCommander = discoveryCommander;
+	}
 
-    public boolean hasAnyBioSamples() {
-        for (Integer v : bioSampleCountsByDisplayName.values()) {
-            if (v != null && v.intValue() > 0) {
-                return true;
-            }
-        }
-        return false;
-    }
+	/**
+	 * Convenience helper: true if EDSM reports a non-empty discovery.commander
+	 * for this body.
+	 */
+	public boolean hasDiscoveryCommander() {
+		return getDiscoveryCommander() != null && !getDiscoveryCommander().isBlank();
+	}
 
-    /**
-     * Records a new sample for this species.
-     *
-     * ScanType behavior:
-     *  - "Log" typically occurs for each sample taken.
-     *  - "Analyse" indicates completion (3/3).
-     */
-    public void recordBioSample(String displayName, String scanType) {
-        if (displayName == null || displayName.isBlank()) {
-            return;
-        }
+	public int getBioSampleCount(String displayName) {
+		if (displayName == null) {
+			return 0;
+		}
+		String key = canonBioName(displayName);
+		return bioSampleCountsByDisplayName.getOrDefault(key, 0);
+	}
 
-        String key = canonBioName(displayName);
+	public boolean hasAnyBioSamples() {
+		for (Integer v : bioSampleCountsByDisplayName.values()) {
+			if (v != null && v.intValue() > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
 
-        int current = bioSampleCountsByDisplayName.getOrDefault(key, 0);
-        int next = current;
+	/**
+	 * Records a new sample for this species.
+	 *
+	 * ScanType behavior:
+	 *  - "Log" typically occurs for each sample taken.
+	 *  - "Analyse" indicates completion (3/3).
+	 */
+	public void recordBioSample(String displayName, String scanType) {
+		if (displayName == null || displayName.isBlank()) {
+			return;
+		}
 
-        if (scanType != null) {
-            String st = scanType.toLowerCase(Locale.ROOT);
-            if ("analyse".equals(st) || "analyze".equals(st)) {
-                next = 3;
-            } else if ("log".equals(st)) {
-                next = Math.min(3, current + 1);
-            }
-        } else {
-            next = Math.min(3, current + 1);
-        }
+		String key = canonBioName(displayName);
 
-        if (next != current) {
-            bioSampleCountsByDisplayName.put(key, next);
-        }
-    }
+		int current = bioSampleCountsByDisplayName.getOrDefault(key, 0);
+		int next = current;
 
-    // ------------------------------------------------------------
-    // Mutators
-    // ------------------------------------------------------------
+		if (scanType != null) {
+			String st = scanType.toLowerCase(Locale.ROOT);
+			if ("analyse".equals(st) || "analyze".equals(st)) {
+				next = 3;
+			} else if ("log".equals(st)) {
+				next = Math.min(3, current + 1);
+			}
+		} else {
+			next = Math.min(3, current + 1);
+		}
 
-    public void setBodyName(String name) {
-        this.name = name;
-    }
+		if (next != current) {
+			bioSampleCountsByDisplayName.put(key, next);
+		}
+	}
 
-    public void setBodyShortName(String shortName) {
-        this.shortName = shortName;
-    }
+	// ------------------------------------------------------------
+	// Mutators
+	// ------------------------------------------------------------
 
-    public void setBodyId(int bodyId) {
-        this.bodyId = bodyId;
-    }
+	public void setBodyName(String name) {
+		this.name = name;
+	}
 
-    public void setDistanceLs(double distanceLs) {
-        this.distanceLs = distanceLs;
-    }
+	public void setBodyShortName(String shortName) {
+		this.shortName = shortName;
+	}
 
-    public void setGravityMS(Double gravityMS) {
-        this.gravityMS = gravityMS;
-    }
+	public void setBodyId(int bodyId) {
+		this.bodyId = bodyId;
+	}
 
-    public void setLandable(boolean landable) {
-        this.landable = landable;
-    }
+	public void setDistanceLs(double distanceLs) {
+		this.distanceLs = distanceLs;
+	}
 
-    public void setHasBio(boolean hasBio) {
-        this.hasBio = hasBio;
-    }
+	public void setGravityMS(Double gravityMS) {
+		this.gravityMS = gravityMS;
+	}
 
-    public void setHasGeo(boolean hasGeo) {
-        this.hasGeo = hasGeo;
-    }
+	public void setLandable(boolean landable) {
+		this.landable = landable;
+	}
 
-    public void setHighValue(boolean highValue) {
-        this.highValue = highValue;
-    }
+	public void setHasBio(boolean hasBio) {
+		this.hasBio = hasBio;
+	}
 
-    public void setAtmoOrType(String atmoOrType) {
-        this.atmoOrType = atmoOrType;
-    }
+	public void setHasGeo(boolean hasGeo) {
+		this.hasGeo = hasGeo;
+	}
 
-    public void setPlanetClass(String planetClass) {
-        this.planetClass = planetClass;
-    }
+	public void setHighValue(boolean highValue) {
+		this.highValue = highValue;
+	}
 
-    public void setAtmosphere(String atmosphere) {
-        this.atmosphere = atmosphere;
-    }
+	public void setAtmoOrType(String atmoOrType) {
+		this.atmoOrType = atmoOrType;
+	}
 
-    public void setSurfaceTempK(Double surfaceTempK) {
-        this.surfaceTempK = surfaceTempK;
-    }
+	public void setPlanetClass(String planetClass) {
+		this.planetClass = planetClass;
+	}
 
-    public void setVolcanism(String volcanism) {
-        this.volcanism = volcanism;
-    }
+	public void setAtmosphere(String atmosphere) {
+		this.atmosphere = atmosphere;
+	}
 
-    public void setPredictions(List<ExobiologyData.BioCandidate> predictions) {
-        this.predictions = predictions;
-    }
+	public void setSurfaceTempK(Double surfaceTempK) {
+		this.surfaceTempK = surfaceTempK;
+	}
 
-    public void clearPredictions() {
-        if (getPredictions() != null) {
-            getPredictions().clear();
-        }
-    }
+	public void setVolcanism(String volcanism) {
+		this.volcanism = volcanism;
+	}
+
+	public void setPredictions(List<ExobiologyData.BioCandidate> predictions) {
+		this.predictions = predictions;
+	}
+
+	public void clearPredictions() {
+		if (getPredictions() != null) {
+			getPredictions().clear();
+		}
+	}
 	public Integer getNumberOfBioSignals() {
 		return numberOfBioSignals;
 	}
-	
-    public void setObservedGenusPrefixes(Set<String> observedGenusPrefixes) {
-        this.observedGenusPrefixes = observedGenusPrefixes;
-    }
-    
-    // ------------------------------------------------------------
-    // Genus observation handling
-    // ------------------------------------------------------------
 
-    public void addObservedGenus(String genusPrefix) {
-        if (genusPrefix == null || genusPrefix.isEmpty()) {
-            return;
-        }
-        if (getObservedGenusPrefixes() == null) {
-            setObservedGenusPrefixes(new HashSet<>());
-        }
-        getObservedGenusPrefixes().add(toLower(genusPrefix));
-    }
+	public void setObservedGenusPrefixes(Set<String> observedGenusPrefixes) {
+		this.observedGenusPrefixes = observedGenusPrefixes;
+	}
 
-    // ------------------------------------------------------------
-    // Build exobiology prediction attributes
-    // ------------------------------------------------------------
+	// ------------------------------------------------------------
+	// Genus observation handling
+	// ------------------------------------------------------------
 
-    /**
-     * Convert this body into ExobiologyData.BodyAttributes.
-     * Returns null if insufficient data is present.
-     */
-    public BodyAttributes buildBodyAttributes() {
-        double gravityG = Double.NaN;
-        if (getGravityMS() != null && !Double.isNaN(getGravityMS())) {
-            gravityG = getGravityMS() / 9.80665;
-        }
+	public void addObservedGenus(String genusPrefix) {
+		if (genusPrefix == null || genusPrefix.isEmpty()) {
+			return;
+		}
+		if (getObservedGenusPrefixes() == null) {
+			setObservedGenusPrefixes(new HashSet<>());
+		}
+		getObservedGenusPrefixes().add(toLower(genusPrefix));
+	}
 
-        if ((getPlanetClass() == null || getPlanetClass().isEmpty())
-                && (getAtmosphere() == null || getAtmosphere().isEmpty())
-                && Double.isNaN(gravityG)) {
-            return null; // Not enough info to predict
-        }
-        String pc = getPlanetClass();
-        PlanetType pt = ExobiologyData.parsePlanetType(pc);
-        AtmosphereType at = ExobiologyData.parseAtmosphere(getAtmosphere());
+	// ------------------------------------------------------------
+	// Build exobiology prediction attributes
+	// ------------------------------------------------------------
 
-        double tempMin = getSurfaceTempK() != null ? getSurfaceTempK() : Double.NaN;
-        double tempMax = tempMin;
+	/**
+	 * Convert this body into ExobiologyData.BodyAttributes.
+	 * Returns null if insufficient data is present.
+	 */
+	public BodyAttributes buildBodyAttributes() {
+		return buildBodyAttributes(null);
+	}
 
-        boolean hasVolc = getVolcanism() != null && !getVolcanism().isEmpty() && !getVolcanism().toLowerCase().startsWith("no volcanism");
+	public BodyAttributes buildBodyAttributes(SystemState state) {
+		double gravityG = Double.NaN;
+		if (getGravityMS() != null && !Double.isNaN(getGravityMS())) {
+			gravityG = getGravityMS() / 9.80665;
+		}
 
-        BodyAttributes attr = new BodyAttributes(
-        		getBodyName(),
-        		getStarSystem(),
-        		starPos,
-                pt,
-                gravityG,
-                at,
-                tempMin,
-                tempMax,
-                surfacePressure,
-                hasVolc,
-                getVolcanism()
-        );
-//        public BodyAttributes(String bodyName,
-//                PlanetType planetType,
-//                double gravity,
-//                AtmosphereType atmosphere,
-//                double tempKMin,
-//                double tempKMax,
-//                double pressure,
-//                boolean hasVolcanism,
-//                String volcanismType,
-//                Map<String, Double> atmosphereComponents,
-//                Double orbitalPeriod,
-//                Double distance,
-//                Boolean guardian,
-//                String nebula,
-//                String parentStar,
-//                String region,
-//                String starClass) {
-        
-        
-        
-        
-        return attr;
-    }
+		if ((getPlanetClass() == null || getPlanetClass().isEmpty())
+				&& (getAtmosphere() == null || getAtmosphere().isEmpty())
+				&& Double.isNaN(gravityG)) {
+			return null; // Not enough info to predict
+		}
+		String pc = getPlanetClass();
+		PlanetType pt = ExobiologyData.parsePlanetType(pc);
+		AtmosphereType at = ExobiologyData.parseAtmosphere(getAtmosphere());
 
-    public void addObservedGenusPrefix(String genus) {
-        if (genus == null || genus.isEmpty()) {
-            return;
-        }
-        if (getObservedGenusPrefixes() == null) {
-            setObservedGenusPrefixes(new java.util.HashSet<>());
-        }
-        getObservedGenusPrefixes().add(genus.toLowerCase(java.util.Locale.ROOT));
-    }
+		double tempMin = getSurfaceTempK() != null ? getSurfaceTempK() : Double.NaN;
+		double tempMax = tempMin;
 
-    public void addObservedBioDisplayName(String name) {
-        if (name == null || name.isEmpty()) {
-            return;
-        }
-        if (getObservedBioDisplayNames() == null) {
-            setObservedBioDisplayNames(new java.util.HashSet<>());
-        }
-        getObservedBioDisplayNames().add(name);
-    }
+		boolean hasVolc = getVolcanism() != null && !getVolcanism().isEmpty() && !getVolcanism().toLowerCase().startsWith("no volcanism");
 
-    
-    // ------------------------------------------------------------
-    // Utils
-    // ------------------------------------------------------------
+		String resolvedParentStar = parentStar;
+		String resolvedStarClass = null;
+		if (state != null && parentStarBodyId >= 0) {
+			BodyInfo star = state.getBodies().get(Integer.valueOf(parentStarBodyId));
+			if (star != null) {
+				if (resolvedParentStar == null || resolvedParentStar.isEmpty()) {
+					resolvedParentStar = star.getBodyName();
+				}
+				resolvedStarClass = star.getStarType();
+			}
+		}
 
-    private static String toLower(String s) {
-        return s == null ? "" : s.toLowerCase(Locale.ROOT);
-    }
+		BodyAttributes attr = new BodyAttributes(
+				getBodyName(),
+				getStarSystem(),
+				starPos,
+				pt,
+				gravityG,
+				at,
+				tempMin,
+				tempMax,
+				surfacePressure,
+				hasVolc,
+				getVolcanism(),
+				Collections.emptyMap(),
+				null,
+				null,
+				null,
+				nebula,
+				resolvedParentStar,
+				null,
+				resolvedStarClass
+				);
+		//        public BodyAttributes(String bodyName,
+		//                PlanetType planetType,
+		//                double gravity,
+		//                AtmosphereType atmosphere,
+		//                double tempKMin,
+		//                double tempKMax,
+		//                double pressure,
+		//                boolean hasVolcanism,
+		//                String volcanismType,
+		//                Map<String, Double> atmosphereComponents,
+		//                Double orbitalPeriod,
+		//                Double distance,
+		//                Boolean guardian,
+		//                String nebula,
+		//                String parentStar,
+		//                String region,
+		//                String starClass) {
+
+
+
+
+		return attr;
+	}
+
+	public void addObservedGenusPrefix(String genus) {
+		if (genus == null || genus.isEmpty()) {
+			return;
+		}
+		if (getObservedGenusPrefixes() == null) {
+			setObservedGenusPrefixes(new java.util.HashSet<>());
+		}
+		getObservedGenusPrefixes().add(genus.toLowerCase(java.util.Locale.ROOT));
+	}
+
+	public void addObservedBioDisplayName(String name) {
+		if (name == null || name.isEmpty()) {
+			return;
+		}
+		if (getObservedBioDisplayNames() == null) {
+			setObservedBioDisplayNames(new java.util.HashSet<>());
+		}
+		getObservedBioDisplayNames().add(name);
+	}
+
+
+	// ------------------------------------------------------------
+	// Utils
+	// ------------------------------------------------------------
+
+	private static String toLower(String s) {
+		return s == null ? "" : s.toLowerCase(Locale.ROOT);
+	}
 
 	public boolean isHasBio() {
 		return hasBio;
@@ -460,64 +502,64 @@ public class BodyInfo {
 	public void setNumberOfBioSignals(int num) {
 		numberOfBioSignals = num;
 	}
-	
+
 	private static String canonBioName(String raw) {
-	    if (raw == null) {
-	        return "";
-	    }
-	    String s = raw.trim();
-	    if (s.isEmpty()) {
-	        return s;
-	    }
+		if (raw == null) {
+			return "";
+		}
+		String s = raw.trim();
+		if (s.isEmpty()) {
+			return s;
+		}
 
-	    String[] parts = s.split("\\s+");
-	    if (parts.length >= 3 && parts[0].equalsIgnoreCase(parts[1])) {
-	        StringBuilder sb = new StringBuilder(parts[0]);
-	        for (int i = 2; i < parts.length; i++) {
-	            sb.append(' ').append(parts[i]);
-	        }
-	        return sb.toString();
-	    }
+		String[] parts = s.split("\\s+");
+		if (parts.length >= 3 && parts[0].equalsIgnoreCase(parts[1])) {
+			StringBuilder sb = new StringBuilder(parts[0]);
+			for (int i = 2; i < parts.length; i++) {
+				sb.append(' ').append(parts[i]);
+			}
+			return sb.toString();
+		}
 
-	    return s;
+		return s;
 	}
 	public Map<String, Integer> getBioSampleCountsSnapshot() {
-	    if (bioSampleCountsByDisplayName.isEmpty()) {
-	        return Collections.emptyMap();
-	    }
-	    return new HashMap<>(bioSampleCountsByDisplayName);
+		if (bioSampleCountsByDisplayName.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		return new HashMap<>(bioSampleCountsByDisplayName);
 	}
 
 	public void setBioSampleCounts(Map<String, Integer> counts) {
-	    bioSampleCountsByDisplayName.clear();
+		bioSampleCountsByDisplayName.clear();
 
-	    if (counts == null || counts.isEmpty()) {
-	        return;
-	    }
+		if (counts == null || counts.isEmpty()) {
+			return;
+		}
 
-	    for (Map.Entry<String, Integer> e : counts.entrySet()) {
-	        String key = e.getKey();
-	        if (key == null || key.isBlank()) {
-	            continue;
-	        }
+		for (Map.Entry<String, Integer> e : counts.entrySet()) {
+			String key = e.getKey();
+			if (key == null || key.isBlank()) {
+				continue;
+			}
 
-	        Integer vObj = e.getValue();
-	        if (vObj == null) {
-	            continue;
-	        }
+			Integer vObj = e.getValue();
+			if (vObj == null) {
+				continue;
+			}
 
-	        int v = vObj.intValue();
-	        if (v <= 0) {
-	            continue;
-	        }
+			int v = vObj.intValue();
+			if (v <= 0) {
+				continue;
+			}
 
-	        // Clamp to 1..3
-	        if (v > 3) {
-	            v = 3;
-	        }
+			// Clamp to 1..3
+			if (v > 3) {
+				v = 3;
+			}
 
-	        bioSampleCountsByDisplayName.put(key, Integer.valueOf(v));
-	    }
+			bioSampleCountsByDisplayName.put(key, Integer.valueOf(v));
+		}
 	}
 
 

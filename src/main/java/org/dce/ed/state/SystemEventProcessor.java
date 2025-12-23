@@ -207,12 +207,45 @@ public class SystemEventProcessor {
         if (e.getVolcanism() != null && !e.getVolcanism().isEmpty()) {
             info.setVolcanism(e.getVolcanism());
         }
+        if (e.getStarType() != null && !e.getStarType().isEmpty()) {
+            info.setStarType(e.getStarType());
+        }
+
+        int parentStarBodyId = findParentStarBodyId(e);
+        if (parentStarBodyId >= 0) {
+            info.setParentStarBodyId(parentStarBodyId);
+            BodyInfo parentStar = state.getBodies().get(Integer.valueOf(parentStarBodyId));
+            if (parentStar != null && parentStar.getBodyName() != null && !parentStar.getBodyName().isEmpty()) {
+                info.setParentStar(parentStar.getBodyName());
+            }
+        }
 
         state.getBodies().put(e.getBodyId(), info);
         
         for (BodyInfo body : state.getBodies().values()) {
         	updatePredictions(body);
         }
+    }
+
+    private static int findParentStarBodyId(ScanEvent e) {
+        if (e == null) {
+            return -1;
+        }
+
+        List<ScanEvent.ParentRef> parents = e.getParents();
+        if (parents == null || parents.isEmpty()) {
+            return -1;
+        }
+
+        for (ScanEvent.ParentRef p : parents) {
+            if (p == null || p.getType() == null) {
+                continue;
+            }
+            if ("Star".equalsIgnoreCase(p.getType())) {
+                return p.getBodyId();
+            }
+        }
+        return -1;
     }
 
     // ---------------------------------------------------------------------
@@ -415,7 +448,7 @@ public class SystemEventProcessor {
             return;
         }
 
-        BodyAttributes attrs = info.buildBodyAttributes();
+        BodyAttributes attrs = info.buildBodyAttributes(state);
         if (attrs == null) {
             return;
         }

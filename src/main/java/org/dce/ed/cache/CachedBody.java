@@ -33,6 +33,8 @@ public class CachedBody {
 
     public String bodyName;
     public String parentStar;
+    public int parentStarBodyId;
+    public String starType;
     public String nebula; 
     
     public Double surfacePressure;
