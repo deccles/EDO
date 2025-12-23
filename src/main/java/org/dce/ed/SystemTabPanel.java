@@ -36,7 +36,6 @@ import javax.swing.table.TableColumnModel;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
-import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
@@ -48,6 +47,7 @@ import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import org.dce.ed.util.EdsmClient;
 
 /**
  * System tab – now a *pure UI* renderer.
@@ -496,22 +496,30 @@ public class SystemTabPanel extends JPanel {
     }
     public static boolean bodyIssues = false;
     private void persistIfPossible() {
-        if (state.getSystemName() != null
-                && state.getSystemAddress() != 0L
-                && !state.getBodies().isEmpty()) {
-
-        	boolean usedToHaveBodyIssues = bodyIssues;
-        	for (BodyInfo x : state.getBodies().values()) {
-        		if (x.getBodyId() == -1) {
-        			System.out.println("Can't save yet");
-        			bodyIssues = false;
-
-        			return;
-        		}
-    			usedToHaveBodyIssues = true;
-        	}
-            SystemCache.getInstance().storeSystem(state);
+        if (state.getSystemName() == null
+                || state.getSystemAddress() == 0L
+                || state.getBodies().isEmpty()) {
+            return;
         }
+
+        boolean hasAnyRealBodies = false;
+
+        for (BodyInfo x : state.getBodies().values()) {
+            if (x == null) {
+                continue;
+            }
+
+            // Temp bodies created before we learn BodyID are allowed.
+            if (x.getBodyId() >= 0) {
+                hasAnyRealBodies = true;
+            }
+        }
+
+        if (!hasAnyRealBodies) {
+            return;
+        }
+
+        SystemCache.getInstance().storeSystem(state);
     }
 
     // ---------------------------------------------------------------------

@@ -89,6 +89,12 @@ public class EliteLogParser {
                 return parseReceiveText(ts, obj);
             case STATUS:
                 return parseStatus(ts, obj);
+                
+            case CARRIER_LOCATION:
+                return parseLocation(ts, obj);
+
+            case CARRIER_JUMP:
+                return parseLocation(ts, obj);
             default:
                 // For everything else, fall back to generic event.
                 return new GenericEvent(ts, type, obj);

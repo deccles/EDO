@@ -38,6 +38,7 @@ public enum EliteEventType {
     MISSIONS("Missions"),
     STATISTICS("Statistics"),
     CARRIER_LOCATION("CarrierLocation"),
+    CARRIER_JUMP("CarrierJump"),
     RECEIVE_TEXT("ReceiveText"),
     MUSIC("Music"),
     RESERVOIR_REPLENISHED("ReservoirReplenished"),

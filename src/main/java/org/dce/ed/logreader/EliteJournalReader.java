@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -327,4 +328,20 @@ public class EliteJournalReader {
                     .collect(Collectors.toList());
         }
     }
+    
+
+    public List<EliteLogEvent> readEventsFromJournalFile(Path journalFile) throws IOException {
+        if (journalFile == null) {
+            return Collections.emptyList();
+        }
+
+        Path file = journalFile.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(file)) {
+            return Collections.emptyList();
+        }
+        List<EliteLogEvent> sink = new ArrayList<>();
+        readEventsFromFile(journalFile, sink);
+        return sink;
+   }
+
 }

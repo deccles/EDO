@@ -32,7 +32,6 @@ import javax.swing.table.TableColumnModel;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
-import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
@@ -43,6 +42,7 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
+import org.dce.ed.util.EdsmClient;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;

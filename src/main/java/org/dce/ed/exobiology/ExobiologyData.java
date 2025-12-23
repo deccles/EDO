@@ -790,9 +790,9 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
 //        private final SpeciesConstraint constraint;
         private final double score;
 //        private final String reason;
-        String genus = "";
-        String species = "";
-        Long baseValue;
+        public String genus = "";
+        public String species = "";
+        public Long baseValue;
         
         public BioCandidate(SpeciesConstraint constraint, double score, String reason) {
         	genus = constraint.getGenus();

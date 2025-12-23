@@ -156,7 +156,7 @@ public class ExobiologyAuditMain {
                 }
                 bodyCount++;
 
-                BodyAttributes attrs = buildBodyAttributes(b);
+                BodyAttributes attrs = buildBodyAttributes(acc, b);
                 if (attrs == null) {
                     continue;
                 }
@@ -461,7 +461,7 @@ public class ExobiologyAuditMain {
     // Building BodyAttributes from BodyInfo
     // ------------------------------------------------------------------------
 
-    private static BodyAttributes buildBodyAttributes(BodyInfo b) {
+    private static BodyAttributes buildBodyAttributes(SystemAccumulator acc, BodyInfo b) {
         if (b == null) {
             return null;
         }
@@ -493,18 +493,45 @@ public class ExobiologyAuditMain {
         boolean hasVolc = !volc.isEmpty()
                 && !volc.toLowerCase(Locale.ROOT).contains("no volcanism");
 
+        // --- Resolve parentStar + starClass (host star type) ---
+        String parentStar = b.getParentStar();
+        String starClass = null;
+
+        Integer parentStarBodyId = b.getParentStarBodyId();
+        if (parentStarBodyId != null && parentStarBodyId.intValue() >= 0) {
+            BodyInfo star = null;
+            if (acc != null && acc.bodies != null) {
+                star = acc.bodies.get(parentStarBodyId);
+            }
+
+            if (star != null) {
+                if (parentStar == null || parentStar.isEmpty()) {
+                    parentStar = star.getBodyName();
+                }
+                starClass = star.getStarType();
+            }
+        }
+
         return new BodyAttributes(
-        		b.getBodyName(),
-        		b.getStarSystem(),
-        		b.getStarPos(),
-        		planetType,
+                b.getBodyName(),
+                b.getStarSystem(),
+                b.getStarPos(),
+                planetType,
                 gravity,
                 atmo,
                 tempMin,
                 tempMax,
                 b.getSurfacePressure(),
                 hasVolc,
-                volc
+                volc,
+                null,   // atmosphereComponents
+                null,   // orbitalPeriod
+                null,   // distance
+                null,   // guardian
+                null,   // nebula
+                parentStar,
+                null,   // region
+                starClass
         );
     }
 

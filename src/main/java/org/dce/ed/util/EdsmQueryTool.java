@@ -1,4 +1,4 @@
-package org.dce.ed.edsm;
+package org.dce.ed.util;
 
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -48,6 +48,20 @@ import javax.swing.Timer;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
+
+import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.edsm.CmdrCreditsResponse;
+import org.dce.ed.edsm.CmdrLastPositionResponse;
+import org.dce.ed.edsm.CmdrRanksResponse;
+import org.dce.ed.edsm.DeathsResponse;
+import org.dce.ed.edsm.ExobiologyPanel;
+import org.dce.ed.edsm.LogsResponse;
+import org.dce.ed.edsm.ShowSystemResponse;
+import org.dce.ed.edsm.SphereSystemsResponse;
+import org.dce.ed.edsm.SystemResponse;
+import org.dce.ed.edsm.SystemStationsResponse;
+import org.dce.ed.edsm.TrafficResponse;
+import org.dce.ed.edsm.UtilTable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

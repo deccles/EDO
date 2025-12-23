@@ -25,6 +25,7 @@ import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
+import org.dce.ed.util.EdsmClient;
 
 /**
  * EDSM -> Exobiology prediction panel.

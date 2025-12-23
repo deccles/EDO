@@ -1,4 +1,4 @@
-package org.dce.ed.edsm;
+package org.dce.ed.util;
 
 import java.io.IOException;
 import java.net.URI;
@@ -14,6 +14,19 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.edsm.CmdrCreditsResponse;
+import org.dce.ed.edsm.CmdrLastPositionResponse;
+import org.dce.ed.edsm.CmdrRanksResponse;
+import org.dce.ed.edsm.DeathsResponse;
+import org.dce.ed.edsm.LogsResponse;
+import org.dce.ed.edsm.ShowSystemResponse;
+import org.dce.ed.edsm.SphereSystemsResponse;
+import org.dce.ed.edsm.SystemResponse;
+import org.dce.ed.edsm.SystemStationsResponse;
+import org.dce.ed.edsm.TrafficResponse;
+import org.dce.ed.edsm.BodiesResponse.Body;
+import org.dce.ed.edsm.BodiesResponse.ParentRef;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 

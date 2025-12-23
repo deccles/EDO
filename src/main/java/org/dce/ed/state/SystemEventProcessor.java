@@ -7,7 +7,6 @@ import java.util.Locale;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
-import org.dce.ed.edsm.EdsmClient;
 import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
@@ -22,6 +21,7 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.SaasignalsFoundEvent;
 import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.util.EdsmClient;
 
 /**
  * Consumes Elite Dangerous journal events and mutates a SystemState.
@@ -168,20 +168,53 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
 
     private void handleScan(ScanEvent e) {
+        // Scans can appear before the Location/FsdJump event that establishes the active system
+        // (e.g., carrier-related event ordering). Make sure we're in the scan's system first,
+        // otherwise later enterSystem(...) will resetBodies() and discard this scan.
+        String scanSystemName = e.getStarSystem();
+        long scanSystemAddress = e.getSystemAddress();
+
+        boolean sameName = scanSystemName != null
+                && scanSystemName.equals(state.getSystemName());
+        boolean sameAddr = scanSystemAddress != 0L
+                && scanSystemAddress == state.getSystemAddress();
+
+        if (!sameName || !sameAddr) {
+            enterSystem(scanSystemName, scanSystemAddress, state.getStarPos());
+        }
+
         if (isBeltOrRing(e.getBodyName())) {
             return;
         }
 
-        BodyInfo info = getOrCreateBody(e.getBodyId(), e.getBodyName());
+        // IMPORTANT:
+        // If BodyID is missing (-1), never use -1 as the map key (or it will be skipped by SystemCache.storeSystem()).
+        // Use a stable temp key derived from body name instead.
+        int key =
+                e.getBodyId() >= 0
+                        ? e.getBodyId()
+                        : tempBodyKey(e.getBodyName());
+
+        BodyInfo info;
+
+        if (e.getBodyId() >= 0) {
+            // If we previously created a temp entry for this same body name, migrate it now.
+            migrateTempBodyIfPresent(e.getBodyId(), e.getBodyName());
+            info = state.getOrCreateBody(e.getBodyId());
+        } else {
+            info = state.getOrCreateBody(key);
+        }
 
         if (info.getStarPos() == null && state.getStarPos() != null) {
             info.setStarPos(state.getStarPos());
         }
-        
-        info.setBodyId(e.getBodyId());
+
+        // Store a non--1 id so persistence works. If/when we later learn the real BodyID,
+        // migrateTempBodyIfPresent(...) will move/merge into the real ID entry.
+        info.setBodyId(key);
+
         info.setBodyName(e.getBodyName());
         info.setStarSystem(e.getStarSystem());
-
         info.setBodyShortName(state.computeShortName(e.getStarSystem(), e.getBodyName()));
 
         info.setDistanceLs(e.getDistanceFromArrivalLs());
@@ -207,6 +240,7 @@ public class SystemEventProcessor {
         if (e.getVolcanism() != null && !e.getVolcanism().isEmpty()) {
             info.setVolcanism(e.getVolcanism());
         }
+
         if (e.getStarType() != null && !e.getStarType().isEmpty()) {
             info.setStarType(e.getStarType());
         }
@@ -214,16 +248,20 @@ public class SystemEventProcessor {
         int parentStarBodyId = findParentStarBodyId(e);
         if (parentStarBodyId >= 0) {
             info.setParentStarBodyId(parentStarBodyId);
+
             BodyInfo parentStar = state.getBodies().get(Integer.valueOf(parentStarBodyId));
-            if (parentStar != null && parentStar.getBodyName() != null && !parentStar.getBodyName().isEmpty()) {
+            if (parentStar != null
+                    && parentStar.getBodyName() != null
+                    && !parentStar.getBodyName().isEmpty()) {
                 info.setParentStar(parentStar.getBodyName());
             }
         }
 
-        state.getBodies().put(e.getBodyId(), info);
-        
+        // Use the stable key, never e.getBodyId() when it is -1.
+        state.getBodies().put(key, info);
+
         for (BodyInfo body : state.getBodies().values()) {
-        	updatePredictions(body);
+            updatePredictions(body);
         }
     }
 

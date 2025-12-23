@@ -11,6 +11,7 @@ import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
 
@@ -61,21 +62,58 @@ public class RescanJournalsMain {
         System.out.println("Rescanning Elite Dangerous journals and rebuilding local system cache...");
 
         boolean forceFull = false;
+        Path forcedJournalFile = null;
+        Path forcedCacheFile = null;
         if (args != null) {
-            for (String arg : args) {
+            for (int i = 0; i < args.length; i++) {
+                String arg = args[i];
+
                 if ("--full".equalsIgnoreCase(arg)) {
                     forceFull = true;
-                    break;
+                    continue;
+                }
+
+                if ("--journal".equalsIgnoreCase(arg) || "-j".equalsIgnoreCase(arg)) {
+                    if (i + 1 < args.length) {
+                        forcedJournalFile = Path.of(args[++i]).toAbsolutePath().normalize();
+                    }
+                    continue;
+                }
+
+                if ("--cache".equalsIgnoreCase(arg)
+                        || "--cacheFile".equalsIgnoreCase(arg)
+                        || "-c".equalsIgnoreCase(arg)) {
+                    if (i + 1 < args.length) {
+                        forcedCacheFile = Path.of(args[++i]).toAbsolutePath().normalize();
+                    }
                 }
             }
         }
 
-        rescanJournals(forceFull);
+        rescanJournals(forceFull, forcedJournalFile, forcedCacheFile);
     }
 
     public static void rescanJournals(boolean forceFull) throws IOException {
+        // Keep default GUI behavior unchanged.
+        rescanJournals(forceFull, null, null);
+    }
+
+    /**
+     * Optional CLI-oriented overload:
+     *  - forcedJournalFile: if provided, rescan ONLY that file (no copying into the game journal directory).
+     *  - forcedCacheFile: if provided, sets a system property that SystemCache may honor.
+     */
+    public static void rescanJournals(boolean forceFull, Path forcedJournalFile, Path forcedCacheFile) throws IOException {
         EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
         Path journalDirectory = reader.getJournalDirectory();
+
+        if (forcedCacheFile != null) {
+            // These are intentionally redundant so you can hook whichever one you prefer inside SystemCache.
+            System.setProperty("edo.cache.file", forcedCacheFile.toString());
+            System.setProperty("edo.cache.path", forcedCacheFile.toString());
+            System.setProperty("edo.systemCache.file", forcedCacheFile.toString());
+        }
+
         Instant lastImport = null;
         if (!forceFull) {
             lastImport = readLastImportInstant(journalDirectory);
@@ -89,7 +127,15 @@ public class RescanJournalsMain {
         }
 
         List<EliteLogEvent> events;
-        if (lastImport == null) {
+        if (forcedJournalFile != null) {
+            // We intentionally do NOT stage/copy anything into the live journal directory
+            // (EDMC watches that directory and will ingest anything we drop there).
+            //
+            // Add a tiny helper method to EliteJournalReader:
+            //   List<EliteLogEvent> readEventsFromJournalFile(Path journalFile)
+            // which reads/parses exactly like your normal directory scan.
+            events = reader.readEventsFromJournalFile(forcedJournalFile);
+        } else if (lastImport == null) {
             events = reader.readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
         } else {
             events = reader.readEventsSince(lastImport);
@@ -123,6 +169,7 @@ public class RescanJournalsMain {
             }
 
             processor.handleEvent(event);
+//            persistIfStarScan(cache, state, event);
         }
 
         // Persist the final system (if valid)
@@ -143,10 +190,27 @@ public class RescanJournalsMain {
         boolean sameName = nextName != null && nextName.equals(curName);
         boolean sameAddr = nextAddr != 0L && nextAddr == curAddr;
 
-        if (sameName || sameAddr) {
+        // Only treat it as "same system" if BOTH match (when available).
+        if (sameName && sameAddr) {
             return;
         }
 
         cache.storeSystem(state);
     }
+    private static void persistIfStarScan(SystemCache cache, SystemState state, EliteLogEvent event) {
+        if (!(event instanceof ScanEvent)) {
+            return;
+        }
+
+        ScanEvent se = (ScanEvent) event;
+
+        // Star scans have StarType and distance 0; BodyID 0 is common but not required.
+        String st = se.getStarType();
+        if (st == null || st.isEmpty()) {
+            return;
+        }
+
+        cache.storeSystem(state);
+    }
+
 }

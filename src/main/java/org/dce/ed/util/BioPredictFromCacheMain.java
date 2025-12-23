@@ -1,4 +1,4 @@
-package org.dce.ed.exobiology;
+package org.dce.ed.util;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -40,6 +40,8 @@ import javax.swing.SwingUtilities;
 
 import org.dce.ed.cache.CachedBody;
 import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.exobiology.BodyAttributes;
+import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.state.BodyInfo;
 
