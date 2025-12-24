@@ -314,15 +314,26 @@ public class SystemTabPanel extends JPanel {
         	
         	List<BioCandidate> candidates = e.getCandidates();
         	
-        	Double highestValue = 0.0;
+        	long highestPayout = 0L;
         	
         	for (BioCandidate bio : candidates) {
         		System.out.println("Need to know which planet so we can tell expected value");
+        		highestPayout = Math.max(highestPayout, bio.getEstimatedPayout(e.getBonusApplies()));
         	}
         	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
-        	ttsSprintf.speakf("{n} valuable species discovered on planetary body {body}",
-        			candidates.size(),
-        			e.getBodyName());
+        	
+        	if (highestPayout > 20000000) {
+            	ttsSprintf.speakf("{n} species discovered on planetary body {body} with estimated value of {credits}",
+            			candidates.size(),
+            			e.getBodyName(),
+            			highestPayout);
+        	} else {
+            	ttsSprintf.speakf("{n} species discovered on planetary body {body}",
+            			candidates.size(),
+            			e.getBodyName());
+        	}
+
+
 
         	
         }

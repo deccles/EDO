@@ -544,6 +544,7 @@ public class SystemEventProcessor {
         		info.getBodyName(),
         		info.getBodyId(),
         		info.getStarSystem(),
+        		info.getWasFootfalled(),
         		candidates);
         		
         LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);

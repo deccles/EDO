@@ -15,21 +15,32 @@ import com.google.gson.JsonObject;
  */
 public class BioScanPredictionEvent extends EliteLogEvent {
 
+	public Boolean getBonusApplies() {
+		return bonusApplies;
+	}
+
+	public void setBonusApplies(Boolean bonusApplies) {
+		this.bonusApplies = bonusApplies;
+	}
+
 	private final String bodyName;
     private final int bodyId;
     private final String starSystem;
     private final List<BioCandidate> candidates;
+	private Boolean bonusApplies;
     
     public BioScanPredictionEvent(Instant timestamp,
                      JsonObject rawJson,
                      String bodyName,
                      int bodyId,
                      String starSystem,
+                     Boolean bonusApplies,
                      List<BioCandidate> candidates) {
         super(timestamp, EliteEventType.SCAN, rawJson);
         this.bodyName = bodyName;
         this.bodyId = bodyId;
         this.starSystem = starSystem;
+        this.bonusApplies = bonusApplies;
         this.candidates = candidates;
     }
 
