@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 
+import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
@@ -245,6 +246,12 @@ public class SystemEventProcessor {
         	info.setStarType(e.getStarType());
         }
 
+        info.setWasMapped(e.isWasMapped());
+        info.setWasDiscovered(e.isWasDiscovered());
+        info.setWasFootfalled(e.isWasMapped());
+        
+        info.setOrbitalPeriod(e.getOrbitalPeriod());
+        
         int parentStarBodyId = findParentStarBodyId(e);
         if (parentStarBodyId >= 0) {
             info.setParentStarBodyId(parentStarBodyId);
@@ -531,7 +538,16 @@ public class SystemEventProcessor {
                 return;
             }
         }
-
+        BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
+        		Instant.now(),
+        		null,
+        		info.getBodyName(),
+        		info.getBodyId(),
+        		info.getStarSystem(),
+        		candidates);
+        		
+        LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
+        
         info.setPredictions(candidates);
     }
 

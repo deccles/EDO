@@ -396,9 +396,14 @@ public class EliteLogParser {
         Double surfaceTemp = obj.has("SurfaceTemperature")
                 ? obj.get("SurfaceTemperature").getAsDouble()
                 : null;
+        Double orbitalPeriod = obj.has("OrbitalPeriod")
+                ? obj.get("OrbitalPeriod").getAsDouble()
+                : null;
         String volcanism = getString(obj, "Volcanism");
-        boolean wasDiscovered = obj.has("WasDiscovered") && obj.get("WasDiscovered").getAsBoolean();
-        boolean wasMapped = obj.has("WasMapped") && obj.get("WasMapped").getAsBoolean();
+        boolean wasDiscovered = obj.has("WasDiscovered") ? obj.get("WasDiscovered").getAsBoolean(): false;
+        boolean wasMapped = obj.has("WasMapped") ? obj.get("WasMapped").getAsBoolean() : false;
+        boolean wasFootfalled= obj.has("WasFootfalled") ? obj.get("WasFootfalled").getAsBoolean() : false;
+        
         String starType = getString(obj, "StarType");
 
         List<ScanEvent.ParentRef> parents = parseParentRefs(obj);
@@ -421,9 +426,11 @@ public class EliteLogParser {
                 surfaceGravity,
                 surfacePressure,
                 surfaceTemp,
+                orbitalPeriod,
                 volcanism,
                 wasDiscovered,
                 wasMapped,
+                wasFootfalled,
                 starType,
                 parents
         );
@@ -525,3 +532,6 @@ public class EliteLogParser {
                 : null;
     }
 }
+
+
+

@@ -29,6 +29,8 @@ public class CachedBody {
     public String atmoOrType;
 
     public Double surfaceTempK;
+    public Double orbitalPeriod;
+    
     public String volcanism;
 
     public String bodyName;
@@ -52,6 +54,9 @@ public class CachedBody {
     
     // Full "truth" names like "Bacterium Nebulus", "Stratum Tectonicas", etc.
     public Set<String> observedBioDisplayNames;  // may be null
+	public Boolean wasMapped;
+	public Boolean wasDiscovered;
+	public Boolean wasFootfalled;
 
 	public int getNumberOfBioSignals() {
 		return numberOfBioSignals;

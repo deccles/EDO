@@ -92,6 +92,7 @@ final class BioTableBuilder {
             boolean hasObservedNames = observedNamesRaw != null && !observedNamesRaw.isEmpty();
             boolean hasPreds = preds != null && !preds.isEmpty();
 
+            boolean firstBonus = !b.getWasFootfalled();
             // If literally nothing but "hasBio", show a generic message
             if (!hasGenusPrefixes && !hasObservedNames && !hasPreds) {
                 rows.add(Row.bio(b.getBodyId(),
@@ -120,7 +121,7 @@ final class BioTableBuilder {
                 if (preds != null) {
                     for (ExobiologyData.BioCandidate cand : preds) {
                         String name = canonicalBioName(cand.getDisplayName());
-                        Long cr = cand.getEstimatedPayout(true);
+                        Long cr = cand.getEstimatedPayout(firstBonus);
                         bioRows.add(new BioRowData(name, cr));
                     }
                 }

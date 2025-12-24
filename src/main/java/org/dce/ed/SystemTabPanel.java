@@ -314,6 +314,11 @@ public class SystemTabPanel extends JPanel {
         	
         	List<BioCandidate> candidates = e.getCandidates();
         	
+        	Double highestValue = 0.0;
+        	
+        	for (BioCandidate bio : candidates) {
+        		System.out.println("Need to know which planet so we can tell expected value");
+        	}
         	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
         	ttsSprintf.speakf("{n} valuable species discovered on planetary body {body}",
         			candidates.size(),
@@ -765,8 +770,8 @@ public class SystemTabPanel extends JPanel {
             mergeBodiesKeepBest(keep, drop);
 
             // Useful debug to prove what's happening (leave it in until stable)
-            System.out.println("DEDUP body name='" + name + "' keepId=" + keep.getBodyId()
-                    + " dropId=" + drop.getBodyId());
+//            System.out.println("DEDUP body name='" + name + "' keepId=" + keep.getBodyId()
+//                    + " dropId=" + drop.getBodyId());
         }
 
         for (Integer k : keysToRemove) {

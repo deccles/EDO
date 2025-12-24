@@ -343,7 +343,7 @@ public final class ExobiologyData {
 
             if (guardian != null) {
                 if (body.guardian == null) {
-                    warn("Rule requires guardian flag but body.guardian was null");
+//                    warn("Rule requires guardian flag but body.guardian was null");
                     return false;
                 }
                 if (!guardian.equals(body.guardian)) {

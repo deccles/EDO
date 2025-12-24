@@ -227,6 +227,7 @@ public final class SystemCache {
             info.setPlanetClass(cb.planetClass);
             info.setAtmosphere(cb.atmosphere);
             info.setSurfaceTempK(cb.surfaceTempK);
+            info.setOrbitalPeriod(cb.orbitalPeriod);
             info.setVolcanism(cb.volcanism);
             info.setNumberOfBioSignals(cb.getNumberOfBioSignals());
             info.setDiscoveryCommander(cb.discoveryCommander);
@@ -236,6 +237,9 @@ public final class SystemCache {
             info.setParentStarBodyId(cb.parentStarBodyId);
             info.setStarType(cb.starType);
             
+            info.setWasMapped(cb.wasMapped);
+            info.setWasDiscovered(cb.wasDiscovered);
+            info.setWasFootfalled(cb.wasFootfalled);
             if (cb.bioSampleCountsByDisplayName != null && !cb.bioSampleCountsByDisplayName.isEmpty()) {
                 info.setBioSampleCounts(cb.bioSampleCountsByDisplayName);
             }
@@ -488,6 +492,7 @@ public final class SystemCache {
             cb.planetClass = b.getPlanetClass();
             cb.atmosphere = b.getAtmosphere();
             cb.surfaceTempK = b.getSurfaceTempK();
+            cb.orbitalPeriod = b.getOrbitalPeriod();
             cb.volcanism = b.getVolcanism();
             cb.discoveryCommander = b.getDiscoveryCommander();
             cb.surfacePressure = b.getSurfacePressure();
@@ -495,6 +500,12 @@ public final class SystemCache {
             cb.parentStar = b.getParentStar();
             cb.parentStarBodyId = b.getParentStarBodyId();
             cb.starType = b.getStarType();
+            
+            cb.wasMapped = b.getWasMapped();
+            cb.wasDiscovered = b.getWasDiscovered();
+            cb.wasFootfalled = b.getWasFootfalled();
+            
+            
             cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
             if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
                 cb.predictions = b.getPredictions();

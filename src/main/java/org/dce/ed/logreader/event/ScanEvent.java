@@ -58,10 +58,13 @@ public final class ScanEvent extends EliteLogEvent {
     private final String terraformState;
     private final Double surfaceGravity;
     private final Double surfaceTemperature;
+    private final Double orbitalPeriod;
     private final String volcanism;
     private final boolean wasDiscovered;
     private final boolean wasMapped;
-    private final String starType;
+    private final boolean wasFootfalled;
+
+	private final String starType;
     private final List<ParentRef> parents;
 	private Double surfacePressure;
 
@@ -79,9 +82,11 @@ public final class ScanEvent extends EliteLogEvent {
                      Double surfaceGravity,
                      Double surfacePressure,
                      Double surfaceTemperature,
+                     Double orbitalPeriod,
                      String volcanism,
                      boolean wasDiscovered,
                      boolean wasMapped,
+                     boolean wasFootfalled, 
                      String starType,
                      List<ParentRef> parents) {
 
@@ -98,9 +103,12 @@ public final class ScanEvent extends EliteLogEvent {
         this.surfaceGravity = surfaceGravity;
         this.surfacePressure = surfacePressure;
         this.surfaceTemperature = surfaceTemperature;
+        this.orbitalPeriod = orbitalPeriod;
         this.volcanism = volcanism;
         this.wasDiscovered = wasDiscovered;
         this.wasMapped = wasMapped;
+        this.wasFootfalled = wasFootfalled;
+        
         this.starType = starType;
         this.parents = (parents == null) ? Collections.emptyList() : parents;
     }
@@ -169,5 +177,9 @@ public final class ScanEvent extends EliteLogEvent {
 
 	public Double getSurfacePressure() {
 		return surfacePressure;
+	}
+
+	public Double getOrbitalPeriod() {
+		return orbitalPeriod;
 	}
 }
