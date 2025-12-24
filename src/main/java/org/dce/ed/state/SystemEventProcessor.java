@@ -248,7 +248,7 @@ public class SystemEventProcessor {
 
         info.setWasMapped(e.isWasMapped());
         info.setWasDiscovered(e.isWasDiscovered());
-        info.setWasFootfalled(e.isWasMapped());
+        info.setWasFootfalled(e.isWasFootfalled());
         
         info.setOrbitalPeriod(e.getOrbitalPeriod());
         

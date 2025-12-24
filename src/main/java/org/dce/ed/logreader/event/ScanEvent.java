@@ -182,4 +182,11 @@ public final class ScanEvent extends EliteLogEvent {
 	public Double getOrbitalPeriod() {
 		return orbitalPeriod;
 	}
+
+	/**
+	 * @return the wasFootfalled
+	 */
+	public boolean isWasFootfalled() {
+		return wasFootfalled;
+	}
 }
