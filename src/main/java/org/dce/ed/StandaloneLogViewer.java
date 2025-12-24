@@ -22,8 +22,8 @@ public class StandaloneLogViewer {
     public static String clientKey = "LOG";
 
 	public static void main(String[] args) {
-		OverlayPreferences.setAutoLogDir(clientKey, true);
-		OverlayPreferences.setCustomLogDir(clientKey, "C:/Users/User/git-EliteDangerousOverlay/EDO/logs");
+		OverlayPreferences.setAutoLogDir(clientKey, false);
+		OverlayPreferences.setCustomLogDir(clientKey, "C:/Users/17036/git-EliteDangerousOverlay/EDO/Elite Dangerous");
 		
         EventQueue.invokeLater(() -> {
             LogTabPanel panel = new LogTabPanel();

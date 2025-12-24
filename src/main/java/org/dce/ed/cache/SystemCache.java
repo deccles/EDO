@@ -213,7 +213,6 @@ public final class SystemCache {
             info.setBodyName(cb.name);
             info.setStarSystem(cb.starSystem);
             info.setStarPos(state.getStarPos());
-            
             info.setBodyShortName(state.computeShortName(cb.starSystem, cb.name));
             info.setBodyId(cb.bodyId);
             info.setDistanceLs(cb.distanceLs);
@@ -477,6 +476,7 @@ public final class SystemCache {
             cb.name = b.getBodyName();
             cb.bodyId = b.getBodyId();
             cb.starSystem = b.getStarSystem();
+            
             cb.starPos = state.getStarPos();
             cb.distanceLs = b.getDistanceLs();
             cb.gravityMS = b.getGravityMS();

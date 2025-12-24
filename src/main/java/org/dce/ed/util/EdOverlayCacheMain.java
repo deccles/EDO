@@ -108,6 +108,7 @@ public class EdOverlayCacheMain {
         System.out.println("  starBodyId: " + (res.star != null ? res.star.bodyId : null));
         System.out.println("  starType:   " + res.starType);
 
+        res.starType = res.starType;
         // Extra: if parentStarBodyId points to a missing body, call it out explicitly.
         if (body.parentStarBodyId != null) {
             CacheBody parent = findBodyById(sys, body.parentStarBodyId);

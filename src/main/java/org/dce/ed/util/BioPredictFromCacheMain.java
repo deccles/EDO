@@ -732,7 +732,8 @@ public final class BioPredictFromCacheMain {
 
         info.setSurfaceTempK(cb.surfaceTempK);
         info.setVolcanism(cb.volcanism);
-
+        info.setStarType(cb.starType);
+        
         info.setNumberOfBioSignals(cb.getNumberOfBioSignals());
         info.setDiscoveryCommander(cb.discoveryCommander);
 

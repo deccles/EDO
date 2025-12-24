@@ -561,6 +561,4 @@ public class BodyInfo {
 			bioSampleCountsByDisplayName.put(key, Integer.valueOf(v));
 		}
 	}
-
-
 }

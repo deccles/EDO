@@ -242,7 +242,7 @@ public class SystemEventProcessor {
         }
 
         if (e.getStarType() != null && !e.getStarType().isEmpty()) {
-            info.setStarType(e.getStarType());
+        	info.setStarType(e.getStarType());
         }
 
         int parentStarBodyId = findParentStarBodyId(e);
@@ -254,6 +254,7 @@ public class SystemEventProcessor {
                     && parentStar.getBodyName() != null
                     && !parentStar.getBodyName().isEmpty()) {
                 info.setParentStar(parentStar.getBodyName());
+                info.setStarType(parentStar.getStarType());
             }
         }
 

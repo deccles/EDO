@@ -405,11 +405,11 @@ public final class ExobiologyData {
             }
             
             if (starClasses != null && !starClasses.isEmpty()) {
-                if (body.starClass == null) {
-                    warn("Rule requires star class constraint but body.starClass was null");
+                if (body.starType == null) {
+                    warn("Rule requires star class constraint but body.starClass was null " + body.starSystem + " " + body.bodyName);
                     return false;
                 }
-                if (!starClasses.contains(body.starClass)) {
+                if (!starClasses.contains(body.starType)) {
                     return false;
                 }
             }

@@ -61,7 +61,7 @@ public final class BodyAttributes {
     public final String region;
 
     /** Optional star class for system. Null if unknown. */
-    public final String starClass;
+    public final String starType;
 
     public BodyAttributes(String bodyName,
     		              String starSystem,
@@ -101,7 +101,7 @@ public final class BodyAttributes {
         this.nebula = nebula;
         this.parentStar = parentStar;
         this.region = region;
-        this.starClass = starClass;
+        this.starType = starClass;
     }
 
     /** Back-compat: pressure included. */
