@@ -160,6 +160,8 @@ public class EliteOverlayTabbedPane extends JPanel {
                  systemTab.handleLogEvent(event);
                  
                  routeTab.handleLogEvent(event);
+
+                 biologyTab.handleLogEvent(event);
             });
 
 //            monitor.start(); // if your monitor requires an explicit start
@@ -279,7 +281,7 @@ public class EliteOverlayTabbedPane extends JPanel {
                         entry.hoverStartMs = now;
                         entry.firedForCurrentHover = false;
                     } else if (!entry.firedForCurrentHover && now - entry.hoverStartMs >= entry.delayMs) {
-                        // Hover delay satisfied – perform action once per hover
+	                        // Hover delay satisfied - perform action once per hover
                         if (entry.action != null) {
                             SwingUtilities.invokeLater(entry.action);
                         }
