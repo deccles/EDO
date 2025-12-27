@@ -56,6 +56,10 @@ public class EliteOverlayTabbedPane extends JPanel {
     
     private final CardLayout cardLayout;
     private final JPanel cardPanel;
+    
+    private final RouteTabPanel routeTab;
+    private final SystemTabPanel systemTab;
+    private final BiologyTabPanel biologyTab;
 
     public EliteOverlayTabbedPane() {
         super(new BorderLayout());
@@ -93,9 +97,9 @@ public class EliteOverlayTabbedPane extends JPanel {
         cardPanel.setPreferredSize(new Dimension(400, 1000));
 
         // Create tab content panels
-        RouteTabPanel routeTab = new RouteTabPanel();
-        SystemTabPanel systemTab = new SystemTabPanel();
-        BiologyTabPanel biologyTab = new BiologyTabPanel();
+        this.routeTab = new RouteTabPanel();
+        this.systemTab = new SystemTabPanel();
+        this.biologyTab = new BiologyTabPanel();
 
         cardPanel.add(routeTab, CARD_ROUTE);
         cardPanel.add(systemTab, CARD_SYSTEM);
@@ -452,4 +456,19 @@ public class EliteOverlayTabbedPane extends JPanel {
         }
     }
 
+    public void applyUiFontPreferences() {
+        systemTab.applyUiFontPreferences();
+        routeTab.applyUiFontPreferences();
+        biologyTab.applyUiFontPreferences();
+        revalidate();
+        repaint();
+    }
+
+    public void applyUiFont(Font font) {
+        systemTab.applyUiFont(font);
+        routeTab.applyUiFont(font);
+        biologyTab.applyUiFont(font);
+        revalidate();
+        repaint();
+    }
 }

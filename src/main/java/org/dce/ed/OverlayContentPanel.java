@@ -9,18 +9,29 @@ import javax.swing.JPanel;
 public class OverlayContentPanel extends JPanel {
 
     private final OverlayFrame overlayFrame;
+    private final EliteOverlayTabbedPane tabbedPane;
 
     public OverlayContentPanel(OverlayFrame overlayFrame) {
         this.overlayFrame = overlayFrame;
 
-        // IMPORTANT: don't let Swing fill this with a solid background
-        setOpaque(false);
+        boolean opaque = !OverlayPreferences.isOverlayTransparent();
+        setOpaque(opaque);
         setLayout(new BorderLayout());
 
-        EliteOverlayTabbedPane tabbedPane = new EliteOverlayTabbedPane();
-        tabbedPane.setOpaque(false);
-        tabbedPane.setBackground(new java.awt.Color(0, 0, 0, 0));
+        tabbedPane = new EliteOverlayTabbedPane();
         add(tabbedPane, BorderLayout.CENTER);
+    }
+
+    public void applyUiFontPreferences() {
+        tabbedPane.applyUiFontPreferences();
+        revalidate();
+        repaint();
+    }
+
+    public void applyUiFont(java.awt.Font font) {
+        tabbedPane.applyUiFont(font);
+        revalidate();
+        repaint();
     }
 
     @Override

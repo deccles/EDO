@@ -54,6 +54,7 @@ public class OverlayFrame extends JFrame {
     private boolean passThroughEnabled;
 
     private final TitleBarPanel titleBar;
+    private final OverlayContentPanel contentPanel;
 
     // Crosshair overlay and timer to show mouse position in pass-through mode
     private final CrosshairOverlay crosshairOverlay = new CrosshairOverlay();
@@ -116,7 +117,7 @@ public class OverlayFrame extends JFrame {
         add(titleBar, BorderLayout.NORTH);
 
         // Transparent content panel with tabbed pane
-        OverlayContentPanel contentPanel = new OverlayContentPanel(this);
+        contentPanel = new OverlayContentPanel(this);
         add(contentPanel, BorderLayout.CENTER);
 
         // Load saved bounds if available; otherwise use defaults
@@ -192,6 +193,21 @@ public class OverlayFrame extends JFrame {
 
     public boolean isPassThroughEnabled() {
         return passThroughEnabled;
+    }
+
+    public void applyUiFontPreferences() {
+        contentPanel.applyUiFontPreferences();
+        revalidate();
+        repaint();
+    }
+
+    public void applyUiFontPreview(java.awt.Font font) {
+        if (font == null) {
+            return;
+        }
+        contentPanel.applyUiFont(font);
+        revalidate();
+        repaint();
     }
 
     private void applyPassThrough(boolean enable) {

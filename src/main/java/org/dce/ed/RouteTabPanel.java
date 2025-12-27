@@ -4,7 +4,9 @@ import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -59,6 +61,9 @@ import com.google.gson.JsonParser;
 public class RouteTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
+
+
+    private Font uiFont = OverlayPreferences.getUiFont();
 
     private static final Color ED_ORANGE = new Color(255, 140, 0);
     private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
@@ -121,6 +126,7 @@ public class RouteTabPanel extends JPanel {
         headerLabel = new JLabel("Route: (no data)");
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 4, 4, 4));
+        headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 
         tableModel = new RouteTableModel();
         table = new JTable(tableModel) {
@@ -134,17 +140,17 @@ public class RouteTabPanel extends JPanel {
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
-        table.setRowHeight(26);
+        table.setRowHeight(computeRowHeight(table, uiFont, 6));
         table.setForeground(ED_ORANGE);
         table.setBackground(new Color(0, 0, 0, 0));
         table.setSelectionForeground(Color.BLACK);
         table.setSelectionBackground(new Color(255, 255, 255, 64));
-        table.setFont(new Font("Noto Sans", Font.BOLD, 16));
+        table.setFont(uiFont);
         table.getTableHeader().setReorderingAllowed(false);
         table.getTableHeader().setResizingAllowed(true);
         table.getTableHeader().setForeground(ED_ORANGE);
         table.getTableHeader().setBackground(new Color(0, 0, 0, 0));
-        table.getTableHeader().setFont(new Font("Dialog", Font.BOLD, 12));
+        table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 
         // Default renderer that gives us consistent orange text + padding
         DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer() {
@@ -969,7 +975,6 @@ default:
 
     private static final class StatusCircleIcon implements Icon {
 
-        private final int size;
         private final Color circleColor;
         private final String symbol;
 
@@ -980,17 +985,17 @@ default:
         StatusCircleIcon(Color circleColor, String symbol, int size) {
             this.circleColor = circleColor;
             this.symbol = symbol;
-            this.size = size;
+//            this.size = size;
         }
 
         @Override
         public int getIconWidth() {
-            return size;
+            return getFontSize();
         }
 
         @Override
         public int getIconHeight() {
-            return size;
+            return getFontSize();
         }
 
         @Override
@@ -1000,7 +1005,7 @@ default:
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                                     RenderingHints.VALUE_ANTIALIAS_ON);
 
-                int d = size - 1;
+                int d = getFontSize() - 1;
                 g2.setColor(circleColor);
                 g2.fillOval(x, y, d, d);
 
@@ -1008,23 +1013,30 @@ default:
                 g2.drawOval(x, y, d, d);
 
                 if (symbol != null && !symbol.isEmpty()) {
-                    Font font = c.getFont();
+                    Font font = iconFont();
                     if (font != null) {
-                        font = new Font("Noto Sans", Font.BOLD, 16);//font.deriveFont(Font.BOLD,
+                        font = font.deriveFont(Font.BOLD); // 
 //                                               Math.max(10f, font.getSize2D()));
                         g2.setFont(font);
                     }
                     java.awt.FontMetrics fm = g2.getFontMetrics();
                     int textWidth = fm.stringWidth(symbol);
                     int textAscent = fm.getAscent();
-                    int tx = x + (size - textWidth) / 2;
-                    int ty = y + (size + textAscent) / 2 - 2;
+                    int tx = x + (getFontSize() - textWidth) / 2;
+                    int ty = y + (getFontSize() + textAscent) / 2 - 2;
                     g2.drawString(symbol, tx, ty);
                 }
             } finally {
                 g2.dispose();
             }
         }
+
+		/**
+		 * @return the size
+		 */
+		private int getFontSize() {
+			return OverlayPreferences.getUiFontSize();
+		}
     }
 
     private static final class StatusRenderer extends DefaultTableCellRenderer {
@@ -1220,6 +1232,76 @@ default:
             g2.drawPolygon(xs, ys, 3);
             g2.dispose();
         }
+    }
+
+
+    public void applyUiFontPreferences() {
+        applyUiFont(OverlayPreferences.getUiFont());
+    }
+
+    public void applyUiFont(Font font) {
+        if (font == null) {
+            return;
+        }
+        uiFont = font;
+
+        // Apply recursively so labels/buttons/etc. stay consistent with the table.
+        applyFontRecursively(this, uiFont);
+
+        if (headerLabel != null) {
+            headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
+        }
+
+        if (table != null) {
+            table.setFont(uiFont);
+            table.setRowHeight(computeRowHeight(table, uiFont, 6));
+            if (table.getTableHeader() != null) {
+                table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
+            }
+        }
+
+        repaint();
+    }
+
+    private static void applyFontRecursively(Component c, Font font) {
+        if (c == null || font == null) {
+            return;
+        }
+
+        try {
+            c.setFont(font);
+        } catch (Exception e) {
+            // ignore
+        }
+
+        if (c instanceof Container) {
+            for (Component child : ((Container) c).getComponents()) {
+                applyFontRecursively(child, font);
+            }
+        }
+    }
+
+    private static int computeRowHeight(JTable table, Font font, int verticalPaddingPx) {
+        if (table == null || font == null) {
+            return 24;
+        }
+        FontMetrics fm = table.getFontMetrics(font);
+        int h = fm.getAscent() + fm.getDescent() + verticalPaddingPx;
+        if (h < 18) {
+            h = 18;
+        }
+        return h;
+    }
+    private static Font iconFont() {
+        // Consolas exists on most Windows installs.
+        // If it’s missing, fall back to logical Monospaced.
+        String family = "SansSerif";
+        Font uiFont = OverlayPreferences.getUiFont();
+        Font f = new Font(family, Font.BOLD, uiFont.getSize() -1);
+        if (!family.equalsIgnoreCase(f.getFamily())) {
+            f = new Font(Font.MONOSPACED, Font.PLAIN, uiFont.getSize());
+        }
+        return f;
     }
 
 }

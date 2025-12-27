@@ -6,6 +6,10 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.JSpinner;
+import java.awt.GraphicsEnvironment;
+import java.awt.Font;
 import java.io.File;
 
 import javax.swing.JButton;
@@ -41,6 +45,13 @@ public class PreferencesDialog extends JDialog {
     private JTextField speechCacheDirField;
     private JTextField speechSampleRateField;
 
+    // Fonts-tab fields
+    private JComboBox<String> uiFontNameCombo;
+    private JSpinner uiFontSizeSpinner;
+
+    private boolean okPressed;
+    private final Font originalUiFont;
+
     public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
             "Joanna",
             "Matthew",
@@ -55,6 +66,8 @@ public class PreferencesDialog extends JDialog {
     public PreferencesDialog(OverlayFrame owner, String clientKey) {
         super(owner, "Overlay Preferences", true);
         this.clientKey = clientKey;
+        this.originalUiFont = OverlayPreferences.getUiFont();
+        this.okPressed = false;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         setMinimumSize(new Dimension(560, 380));
@@ -64,12 +77,26 @@ public class PreferencesDialog extends JDialog {
         tabs.addTab("Overlay", createOverlayPanel());
         tabs.addTab("Logging", createLoggingPanel());
         tabs.addTab("Speech", createSpeechPanel());
+        tabs.addTab("Fonts", createFontsPanel());
 
         add(tabs, BorderLayout.CENTER);
         add(createButtonPanel(), BorderLayout.SOUTH);
 
         pack();
         setLocationRelativeTo(owner);
+
+        // If the user closes the dialog or hits Cancel, revert any live preview.
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                revertLivePreviewIfNeeded();
+            }
+
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                revertLivePreviewIfNeeded();
+            }
+        });
     }
 
     private JPanel createGeneralPanel() {
@@ -207,7 +234,119 @@ public class PreferencesDialog extends JDialog {
         return panel;
     }
 
-    private JPanel createSpeechPanel() {
+    
+    private JPanel createFontsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        panel.setOpaque(false);
+
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setOpaque(false);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(6, 6, 6, 6);
+
+        // Font family
+        JLabel fontLabel = new JLabel("Font:");
+        content.add(fontLabel, gbc);
+
+        gbc.gridx = 1;
+        String[] families = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getAvailableFontFamilyNames();
+        uiFontNameCombo = new JComboBox<>(families);
+        uiFontNameCombo.setSelectedItem(OverlayPreferences.getUiFontName());
+        uiFontNameCombo.setPrototypeDisplayValue("Segoe UI Semibold");
+        content.add(uiFontNameCombo, gbc);
+
+        // Font size
+        gbc.gridx = 0;
+        gbc.gridy++;
+        JLabel sizeLabel = new JLabel("Size:");
+        content.add(sizeLabel, gbc);
+
+        gbc.gridx = 1;
+        int sz = OverlayPreferences.getUiFontSize();
+        uiFontSizeSpinner = new JSpinner(new SpinnerNumberModel(sz, 8, 72, 1));
+        ((JSpinner.DefaultEditor) uiFontSizeSpinner.getEditor()).getTextField().setColumns(4);
+        content.add(uiFontSizeSpinner, gbc);
+
+        // Preview
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+
+        JLabel preview = new JLabel("Preview: Elite Dangerous Overlay");
+        preview.setBorder(new EmptyBorder(12, 0, 0, 0));
+        updatePreviewLabelFont(preview);
+        content.add(preview, gbc);
+
+        uiFontNameCombo.addActionListener(e -> updatePreviewLabelFont(preview));
+        uiFontSizeSpinner.addChangeListener(e -> updatePreviewLabelFont(preview));
+
+        panel.add(content, BorderLayout.NORTH);
+        return panel;
+    }
+
+    private void updatePreviewLabelFont(JLabel preview) {
+        if (preview == null) {
+            return;
+        }
+        Font f = buildSelectedUiFont();
+        preview.setFont(f.deriveFont(Font.BOLD));
+        applyLivePreview(f);
+    }
+
+    private Font buildSelectedUiFont() {
+        String name = (String) uiFontNameCombo.getSelectedItem();
+        int size = 17;
+        try {
+            size = ((Number) uiFontSizeSpinner.getValue()).intValue();
+        } catch (Exception e) {
+            // ignore
+        }
+        if (name == null || name.isBlank()) {
+            name = originalUiFont.getName();
+        }
+        return new Font(name, Font.PLAIN, size);
+    }
+
+    private void applyLivePreview(Font font) {
+        if (getOwner() instanceof OverlayFrame) {
+            ((OverlayFrame) getOwner()).applyUiFontPreview(font);
+        }
+    }
+
+    private void applyLivePreviewToOverlay() {
+        if (!(getOwner() instanceof OverlayFrame)) {
+            return;
+        }
+
+        String name = (String) uiFontNameCombo.getSelectedItem();
+        int size = 17;
+        try {
+            size = ((Number) uiFontSizeSpinner.getValue()).intValue();
+        } catch (Exception e) {
+            // ignore
+        }
+
+        Font font = new Font(name, Font.PLAIN, size);
+        ((OverlayFrame) getOwner()).applyUiFontPreview(font);
+    }
+
+    private void revertLivePreviewIfNeeded() {
+        if (okPressed) {
+            return;
+        }
+        if (!(getOwner() instanceof OverlayFrame)) {
+            return;
+        }
+        ((OverlayFrame) getOwner()).applyUiFontPreview(originalUiFont);
+    }
+
+private JPanel createSpeechPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
         panel.setOpaque(false);
@@ -348,11 +487,18 @@ public class PreferencesDialog extends JDialog {
         JButton cancel = new JButton("Cancel");
 
         ok.addActionListener(e -> {
+            okPressed = true;
             applyAndSavePreferences();
+            if (getOwner() instanceof OverlayFrame) {
+                ((OverlayFrame) getOwner()).applyUiFontPreferences();
+            }
             dispose();
         });
 
-        cancel.addActionListener(e -> dispose());
+        cancel.addActionListener(e -> {
+            revertLivePreviewIfNeeded();
+            dispose();
+        });
 
         panel.add(cancel);
         panel.add(ok);
@@ -409,6 +555,22 @@ public class PreferencesDialog extends JDialog {
             }
         }
 
-        // Other tabs can be wired into OverlayPreferences later as needed.
+                // Fonts
+        if (uiFontNameCombo != null) {
+            Object sel = uiFontNameCombo.getSelectedItem();
+            if (sel != null) {
+                OverlayPreferences.setUiFontName(sel.toString());
+            }
+        }
+        if (uiFontSizeSpinner != null) {
+            try {
+                int sz = ((Number) uiFontSizeSpinner.getValue()).intValue();
+                OverlayPreferences.setUiFontSize(sz);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+// Other tabs can be wired into OverlayPreferences later as needed.
     }
 }

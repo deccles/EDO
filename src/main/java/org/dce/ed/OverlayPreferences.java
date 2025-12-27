@@ -18,6 +18,9 @@ public final class OverlayPreferences {
     private static final String KEY_LOG_AUTO = "log.autoDetect";
     private static final String KEY_LOG_CUSTOM_DIR = "log.customDir";
 
+    private static final String KEY_UI_FONT_NAME = "ui.font.name";
+    private static final String KEY_UI_FONT_SIZE = "ui.font.size";
+
     // --- Speech / Polly (new) ---
     private static final String KEY_SPEECH_ENABLED = "speech.enabled";
     private static final String KEY_SPEECH_ENGINE = "speech.engine"; // "standard" or "neural" (we'll default to standard)
@@ -177,4 +180,61 @@ public final class OverlayPreferences {
         }
         PREFS.put(KEY_SPEECH_SAMPLE_RATE, Integer.toString(sampleRateHz));
     }
+
+    // --- UI Font (System / Route / Biology) ---
+
+    /**
+     * Font family name used across major panels (System / Route / Biology).
+     * Default matches SystemTabPanel's historical font choice.
+     */
+    public static String getUiFontName() {
+        return PREFS.get(KEY_UI_FONT_NAME, "Segoe UI");
+    }
+
+    public static void setUiFontName(String fontName) {
+        if (fontName == null || fontName.isBlank()) {
+            fontName = "Segoe UI";
+        }
+        PREFS.put(KEY_UI_FONT_NAME, fontName.trim());
+    }
+
+    /**
+     * Base font size (points) used across major panels.
+     * Default matches SystemTabPanel's historical font size.
+     */
+    public static int getUiFontSize() {
+        try {
+            int sz = Integer.parseInt(PREFS.get(KEY_UI_FONT_SIZE, "17"));
+            if (sz < 8) {
+                sz = 8;
+            }
+            if (sz > 72) {
+                sz = 72;
+            }
+            return sz;
+        } catch (Exception e) {
+            return 17;
+        }
+    }
+
+    public static void setUiFontSize(int size) {
+        if (size < 8) {
+            size = 8;
+        }
+        if (size > 72) {
+            size = 72;
+        }
+        PREFS.put(KEY_UI_FONT_SIZE, Integer.toString(size));
+    }
+
+    /**
+     * Convenience: returns the configured UI font. If the requested family is
+     * unavailable on the current system, Java will substitute.
+     */
+    public static java.awt.Font getUiFont() {
+        String name = getUiFontName();
+        int size = getUiFontSize();
+        return new java.awt.Font(name, java.awt.Font.PLAIN, size);
+    }
+
 }

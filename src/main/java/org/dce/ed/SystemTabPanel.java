@@ -3,6 +3,7 @@ package org.dce.ed;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -65,7 +66,7 @@ public class SystemTabPanel extends JPanel {
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
     private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
     // NEW: shared ED font (similar to Route tab)
-    private static final Font ED_FONT = new Font("Segoe UI", Font.PLAIN, 17);
+        private Font uiFont = OverlayPreferences.getUiFont();
 
     private final JTable table;
     private final JTextField headerLabel;
@@ -111,11 +112,11 @@ public class SystemTabPanel extends JPanel {
         headerLabel.setForeground(ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setOpaque(false);
-        headerLabel.setFont(ED_FONT.deriveFont(Font.BOLD));
+        headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 
         headerSummaryLabel = new JLabel();
         headerSummaryLabel.setForeground(ED_ORANGE);
-        headerSummaryLabel.setFont(ED_FONT.deriveFont(Font.BOLD));
+        headerSummaryLabel.setFont(uiFont.deriveFont(Font.BOLD));
         headerSummaryLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerSummaryLabel.setOpaque(false);
         
@@ -128,14 +129,14 @@ public class SystemTabPanel extends JPanel {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
         // NEW: apply ED font to table cells
-        table.setFont(ED_FONT);
+        table.setFont(uiFont);
         table.setRowHeight(24);
 
         JTableHeader header = table.getTableHeader();
         header.setOpaque(true);
         header.setForeground(ED_ORANGE);
         header.setBackground(Color.BLACK);
-        header.setFont(ED_FONT.deriveFont(Font.BOLD));
+        header.setFont(uiFont.deriveFont(Font.BOLD));
 
         header.setDefaultRenderer(new DefaultTableCellRenderer() {
             @Override
@@ -151,7 +152,7 @@ public class SystemTabPanel extends JPanel {
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
                 label.setForeground(ED_ORANGE);
-                label.setFont(ED_FONT.deriveFont(Font.BOLD));
+                label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
                 label.setBorder(new EmptyBorder(0, 4, 0, 4));
 
@@ -862,6 +863,55 @@ public class SystemTabPanel extends JPanel {
                 && drop.getPredictions() != null
                 && !drop.getPredictions().isEmpty()) {
             keep.setPredictions(drop.getPredictions());
+        }
+    }
+
+
+    public void applyUiFontPreferences() {
+        applyUiFont(OverlayPreferences.getUiFont());
+    }
+
+    public void applyUiFont(Font font) {
+        if (font == null) {
+            return;
+        }
+
+        uiFont = font;
+
+        // Apply recursively so all labels/etc. stay consistent.
+        applyFontRecursively(this, uiFont);
+
+        if (headerLabel != null) {
+            headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
+        }
+        if (headerSummaryLabel != null) {
+            headerSummaryLabel.setFont(uiFont.deriveFont(Font.BOLD));
+        }
+        if (table != null) {
+            table.setFont(uiFont);
+            if (table.getTableHeader() != null) {
+                table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
+            }
+        }
+        revalidate();
+        repaint();
+    }
+
+    private static void applyFontRecursively(Component c, Font font) {
+        if (c == null || font == null) {
+            return;
+        }
+
+        try {
+            c.setFont(font);
+        } catch (Exception e) {
+            // ignore
+        }
+
+        if (c instanceof Container) {
+            for (Component child : ((Container) c).getComponents()) {
+                applyFontRecursively(child, font);
+            }
         }
     }
 
