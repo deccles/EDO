@@ -73,7 +73,6 @@ public class PreferencesDialog extends JDialog {
         setMinimumSize(new Dimension(560, 380));
 
         JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("General", createGeneralPanel());
         tabs.addTab("Overlay", createOverlayPanel());
         tabs.addTab("Logging", createLoggingPanel());
         tabs.addTab("Speech", createSpeechPanel());
@@ -97,32 +96,6 @@ public class PreferencesDialog extends JDialog {
                 revertLivePreviewIfNeeded();
             }
         });
-    }
-
-    private JPanel createGeneralPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        panel.setOpaque(false);
-
-        JPanel content = new JPanel(new GridBagLayout());
-        content.setOpaque(false);
-
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.insets = new Insets(4, 4, 4, 4);
-
-        JLabel startWithWindowsLabel = new JLabel("Start overlay with Windows (stub):");
-        JCheckBox startWithWindows = new JCheckBox();
-        startWithWindows.setOpaque(false);
-
-        content.add(startWithWindowsLabel, gbc);
-        gbc.gridx = 1;
-        content.add(startWithWindows, gbc);
-
-        panel.add(content, BorderLayout.NORTH);
-        return panel;
     }
 
     private JPanel createOverlayPanel() {
@@ -278,24 +251,15 @@ public class PreferencesDialog extends JDialog {
         gbc.gridy++;
         gbc.gridwidth = 2;
 
-        JLabel preview = new JLabel("Preview: Elite Dangerous Overlay");
-        preview.setBorder(new EmptyBorder(12, 0, 0, 0));
-        updatePreviewLabelFont(preview);
-        content.add(preview, gbc);
-
-        uiFontNameCombo.addActionListener(e -> updatePreviewLabelFont(preview));
-        uiFontSizeSpinner.addChangeListener(e -> updatePreviewLabelFont(preview));
+        uiFontNameCombo.addActionListener(e -> updatePreviewLabelFont());
+        uiFontSizeSpinner.addChangeListener(e -> updatePreviewLabelFont());
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
     }
 
-    private void updatePreviewLabelFont(JLabel preview) {
-        if (preview == null) {
-            return;
-        }
+    private void updatePreviewLabelFont() {
         Font f = buildSelectedUiFont();
-        preview.setFont(f.deriveFont(Font.BOLD));
         applyLivePreview(f);
     }
 

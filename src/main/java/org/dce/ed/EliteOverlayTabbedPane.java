@@ -77,17 +77,14 @@ public class EliteOverlayTabbedPane extends JPanel {
         JButton routeButton = createTabButton("Route");
         JButton systemButton = createTabButton("System");
         JButton biologyButton = createTabButton("Biology");
-        JButton logButton = createTabButton("Log");
         
         group.add(routeButton);
         group.add(systemButton);
         group.add(biologyButton);
-        group.add(logButton);
         
         tabBar.add(routeButton);
         tabBar.add(systemButton);
         tabBar.add(biologyButton);
-        tabBar.add(logButton);
         
         // ----- Card area with the actual tab contents -----
         cardLayout = new CardLayout();
@@ -130,18 +127,10 @@ public class EliteOverlayTabbedPane extends JPanel {
             }
         });
 
-        logButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                cardLayout.show(cardPanel, CARD_LOG);
-            }
-        });
-        
         // Hover-to-switch: resting over a tab for a short time activates it
         installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick());
         installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick());
         installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick());
-        installHoverSwitch(logButton, TAB_HOVER_DELAY_MS, () -> logButton.doClick());
         
         
         // Select Route tab by default
