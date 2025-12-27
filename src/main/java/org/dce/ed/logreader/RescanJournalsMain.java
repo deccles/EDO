@@ -107,13 +107,6 @@ public class RescanJournalsMain {
         EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
         Path journalDirectory = reader.getJournalDirectory();
 
-        if (forcedCacheFile != null) {
-            // These are intentionally redundant so you can hook whichever one you prefer inside SystemCache.
-            System.setProperty("edo.cache.file", forcedCacheFile.toString());
-            System.setProperty("edo.cache.path", forcedCacheFile.toString());
-            System.setProperty("edo.systemCache.file", forcedCacheFile.toString());
-        }
-
         Instant lastImport = null;
         if (!forceFull) {
             lastImport = readLastImportInstant(journalDirectory);

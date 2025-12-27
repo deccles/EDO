@@ -195,18 +195,23 @@ public class EliteLogParser {
             }
         }
 
+        boolean carrier = true;
+        Boolean docked = null;
+        if (obj.get("event").getAsString().equals("CarrierJump")) {
+        	 docked = obj.has("Docked") ? obj.get("Docked").getAsBoolean() : false;
+        }
         String body = getString(obj, "Body");
         int bodyId = obj.has("BodyID") ? obj.get("BodyID").getAsInt() : -1;
         String bodyType = getString(obj, "BodyType");
         double jumpDist = obj.has("JumpDist") ? obj.get("JumpDist").getAsDouble() : 0.0;
         double fuelUsed = obj.has("FuelUsed") ? obj.get("FuelUsed").getAsDouble() : 0.0;
         double fuelLevel = obj.has("FuelLevel") ? obj.get("FuelLevel").getAsDouble() : 0.0;
-
+        
         return new FsdJumpEvent(
                 ts, obj,
                 starSystem, systemAddress, starPos,
                 body, bodyId, bodyType,
-                jumpDist, fuelUsed, fuelLevel
+                jumpDist, fuelUsed, fuelLevel, docked
         );
     }
 

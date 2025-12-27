@@ -60,7 +60,10 @@ public class SystemEventProcessor {
 
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
-            enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
+            
+            if (e.getDocked() != null && e.getDocked()) {
+            	enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
+            }
             return;
         }
 

@@ -17,7 +17,8 @@ public class FsdJumpEvent extends EliteLogEvent {
     private final double jumpDist;
     private final double fuelUsed;
     private final double fuelLevel;
-
+    private final Boolean docked;
+    
     public FsdJumpEvent(Instant timestamp,
                         JsonObject rawJson,
                         String starSystem,
@@ -28,7 +29,8 @@ public class FsdJumpEvent extends EliteLogEvent {
                         String bodyType,
                         double jumpDist,
                         double fuelUsed,
-                        double fuelLevel) {
+                        double fuelLevel,
+                        Boolean docked) {
         super(timestamp, EliteEventType.FSD_JUMP, rawJson);
         this.starSystem = starSystem;
         this.systemAddress = systemAddress;
@@ -39,9 +41,14 @@ public class FsdJumpEvent extends EliteLogEvent {
         this.jumpDist = jumpDist;
         this.fuelUsed = fuelUsed;
         this.fuelLevel = fuelLevel;
+        this.docked = docked;
     }
 
-    public String getStarSystem() {
+    public Boolean getDocked() {
+		return docked;
+	}
+
+	public String getStarSystem() {
         return starSystem;
     }
 

@@ -32,6 +32,7 @@ import javax.swing.table.TableColumnModel;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
@@ -507,61 +508,37 @@ public class RouteTabPanel extends JPanel {
         if (entry == null) {
             return;
         }
-        boolean v = isVisited(entry);
 
-        // First check local cache (if you wire this up)
-        if (isLocallyFullyScanned(entry)) {
-            entry.status = v
-                    ? ScanStatus.FULLY_DISCOVERED_VISITED
-                    : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
+        // Prefer LOCAL scan state first (this matches in-game "Bodies: N of N Complete")
+        ScanStatus local = getLocalScanStatus(entry);
+        if (local != ScanStatus.UNKNOWN) {
+            entry.status = local;
             SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
             return;
         }
+
+        boolean v = isVisited(entry);
 
         try {
             BodiesResponse bodies = edsmClient.showBodies(entry.systemName);
 
             ScanStatus newStatus = ScanStatus.UNKNOWN;
 
-//            if (entry.systemName.equals("Ploea Eurl ST-H d10-4")) {
-//            	System.out.println("Found it");
-//            }
             if (bodies != null && bodies.bodies != null) {
                 int returnedBodies = bodies.bodies.size();
                 boolean hasBodies = returnedBodies > 0;
 
-                boolean anyMissingDiscovery = false;
                 if (hasBodies) {
-                    for (BodiesResponse.Body b : bodies.bodies) {
-                        String commander = null;
-                        
-                        if (b.discovery != null && b.discovery.commander != null) {
-                        	commander = b.discovery.commander;
-                        }
-//                        if (commander == null || commander.isBlank()) {
-//                            anyMissingDiscovery = true;
-//                            break;
-//                        }
-                    }
-                }
-
-                if (hasBodies) {
-                	if (bodies.bodyCount != returnedBodies) {
-                		newStatus = v
-                				? ScanStatus.BODYCOUNT_MISMATCH_VISITED
-                						: ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
-                	}
-                	else if (anyMissingDiscovery) {
+                    if (bodies.bodyCount != returnedBodies) {
                         newStatus = v
-                                ? ScanStatus.DISCOVERY_MISSING_VISITED
-                                : ScanStatus.DISCOVERY_MISSING_NOT_VISITED;
+                                ? ScanStatus.BODYCOUNT_MISMATCH_VISITED
+                                : ScanStatus.BODYCOUNT_MISMATCH_NOT_VISITED;
                     } else {
                         newStatus = v
                                 ? ScanStatus.FULLY_DISCOVERED_VISITED
                                 : ScanStatus.FULLY_DISCOVERED_NOT_VISITED;
                     }
                 } else {
-                    // No bodies at all: leave as UNKNOWN
                     newStatus = ScanStatus.UNKNOWN;
                 }
             }
@@ -569,9 +546,44 @@ public class RouteTabPanel extends JPanel {
             entry.status = newStatus;
             SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
         } catch (Exception e) {
-            // Network / API errors – leave status as UNKNOWN
             e.printStackTrace();
         }
+    }
+    private ScanStatus getLocalScanStatus(RouteEntry entry) {
+        if (entry == null) {
+            return ScanStatus.UNKNOWN;
+        }
+
+        SystemCache cache = SystemCache.getInstance();
+        CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
+        if (cs == null) {
+            return ScanStatus.UNKNOWN; // not visited / no local info
+        }
+
+        SystemState tmp = new SystemState();
+        cache.loadInto(tmp, cs);
+
+        Boolean all = tmp.getAllBodiesFound();
+        if (Boolean.TRUE.equals(all)) {
+            return ScanStatus.FULLY_DISCOVERED_VISITED;
+        }
+
+        Integer totalBodies = tmp.getTotalBodies();
+        int knownBodies = tmp.getBodies().size();
+
+        // If we know the system body count and we don't have them all locally -> X
+        if (totalBodies != null && totalBodies > 0 && knownBodies > 0 && knownBodies < totalBodies) {
+            return ScanStatus.DISCOVERY_MISSING_VISITED;
+        }
+
+        // If we know counts match and FSS progress says complete -> checkmark
+        Double progress = tmp.getFssProgress();
+        if (totalBodies != null && totalBodies > 0 && knownBodies >= totalBodies
+                && progress != null && progress >= 1.0) {
+            return ScanStatus.FULLY_DISCOVERED_VISITED;
+        }
+
+        return ScanStatus.UNKNOWN;
     }
 
     /**
@@ -671,13 +683,51 @@ public class RouteTabPanel extends JPanel {
 
     
     private String getCurrentSystemName() {
-    	if (currentSystemName == null)
-			try {
-				currentSystemName = SystemCache.load().systemName;
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-        return currentSystemName;
+        if (currentSystemName != null && !currentSystemName.isBlank()) {
+            return currentSystemName;
+        }
+
+        // Best source: recent journals (works at startup, no live events required)
+        String fromJournal = resolveCurrentSystemNameFromJournal();
+        if (fromJournal != null && !fromJournal.isBlank()) {
+            currentSystemName = fromJournal;
+            return currentSystemName;
+        }
+
+        // Fallback: whatever SystemCache persisted last
+        try {
+            String fromCache = SystemCache.load().systemName;
+            if (fromCache != null && !fromCache.isBlank()) {
+                currentSystemName = fromCache;
+                return currentSystemName;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        // Never return null (renderer comparisons should not explode or behave oddly)
+        return "";
+    }
+    private String resolveCurrentSystemNameFromJournal() {
+        try {
+            EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+
+            String systemName = null;
+
+            List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(3);
+            for (EliteLogEvent event : events) {
+                if (event instanceof LocationEvent e) {
+                    systemName = e.getStarSystem();
+                } else if (event instanceof FsdJumpEvent e) {
+                    systemName = e.getStarSystem();
+                }
+            }
+
+            return systemName;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     private void setCurrentSystemName(String currentSystemName) {
