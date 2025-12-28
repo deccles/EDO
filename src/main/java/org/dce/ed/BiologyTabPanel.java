@@ -1,9 +1,11 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -11,17 +13,21 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
+import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
@@ -34,18 +40,13 @@ import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 
-/**
- * Biology tab – on-surface helper.
- *
- * Populates from cached BodyInfo predictions + observed biology and shows up to 0–3
- * sample-point distance indicators per species.
- *
- * Position comes from StatusEvent (Status.json).
- * Sample points are persisted in cache (BodyInfo -> CachedBody -> SystemCache).
- */
 public class BiologyTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
+
+    private static final Color ED_ORANGE = new Color(255, 140, 0);
+    private static final Color ED_DARK = new Color(0, 0, 0);
+    private static final Color TEXT_BLACK = Color.BLACK;
 
     private final JLabel header = new JLabel("Biology");
     private final BioTableModel model = new BioTableModel();
@@ -61,30 +62,30 @@ public class BiologyTabPanel extends JPanel {
     private Double currentPlanetRadius;
     private String currentBodyName;
 
-    // Tracks last inside/outside state per species key so we can voice transitions.
     private final Map<String, Boolean> insideStateByBioKey = new HashMap<>();
 
     public BiologyTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
 
-        table.setOpaque(false);
-        table.setDefaultRenderer(Object.class, new TransparentCellRenderer());
-        table.setDefaultRenderer(String.class, new TransparentCellRenderer());
-        table.setDefaultRenderer(Integer.class, new TransparentCellRenderer());
-        
         header.setOpaque(false);
+        header.setForeground(ED_ORANGE);
         add(header, BorderLayout.NORTH);
 
         table.setFillsViewportHeight(true);
         table.setRowHeight(24);
         table.setShowGrid(false);
 
+        table.setOpaque(false);
+        table.setDefaultRenderer(Object.class, new BioTextCellRenderer(model));
+
         table.getColumnModel().getColumn(0).setPreferredWidth(260); // Bio
         table.getColumnModel().getColumn(1).setPreferredWidth(70);  // Count
-        table.getColumnModel().getColumn(2).setPreferredWidth(320); // Samples
+        table.getColumnModel().getColumn(2).setPreferredWidth(340); // Samples
 
-        table.getColumnModel().getColumn(2).setCellRenderer(new SampleDotsRenderer());
+        table.getColumnModel().getColumn(2).setCellRenderer(new SamplePillsRenderer());
+
+        styleHeader(table);
 
         scroll.setBorder(null);
         scroll.setOpaque(false);
@@ -119,7 +120,6 @@ public class BiologyTabPanel extends JPanel {
             return;
         }
 
-        // If prediction or scan events arrive, refresh the current body view.
         if (event instanceof BioScanPredictionEvent || event instanceof ScanOrganicEvent) {
             refreshTableForCurrentBody();
         }
@@ -129,6 +129,7 @@ public class BiologyTabPanel extends JPanel {
         if (systemTab == null) {
             return;
         }
+
         if (currentBodyName == null || currentBodyName.isBlank()) {
             model.setRows(Collections.emptyList());
             return;
@@ -157,13 +158,21 @@ public class BiologyTabPanel extends JPanel {
     private static List<BioRow> buildRows(BodyInfo body) {
         List<BioRow> rows = new ArrayList<>();
 
+        // Map canonical display name -> candidate (for genus + score).
+        Map<String, BioCandidate> candByKey = new HashMap<>();
+
         List<BioCandidate> preds = body.getPredictions();
         if (preds != null) {
             for (BioCandidate c : preds) {
-                if (c == null || c.getDisplayName() == null || c.getDisplayName().isBlank()) {
+                if (c == null) {
                     continue;
                 }
-                rows.add(new BioRow(c.getDisplayName()));
+                String dn = c.getDisplayName();
+                if (dn == null || dn.isBlank()) {
+                    continue;
+                }
+                rows.add(new BioRow(dn));
+                candByKey.put(canonicalBioKey(dn), c);
             }
         }
 
@@ -173,9 +182,11 @@ public class BiologyTabPanel extends JPanel {
                 if (observed == null || observed.isBlank()) {
                     continue;
                 }
+
                 boolean exists = false;
+                String ok = canonicalBioKey(observed);
                 for (BioRow r : rows) {
-                    if (canonicalBioKey(r.displayName).equals(canonicalBioKey(observed))) {
+                    if (canonicalBioKey(r.displayName).equals(ok)) {
                         exists = true;
                         break;
                     }
@@ -189,51 +200,28 @@ public class BiologyTabPanel extends JPanel {
         Map<String, Integer> counts = body.getBioSampleCountsSnapshot();
         Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
 
+        // Load counts/points.
         for (BioRow r : rows) {
-            String key = canonicalBioKey(r.displayName);
+            r.sampleCount = lookupCount(counts, r.displayName);
 
-            int cnt = 0;
-            if (counts != null) {
-                // First try exact displayName (matches cache JSON keys like "Fumerola Nitris")
-                Integer v = counts.get(r.displayName);
-
-                // Then try canonical lowercase (matches runtime keys if you normalize there)
-                if (v == null) {
-                    v = counts.get(canonicalBioKey(r.displayName));
-                }
-
-                // Last-chance: case-insensitive match (covers any mixed state)
-                if (v == null) {
-                    String want = canonicalBioKey(r.displayName);
-                    for (Map.Entry<String, Integer> e : counts.entrySet()) {
-                        if (want.equals(canonicalBioKey(e.getKey()))) {
-                            v = e.getValue();
-                            break;
-                        }
-                    }
-                }
-
-                if (v != null) {
-                    cnt = v.intValue();
-                }
+            List<BodyInfo.BioSamplePoint> pts = lookupPoints(points, r.displayName);
+            if (pts != null && !pts.isEmpty()) {
+                r.points = new ArrayList<>(pts);
             }
-            r.sampleCount = cnt;
 
-
-            if (points != null) {
-                List<BodyInfo.BioSamplePoint> pts = points.get(key);
-                if (pts != null && !pts.isEmpty()) {
-                    r.points = new ArrayList<>(pts);
-                }
-            }
+            r.genusKey = genusKeyForRow(r.displayName, candByKey.get(canonicalBioKey(r.displayName)));
         }
 
-        // Sort: in-progress first, then 0/3, then complete, then alpha.
+        // Collapse to ONE row per genus once that genus is known/started.
+        collapseRowsByGenus(body, rows, candByKey);
+
+        // Finished at top, then in-progress, then unstarted, then alpha.
         Collections.sort(rows, new Comparator<BioRow>() {
             @Override
             public int compare(BioRow a, BioRow b) {
                 int ra = rank(a.sampleCount);
                 int rb = rank(b.sampleCount);
+
                 if (ra != rb) {
                     return Integer.compare(ra, rb);
                 }
@@ -241,13 +229,164 @@ public class BiologyTabPanel extends JPanel {
             }
 
             private int rank(int cnt) {
-                if (cnt == 1 || cnt == 2) return 0;
-                if (cnt == 0) return 1;
-                return 2; // 3+
+                if (cnt >= 3) {
+                    return 0; // complete first
+                }
+                if (cnt == 1 || cnt == 2) {
+                    return 1; // in-progress next
+                }
+                return 2;     // unstarted last
             }
         });
 
         return rows;
+    }
+
+    private static void collapseRowsByGenus(
+            BodyInfo body,
+            List<BioRow> rows,
+            Map<String, BioCandidate> candByKey) {
+
+        // Which genera are "known"?
+        Set<String> knownGenus = new HashSet<>();
+
+        // 1) observed genus prefixes (already lower in your cache)
+        if (body.getObservedGenusPrefixes() != null) {
+            for (String g : body.getObservedGenusPrefixes()) {
+                if (g != null && !g.isBlank()) {
+                    knownGenus.add(g.trim().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+
+        // 2) any started (sampleCount > 0) implies genus known
+        for (BioRow r : rows) {
+            if (r.sampleCount > 0 && r.genusKey != null && !r.genusKey.isBlank()) {
+                knownGenus.add(r.genusKey);
+            }
+        }
+
+        // 3) observed display names imply genus known
+        if (body.getObservedBioDisplayNames() != null) {
+            for (String s : body.getObservedBioDisplayNames()) {
+                String g = genusFromDisplayName(s);
+                if (g != null && !g.isBlank()) {
+                    knownGenus.add(g);
+                }
+            }
+        }
+
+        // For each known genus, pick a single "winner" row; remove the rest.
+        Map<String, BioRow> winnerByGenus = new HashMap<>();
+
+        for (BioRow r : rows) {
+            if (r.genusKey == null || r.genusKey.isBlank()) {
+                continue;
+            }
+            if (!knownGenus.contains(r.genusKey)) {
+                continue;
+            }
+
+            BioRow cur = winnerByGenus.get(r.genusKey);
+            if (cur == null) {
+                winnerByGenus.put(r.genusKey, r);
+                continue;
+            }
+
+            // Prefer: higher sampleCount, then observed, then higher prediction score, then alpha.
+            int cmp = Integer.compare(r.sampleCount, cur.sampleCount);
+            if (cmp != 0) {
+                if (cmp > 0) {
+                    winnerByGenus.put(r.genusKey, r);
+                }
+                continue;
+            }
+
+            boolean rObs = isObservedDisplayName(body, r.displayName);
+            boolean cObs = isObservedDisplayName(body, cur.displayName);
+            if (rObs != cObs) {
+                if (rObs) {
+                    winnerByGenus.put(r.genusKey, r);
+                }
+                continue;
+            }
+
+            double rs = scoreFor(r, candByKey);
+            double cs = scoreFor(cur, candByKey);
+            if (rs != cs) {
+                if (rs > cs) {
+                    winnerByGenus.put(r.genusKey, r);
+                }
+                continue;
+            }
+
+            if (r.displayName.compareToIgnoreCase(cur.displayName) < 0) {
+                winnerByGenus.put(r.genusKey, r);
+            }
+        }
+
+        // Filter out non-winners for known genera.
+        List<BioRow> keep = new ArrayList<>(rows.size());
+        for (BioRow r : rows) {
+            if (r.genusKey == null || r.genusKey.isBlank()) {
+                keep.add(r);
+                continue;
+            }
+
+            if (!knownGenus.contains(r.genusKey)) {
+                keep.add(r);
+                continue;
+            }
+
+            BioRow win = winnerByGenus.get(r.genusKey);
+            if (win == r) {
+                keep.add(r);
+            }
+        }
+
+        rows.clear();
+        rows.addAll(keep);
+    }
+
+    private static boolean isObservedDisplayName(BodyInfo body, String displayName) {
+        if (body.getObservedBioDisplayNames() == null) {
+            return false;
+        }
+        String want = canonicalBioKey(displayName);
+        for (String s : body.getObservedBioDisplayNames()) {
+            if (want.equals(canonicalBioKey(s))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double scoreFor(BioRow r, Map<String, BioCandidate> candByKey) {
+        BioCandidate c = candByKey.get(canonicalBioKey(r.displayName));
+        if (c == null) {
+            return -1.0;
+        }
+        return c.getScore();
+    }
+
+    private static String genusKeyForRow(String displayName, BioCandidate c) {
+        if (c != null && c.getGenus() != null && !c.getGenus().isBlank()) {
+            return c.getGenus().trim().toLowerCase(Locale.ROOT);
+        }
+        return genusFromDisplayName(displayName);
+    }
+
+    private static String genusFromDisplayName(String displayName) {
+        if (displayName == null) {
+            return "";
+        }
+        String s = displayName.trim();
+        if (s.isEmpty()) {
+            return "";
+        }
+        int idx = s.indexOf(' ');
+        String genus = (idx < 0) ? s : s.substring(0, idx);
+        return genus.trim().toLowerCase(Locale.ROOT);
     }
 
     private void updateVoiceTransitions() {
@@ -274,18 +413,24 @@ public class BiologyTabPanel extends JPanel {
         Map<String, Integer> counts = body.getBioSampleCountsSnapshot();
         Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
 
-        if (counts == null || counts.isEmpty() || points == null || points.isEmpty()) {
+        if (counts == null || counts.isEmpty()) {
+            return;
+        }
+        if (points == null || points.isEmpty()) {
             return;
         }
 
-        // Choose first in-progress with at least one point.
         for (Map.Entry<String, Integer> e : counts.entrySet()) {
             String bioKey = e.getKey();
             if (bioKey == null || bioKey.isBlank()) {
                 continue;
             }
 
-            int count = (e.getValue() == null) ? 0 : e.getValue().intValue();
+            int count = 0;
+            if (e.getValue() != null) {
+                count = e.getValue().intValue();
+            }
+
             if (count <= 0 || count >= 3) {
                 continue;
             }
@@ -312,7 +457,10 @@ public class BiologyTabPanel extends JPanel {
             boolean inside = distM < needed;
             Boolean prev = insideStateByBioKey.put(bioKey, Boolean.valueOf(inside));
 
-            if (prev == null || prev.booleanValue() == inside) {
+            if (prev == null) {
+                return;
+            }
+            if (prev.booleanValue() == inside) {
                 return;
             }
 
@@ -323,6 +471,62 @@ public class BiologyTabPanel extends JPanel {
             }
             return;
         }
+    }
+
+    private static int lookupCount(Map<String, Integer> counts, String displayName) {
+        if (counts == null || counts.isEmpty()) {
+            return 0;
+        }
+        if (displayName == null || displayName.isBlank()) {
+            return 0;
+        }
+
+        Integer v = counts.get(displayName);
+        if (v == null) {
+            v = counts.get(canonicalBioKey(displayName));
+        }
+        if (v != null) {
+            return v.intValue();
+        }
+
+        String want = canonicalBioKey(displayName);
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (want.equals(canonicalBioKey(e.getKey()))) {
+                if (e.getValue() != null) {
+                    return e.getValue().intValue();
+                }
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private static List<BodyInfo.BioSamplePoint> lookupPoints(
+            Map<String, List<BodyInfo.BioSamplePoint>> points,
+            String displayName) {
+
+        if (points == null || points.isEmpty()) {
+            return null;
+        }
+        if (displayName == null || displayName.isBlank()) {
+            return null;
+        }
+
+        List<BodyInfo.BioSamplePoint> v = points.get(displayName);
+        if (v == null) {
+            v = points.get(canonicalBioKey(displayName));
+        }
+        if (v != null) {
+            return v;
+        }
+
+        String want = canonicalBioKey(displayName);
+        for (Map.Entry<String, List<BodyInfo.BioSamplePoint>> e : points.entrySet()) {
+            if (want.equals(canonicalBioKey(e.getKey()))) {
+                return e.getValue();
+            }
+        }
+        return null;
     }
 
     private static BodyInfo findBodyByName(SystemState state, String bodyName) {
@@ -375,12 +579,60 @@ public class BiologyTabPanel extends JPanel {
             header.setFont(font);
             table.setFont(font);
             table.setRowHeight(Math.max(24, font.getSize() + 8));
-            table.getTableHeader().setFont(font);
+
+            JTableHeader th = table.getTableHeader();
+            if (th != null) {
+                th.setFont(font);
+            }
         }
+
         SwingUtilities.invokeLater(() -> {
             revalidate();
             repaint();
         });
+    }
+
+    private static void styleHeader(JTable table) {
+        JTableHeader th = table.getTableHeader();
+        if (th == null) {
+            return;
+        }
+
+        th.setOpaque(true);
+        th.setForeground(ED_ORANGE);
+        th.setBackground(ED_DARK);
+
+        th.setDefaultRenderer(new DefaultTableCellRenderer() {
+
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public Component getTableCellRendererComponent(
+                    JTable table,
+                    Object value,
+                    boolean isSelected,
+                    boolean hasFocus,
+                    int row,
+                    int column) {
+
+                JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
+                label.setOpaque(true);
+                label.setBackground(ED_DARK);
+                label.setForeground(ED_ORANGE);
+                label.setBorder(new EmptyBorder(0, 6, 0, 6));
+                return label;
+            }
+        });
+    }
+
+    private static Color colorForSamples(int samples) {
+        if (samples >= 3) {
+            return Color.GREEN;
+        }
+        if (samples > 0) {
+            return Color.YELLOW;
+        }
+        return ED_ORANGE;
     }
 
     // ------------------------------------------------------------
@@ -390,6 +642,7 @@ public class BiologyTabPanel extends JPanel {
     private static final class BioRow {
         private final String displayName;
         private int sampleCount;
+        private String genusKey = "";
         private List<BodyInfo.BioSamplePoint> points = Collections.emptyList();
         private final List<Double> distancesM = new ArrayList<>();
 
@@ -399,13 +652,16 @@ public class BiologyTabPanel extends JPanel {
 
         private void recomputeDistances(double curLat, double curLon, double radiusM) {
             distancesM.clear();
+
             if (points == null || points.isEmpty()) {
                 return;
             }
+
             for (BodyInfo.BioSamplePoint p : points) {
                 if (p == null) {
                     continue;
                 }
+
                 distancesM.add(Double.valueOf(greatCircleMeters(curLat, curLon, p.getLatitude(), p.getLongitude(), radiusM)));
             }
         }
@@ -420,16 +676,26 @@ public class BiologyTabPanel extends JPanel {
 
         void setRows(List<BioRow> newRows) {
             rows.clear();
+
             if (newRows != null) {
                 rows.addAll(newRows);
             }
+
             fireTableDataChanged();
+        }
+
+        BioRow getRowAt(int row) {
+            if (row < 0 || row >= rows.size()) {
+                return null;
+            }
+            return rows.get(row);
         }
 
         void updateDistances(double curLat, double curLon, double radiusM) {
             for (BioRow r : rows) {
                 r.recomputeDistances(curLat, curLon, radiusM);
             }
+
             if (!rows.isEmpty()) {
                 fireTableRowsUpdated(0, rows.size() - 1);
             }
@@ -453,16 +719,20 @@ public class BiologyTabPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             BioRow r = rows.get(rowIndex);
-            switch (columnIndex) {
-                case 0:
-                    return r.displayName;
-                case 1:
-                    return r.sampleCount <= 0 ? "" : (r.sampleCount + "/3");
-                case 2:
-                    return r;
-                default:
-                    return "";
+
+            if (columnIndex == 0) {
+                return r.displayName;
             }
+            if (columnIndex == 1) {
+                if (r.sampleCount <= 0) {
+                    return "";
+                }
+                return r.sampleCount + "/3";
+            }
+            if (columnIndex == 2) {
+                return r;
+            }
+            return "";
         }
 
         @Override
@@ -471,88 +741,17 @@ public class BiologyTabPanel extends JPanel {
         }
     }
 
-    private static final class SampleDotsRenderer implements TableCellRenderer {
-
-        private final DefaultTableCellRenderer fallback = new DefaultTableCellRenderer();
-
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-            if (!(value instanceof BioRow)) {
-                return fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-            }
-            BioRow r = (BioRow) value;
-            return new SampleDotsComponent(r, table.getFont());
-        }
-    }
-
-    private static final class SampleDotsComponent extends JPanel {
+    private static final class BioTextCellRenderer extends DefaultTableCellRenderer {
 
         private static final long serialVersionUID = 1L;
 
-        private final BioRow row;
-        private final Font font;
+        private final BioTableModel model;
 
-        SampleDotsComponent(BioRow row, Font font) {
-            this.row = row;
-            this.font = font;
+        private BioTextCellRenderer(BioTableModel model) {
+            this.model = model;
             setOpaque(false);
-            setPreferredSize(new Dimension(300, 24));
+            setForeground(ED_ORANGE);
         }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-//            super.paintComponent(g);
-
-            Graphics2D g2 = (Graphics2D) g.create();
-            try {
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setFont(font);
-
-                int x = 8;
-                int yMid = getHeight() / 2;
-                int radius = 7;
-                int gap = 10;
-
-                int have = Math.min(3, Math.max(0, row.sampleCount));
-                int dots = 3;
-
-                for (int i = 0; i < dots; i++) {
-                    int cx = x + i * (radius * 2 + gap);
-                    int cy = yMid;
-
-                    g2.drawOval(cx, cy - radius, radius * 2, radius * 2);
-
-                    if (i < have) {
-                        g2.fillOval(cx + 2, cy - radius + 2, (radius * 2) - 3, (radius * 2) - 3);
-                    }
-
-                    if (row.distancesM != null && i < row.distancesM.size()) {
-                        double m = row.distancesM.get(i).doubleValue();
-                        String txt = formatMeters(m);
-
-                        int tx = cx + (radius * 2) + 6;
-                        int ty = cy + (font.getSize() / 2) - 1;
-                        g2.drawString(txt, tx, ty);
-                    }
-                }
-            } finally {
-                g2.dispose();
-            }
-        }
-
-        private static String formatMeters(double m) {
-            if (Double.isNaN(m) || Double.isInfinite(m)) {
-                return "";
-            }
-            if (m < 1000.0) {
-                return String.format(Locale.US, "%.0f m", m);
-            }
-            return String.format(Locale.US, "%.2f km", (m / 1000.0));
-        }
-    }
-    private static final class TransparentCellRenderer extends DefaultTableCellRenderer {
-
-        private static final long serialVersionUID = 1L;
 
         @Override
         public Component getTableCellRendererComponent(
@@ -563,21 +762,137 @@ public class BiologyTabPanel extends JPanel {
                 int row,
                 int column) {
 
-            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
 
-            // Keep selection highlighting readable, but otherwise allow overlay alpha.
-            if (c instanceof DefaultTableCellRenderer) {
-                DefaultTableCellRenderer r = (DefaultTableCellRenderer) c;
-
-                if (isSelected) {
-                    r.setOpaque(true);
-                } else {
-                    r.setOpaque(false);
-                }
+            if (!isSelected) {
+                label.setOpaque(false);
+            } else {
+                label.setOpaque(true);
             }
-            
-            return c;
+
+            BioRow r = model.getRowAt(row);
+            if (r != null) {
+                if (column == 0 || column == 1) {
+                    label.setForeground(colorForSamples(r.sampleCount));
+                } else {
+                    label.setForeground(ED_ORANGE);
+                }
+            } else {
+                label.setForeground(ED_ORANGE);
+            }
+
+            label.setBorder(new EmptyBorder(0, 6, 0, 6));
+            return label;
         }
     }
 
+    private static final class SamplePillsRenderer implements TableCellRenderer {
+
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table,
+                Object value,
+                boolean isSelected,
+                boolean hasFocus,
+                int row,
+                int column) {
+
+            if (!(value instanceof BioRow)) {
+                DefaultTableCellRenderer fallback = new DefaultTableCellRenderer();
+                fallback.setOpaque(false);
+                fallback.setForeground(ED_ORANGE);
+                return fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            }
+
+            BioRow r = (BioRow) value;
+            return new SamplePillsComponent(r, table.getFont());
+        }
+    }
+
+    private static final class SamplePillsComponent extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private final BioRow row;
+        private final Font font;
+
+        SamplePillsComponent(BioRow row, Font font) {
+            this.row = row;
+            this.font = font;
+            setOpaque(false);
+            setPreferredSize(new Dimension(320, 24));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setFont(font);
+
+                FontMetrics fm = g2.getFontMetrics();
+
+                int x = 8;
+                int yMid = getHeight() / 2;
+
+                int h = 16;
+                int y = yMid - (h / 2);
+                int gap = 8;
+
+                int have = Math.min(3, Math.max(0, row.sampleCount));
+                int slots = 3;
+
+                for (int i = 0; i < slots; i++) {
+                    boolean filled = i < have;
+
+                    String txt = null;
+                    if (row.distancesM != null && i < row.distancesM.size()) {
+                        txt = formatMetersShort(row.distancesM.get(i).doubleValue());
+                    }
+
+                    int w;
+                    if (txt != null) {
+                        w = fm.stringWidth(txt) + 14; // padding
+                        if (w < 22) {
+                            w = 22;
+                        }
+                    } else {
+                        w = 18; // small empty pill
+                    }
+
+                    // Outline color always indicates status.
+                    Color c = colorForSamples(row.sampleCount);
+                    g2.setColor(c);
+                    g2.drawRoundRect(x, y, w, h, h, h);
+
+                    if (filled) {
+                        g2.setColor(c);
+                        g2.fillRoundRect(x + 1, y + 1, w - 1, h - 1, h, h);
+                    }
+
+                    if (txt != null && filled) {
+                        g2.setColor(TEXT_BLACK);
+                        int tx = x + (w - fm.stringWidth(txt)) / 2;
+                        int ty = yMid + (fm.getAscent() / 2) - 1;
+                        g2.drawString(txt, tx, ty);
+                    }
+
+                    x += w + gap;
+                }
+
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        private static String formatMetersShort(double m) {
+            if (Double.isNaN(m) || Double.isInfinite(m)) {
+                return "";
+            }
+            if (m < 1000.0) {
+                return String.format(Locale.US, "%.0fm", m);
+            }
+            return String.format(Locale.US, "%.2fkm", (m / 1000.0));
+        }
+    }
 }
