@@ -242,6 +242,21 @@ public final class SystemCache {
             info.setWasFootfalled(cb.wasFootfalled);
             if (cb.bioSampleCountsByDisplayName != null && !cb.bioSampleCountsByDisplayName.isEmpty()) {
                 info.setBioSampleCounts(cb.bioSampleCountsByDisplayName);
+            if (cb.bioSamplePointsByDisplayName != null && !cb.bioSamplePointsByDisplayName.isEmpty()) {
+                Map<String, List<BodyInfo.BioSamplePoint>> pts = new HashMap<>();
+                for (Map.Entry<String, List<CachedBody.BioSamplePoint>> e : cb.bioSamplePointsByDisplayName.entrySet()) {
+                    if (e.getValue() == null || e.getValue().isEmpty()) {
+                        continue;
+                    }
+                    List<BodyInfo.BioSamplePoint> out = new ArrayList<>();
+                    for (CachedBody.BioSamplePoint p : e.getValue()) {
+                        out.add(new BodyInfo.BioSamplePoint(p.latitude, p.longitude));
+                    }
+                    pts.put(e.getKey(), out);
+                }
+                info.setBioSamplePoints(pts);
+            }
+
             }
             
             if (cb.predictions != null && !cb.predictions.isEmpty()) {
@@ -514,6 +529,25 @@ public final class SystemCache {
             Map<String, Integer> counts = b.getBioSampleCountsSnapshot();
             if (counts != null && !counts.isEmpty()) {
                 cb.bioSampleCountsByDisplayName = counts;
+
+            Map<String, List<BodyInfo.BioSamplePoint>> points = b.getBioSamplePointsSnapshot();
+            if (points != null && !points.isEmpty()) {
+                Map<String, List<CachedBody.BioSamplePoint>> out = new HashMap<>();
+                for (Map.Entry<String, List<BodyInfo.BioSamplePoint>> e : points.entrySet()) {
+                    if (e.getValue() == null || e.getValue().isEmpty()) {
+                        continue;
+                    }
+                    List<CachedBody.BioSamplePoint> pts = new ArrayList<>();
+                    for (BodyInfo.BioSamplePoint p : e.getValue()) {
+                        pts.add(new CachedBody.BioSamplePoint(p.getLatitude(), p.getLongitude()));
+                    }
+                    out.put(e.getKey(), pts);
+                }
+                cb.bioSamplePointsByDisplayName = out;
+            } else {
+                cb.bioSamplePointsByDisplayName = null;
+            }
+
             } else {
                 cb.bioSampleCountsByDisplayName = null;
             }

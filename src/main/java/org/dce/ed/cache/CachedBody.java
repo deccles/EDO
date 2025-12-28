@@ -45,6 +45,23 @@ public class CachedBody {
     public String discoveryCommander;
 
     public Map<String, Integer> bioSampleCountsByDisplayName;
+
+    // NEW: lat/lon positions for each logged sample point (up to 3) per species display name.
+    public Map<String, List<BioSamplePoint>> bioSamplePointsByDisplayName;
+
+    public static class BioSamplePoint {
+        public double latitude;
+        public double longitude;
+
+        public BioSamplePoint() {
+        }
+
+        public BioSamplePoint(double latitude, double longitude) {
+            this.latitude = latitude;
+            this.longitude = longitude;
+        }
+    }
+
     
     public List<BioCandidate> predictions;
     public int numberOfBioSignals;

@@ -5,6 +5,10 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
@@ -39,10 +43,20 @@ public final class LiveJournalMonitor {
     private static final Duration POLL_INTERVAL = Duration.ofMillis(500);
     private Path statusFile;
 
+    private WatchService statusWatchService;
+    private Thread statusWatcherThread;
+
 
     private Instant lastStatusTimestamp;
     private int lastStatusFlags  = Integer.MIN_VALUE;
     private int lastStatusFlags2 = Integer.MIN_VALUE;
+
+    private Double lastStatusLatitude;
+    private Double lastStatusLongitude;
+    private Double lastStatusAltitude;
+    private Double lastStatusHeading;
+    private String lastStatusBodyName;
+    private Double lastStatusPlanetRadius;
     
     private static Map<String,LiveJournalMonitor> INSTANCE = new HashMap<String,LiveJournalMonitor>();
 
@@ -89,6 +103,18 @@ public final class LiveJournalMonitor {
         if (t != null) {
             t.interrupt();
         }
+
+        Thread sw = statusWatcherThread;
+        if (sw != null) {
+            sw.interrupt();
+        }
+        WatchService ws = statusWatchService;
+        if (ws != null) {
+            try {
+                ws.close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     private synchronized void startIfNeeded() {
@@ -117,6 +143,12 @@ public final class LiveJournalMonitor {
         // NEW: remember Status.json in the same directory
         statusFile = journalDir.resolve("Status.json");
 
+        // NEW: watch Status.json for immediate updates
+        startStatusWatcher(journalDir);
+
+        // Seed with the current Status.json so listeners (e.g. Biology tab) have an initial position immediately.
+        pollStatusFileWithRetry();
+
         Path currentFile = null;
         long filePointer = 0L;
 
@@ -135,8 +167,11 @@ public final class LiveJournalMonitor {
                     filePointer = readFromFile(currentFile, filePointer);
                 }
 
-                // NEW: independently poll Status.json every tick
-                pollStatusFile();
+                // Fallback poll in case the OS watcher misses events.
+                // This is intentionally slower than the watcher path.
+                if (statusWatcherThread == null || !statusWatcherThread.isAlive()) {
+                    pollStatusFileWithRetry();
+                }
 
                 try {
                     Thread.sleep(POLL_INTERVAL.toMillis());
@@ -151,6 +186,122 @@ public final class LiveJournalMonitor {
                 } catch (InterruptedException ignored) {
                     // ignore
                 }
+            }
+        }
+    }
+
+    private synchronized void startStatusWatcher(Path journalDir) {
+        if (statusWatcherThread != null) {
+            return;
+        }
+        if (journalDir == null) {
+            return;
+        }
+
+        try {
+            statusWatchService = journalDir.getFileSystem().newWatchService();
+            journalDir.register(
+                    statusWatchService,
+                    StandardWatchEventKinds.ENTRY_CREATE,
+                    StandardWatchEventKinds.ENTRY_MODIFY,
+                    StandardWatchEventKinds.ENTRY_DELETE
+            );
+
+            statusWatcherThread = new Thread(() -> runStatusWatchLoop(journalDir), "Elite-StatusWatchService");
+            statusWatcherThread.setDaemon(true);
+            statusWatcherThread.start();
+        } catch (IOException ex) {
+            statusWatchService = null;
+            statusWatcherThread = null;
+        }
+    }
+
+    private void runStatusWatchLoop(Path journalDir) {
+        long lastTriggerNs = 0L;
+
+        while (running && statusWatchService != null) {
+            try {
+                WatchKey key = statusWatchService.take();
+
+                boolean statusTouched = false;
+                for (WatchEvent<?> event : key.pollEvents()) {
+                    WatchEvent.Kind<?> kind = event.kind();
+                    if (kind == StandardWatchEventKinds.OVERFLOW) {
+                        continue;
+                    }
+
+                    Object ctx = event.context();
+                    if (!(ctx instanceof Path)) {
+                        continue;
+                    }
+
+                    Path changed = (Path) ctx;
+                    if (changed != null && "Status.json".equalsIgnoreCase(changed.getFileName().toString())) {
+                        statusTouched = true;
+                    }
+                }
+
+                // keep watch service alive
+                boolean valid = key.reset();
+                if (!valid) {
+                    break;
+                }
+
+                if (!statusTouched) {
+                    continue;
+                }
+
+                // Debounce: Elite may write Status.json in multiple steps.
+                long now = System.nanoTime();
+                long since = now - lastTriggerNs;
+                lastTriggerNs = now;
+
+                // If we’re getting hammered, still read, but give the writer a moment.
+                if (since < 40_000_000L) { // < 40ms
+                    sleepQuietly(25);
+                } else {
+                    sleepQuietly(10);
+                }
+
+                pollStatusFileWithRetry();
+
+            } catch (InterruptedException ie) {
+                break;
+            } catch (Exception ex) {
+                // If the watcher fails for any reason, fall back to polling.
+                break;
+            }
+        }
+
+        // mark watcher dead so the polling fallback can pick up
+        statusWatcherThread = null;
+        WatchService ws = statusWatchService;
+        statusWatchService = null;
+        if (ws != null) {
+            try {
+                ws.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ignored) {
+            // ignore
+        }
+    }
+
+    private void pollStatusFileWithRetry() {
+        try {
+            pollStatusFile();
+        } catch (RuntimeException ex) {
+            // in case we read mid-write; retry once
+            sleepQuietly(20);
+            try {
+                pollStatusFile();
+            } catch (RuntimeException ignored) {
             }
         }
     }
@@ -186,12 +337,6 @@ public final class LiveJournalMonitor {
 
             int flags = getIntOrDefault(root, "Flags", 0);
             int flags2 = getIntOrDefault(root, "Flags2", 0);
-
-            // Only emit when flags actually change
-            if (flags == lastStatusFlags && flags2 == lastStatusFlags2) {
-                lastStatusTimestamp = ts;
-                return;
-            }
         	
             // Pips: [sys, eng, wep]
             int[] pips = new int[] { 0, 0, 0 };
@@ -325,20 +470,31 @@ public final class LiveJournalMonitor {
                             destName
                     );
 
-            // If you only care about “FSD charging for a jump to another system”:
-            boolean isHyperjumpCharging =
-                    event.isFsdCharging()
-                            && event.isFsdHyperdriveCharging()
-                            && event.getDestinationSystem() != null
-                            && event.getDestinationSystem() != 0L;
+            // Emit Status updates promptly (not just Flags changes).
+            // For surface biology tracking we need high-frequency Lat/Lon updates.
+            boolean flagsChanged = (flags != lastStatusFlags) || (flags2 != lastStatusFlags2);
+            boolean tsChanged = !Objects.equals(ts, lastStatusTimestamp);
+            boolean positionChanged =
+                    !Objects.equals(latitude, lastStatusLatitude)
+                            || !Objects.equals(longitude, lastStatusLongitude)
+                            || !Objects.equals(altitude, lastStatusAltitude)
+                            || !Objects.equals(heading, lastStatusHeading)
+                            || !Objects.equals(bodyName, lastStatusBodyName)
+                            || !Objects.equals(planetRadius, lastStatusPlanetRadius);
 
-//            if (isHyperjumpCharging) {
+            if (flagsChanged || tsChanged || positionChanged) {
                 dispatch(event);
-//            }
+            }
 
             lastStatusTimestamp = ts;
             lastStatusFlags = flags;
             lastStatusFlags2 = flags2;
+            lastStatusLatitude = latitude;
+            lastStatusLongitude = longitude;
+            lastStatusAltitude = altitude;
+            lastStatusHeading = heading;
+            lastStatusBodyName = bodyName;
+            lastStatusPlanetRadius = planetRadius;
 
         } catch (IOException | JsonSyntaxException ex) {
             ex.printStackTrace();

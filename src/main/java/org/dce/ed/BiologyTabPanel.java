@@ -1,621 +1,369 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.geom.Ellipse2D;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
-import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
 
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
-import org.dce.ed.logreader.event.FsdJumpEvent;
-import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.state.BodyInfo;
+import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 
 /**
- * Biology tab - used on the planetary surface to track sample distances.
+ * Biology tab – on-surface helper.
  *
- * - Shows predicted/known biology for the current body.
- * - Tracks up to 3 sample points per species (from ScanOrganic + current Status lat/long).
- * - Draws 0-3 circles with distance-to-sample (like Exploration Buddy).
- * - Speaks when entering/leaving the required min-distance boundary for the active species.
+ * Populates from cached BodyInfo predictions + observed biology and shows up to 0–3
+ * sample-point distance indicators per species.
+ *
+ * Position comes from StatusEvent (Status.json).
+ * Sample points are persisted in cache (BodyInfo -> CachedBody -> SystemCache).
  */
 public class BiologyTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
-    private static final Color ED_ORANGE = new Color(255, 140, 0);
-    private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
+    private final JLabel header = new JLabel("Biology");
+    private final BioTableModel model = new BioTableModel();
+    private final JTable table = new JTable(model);
+    private final JScrollPane scroll = new JScrollPane(table);
 
-    private Font uiFont = OverlayPreferences.getUiFont();
+    private SystemTabPanel systemTab;
 
-    private final JLabel header;
-    private final JTable table;
-    private final BiologyTableModel tableModel;
+    private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 
-    // Current context (from Location/FSD/Status)
-    private volatile String currentSystemName;
-    private volatile long currentSystemAddress;
-    private volatile String currentBodyName;
-    private volatile Double currentLat;
-    private volatile Double currentLon;
-    private volatile Double currentPlanetRadiusM;
-    private volatile boolean onFootOrSrv;
+    private Double currentLat;
+    private Double currentLon;
+    private Double currentPlanetRadius;
+    private String currentBodyName;
 
-    // Predictions: bodyId -> candidates (for current system)
-    private final Map<Integer, List<BioCandidate>> predictionsByBodyId = new HashMap<>();
-
-    // Observations (scanned organics): bodyId -> genusLower -> observedDisplayName
-    private final Map<Integer, Map<String, String>> observedByBodyIdAndGenus = new HashMap<>();
-
-    // Sample points: bodyId -> speciesKey -> points
-    private final Map<Integer, Map<String, List<SamplePoint>>> samplePointsByBodyId = new HashMap<>();
-
-    // Last Status (for ScanOrganic -> point capture)
-    private volatile StatusEvent lastStatus;
-
-    // Active (incomplete) species tracking for voice boundary
-    private volatile String activeSpeciesKey;
-    private volatile String activeSpeciesGenus;
-    private volatile boolean wasInsideBoundary;
+    // Tracks last inside/outside state per species key so we can voice transitions.
+    private final Map<String, Boolean> insideStateByBioKey = new HashMap<>();
 
     public BiologyTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
 
-        header = new JLabel("Waiting for surface biology...");
-        header.setOpaque(false);
-        header.setForeground(ED_ORANGE);
-        header.setBorder(new EmptyBorder(4, 8, 4, 8));
-        header.setFont(uiFont.deriveFont(Font.BOLD));
-
-        tableModel = new BiologyTableModel();
-        table = new BiologyTable(tableModel);
         table.setOpaque(false);
+        table.setDefaultRenderer(Object.class, new TransparentCellRenderer());
+        table.setDefaultRenderer(String.class, new TransparentCellRenderer());
+        table.setDefaultRenderer(Integer.class, new TransparentCellRenderer());
+        
+        header.setOpaque(false);
+        add(header, BorderLayout.NORTH);
+
         table.setFillsViewportHeight(true);
+        table.setRowHeight(24);
         table.setShowGrid(false);
-        table.setFont(uiFont);
-        table.setRowHeight(26);
 
-        JTableHeader th = table.getTableHeader();
-        th.setOpaque(true);
-        th.setForeground(ED_ORANGE);
-        th.setBackground(Color.BLACK);
-        th.setFont(uiFont.deriveFont(Font.BOLD));
-        th.setDefaultRenderer(new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable table,
-                                                           Object value,
-                                                           boolean isSelected,
-                                                           boolean hasFocus,
-                                                           int row,
-                                                           int column) {
-                JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
-                l.setOpaque(true);
-                l.setBackground(Color.BLACK);
-                l.setForeground(ED_ORANGE);
-                l.setFont(uiFont.deriveFont(Font.BOLD));
-                l.setBorder(new EmptyBorder(0, 6, 0, 6));
-                return l;
-            }
-        });
+        table.getColumnModel().getColumn(0).setPreferredWidth(260); // Bio
+        table.getColumnModel().getColumn(1).setPreferredWidth(70);  // Count
+        table.getColumnModel().getColumn(2).setPreferredWidth(320); // Samples
 
-        DefaultTableCellRenderer textRenderer = new DefaultTableCellRenderer() {
-            {
-                setOpaque(false);
-                setForeground(ED_ORANGE);
-            }
+        table.getColumnModel().getColumn(2).setCellRenderer(new SampleDotsRenderer());
 
-            @Override
-            public Component getTableCellRendererComponent(JTable table,
-                                                           Object value,
-                                                           boolean isSelected,
-                                                           boolean hasFocus,
-                                                           int row,
-                                                           int column) {
-                JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-
-                if (isSelected) {
-                    l.setForeground(Color.BLACK);
-                } else {
-                    l.setForeground(ED_ORANGE);
-                }
-
-                l.setBorder(new EmptyBorder(0, 6, 0, 6));
-                return l;
-            }
-        };
-
-        table.setDefaultRenderer(String.class, textRenderer);
-        table.getColumnModel().getColumn(BiologyTableModel.COL_SAMPLES).setCellRenderer(new SamplesCellRenderer());
-
-        JScrollPane scroll = new JScrollPane(table);
+        scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
-        scroll.setBorder(new EmptyBorder(0, 0, 0, 0));
-
-        add(header, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
+
+        setPreferredSize(new Dimension(540, 320));
     }
 
-    // ---------------------------------------------------------------------
-    // Event handling
-    // ---------------------------------------------------------------------
+    public void setSystemTabPanel(SystemTabPanel systemTab) {
+        this.systemTab = systemTab;
+    }
 
     public void handleLogEvent(EliteLogEvent event) {
         if (event == null) {
             return;
         }
 
-        if (event instanceof FsdJumpEvent) {
-            FsdJumpEvent e = (FsdJumpEvent) event;
-
-            currentSystemName = e.getStarSystem();
-            currentSystemAddress = e.getSystemAddress();
-
-            clearSurfaceState();
-
-            requestRebuild();
-            return;
-        }
-
-        if (event instanceof LocationEvent) {
-            LocationEvent e = (LocationEvent) event;
-
-            currentSystemName = e.getStarSystem();
-            currentSystemAddress = e.getSystemAddress();
-            currentBodyName = e.getBody();
-
-            requestRebuild();
-            return;
-        }
-
-        if (event instanceof BioScanPredictionEvent) {
-            BioScanPredictionEvent e = (BioScanPredictionEvent) event;
-
-            predictionsByBodyId.put(e.getBodyId(), safeList(e.getCandidates()));
-            requestRebuild();
-            return;
-        }
-
         if (event instanceof StatusEvent) {
             StatusEvent e = (StatusEvent) event;
-            lastStatus = e;
 
-            currentBodyName = e.getBodyName();
             currentLat = e.getLatitude();
             currentLon = e.getLongitude();
-            currentPlanetRadiusM = e.getPlanetRadius();
-            onFootOrSrv = e.isOnFoot() || e.isInSrv();
+            currentPlanetRadius = e.getPlanetRadius();
+            currentBodyName = e.getBodyName();
 
-            updateBoundaryVoiceIfNeeded();
-            requestRebuild();
+            refreshTableForCurrentBody();
+
+            if (e.isOnFoot() || e.isInSrv()) {
+                updateVoiceTransitions();
+            }
             return;
         }
 
-        if (event instanceof ScanOrganicEvent) {
-            ScanOrganicEvent e = (ScanOrganicEvent) event;
-
-            handleScanOrganic(e);
-            requestRebuild();
+        // If prediction or scan events arrive, refresh the current body view.
+        if (event instanceof BioScanPredictionEvent || event instanceof ScanOrganicEvent) {
+            refreshTableForCurrentBody();
         }
     }
 
-    private void clearSurfaceState() {
-        predictionsByBodyId.clear();
-        observedByBodyIdAndGenus.clear();
-        samplePointsByBodyId.clear();
-        activeSpeciesKey = null;
-        activeSpeciesGenus = null;
-        wasInsideBoundary = false;
+    private void refreshTableForCurrentBody() {
+        if (systemTab == null) {
+            return;
+        }
+        if (currentBodyName == null || currentBodyName.isBlank()) {
+            model.setRows(Collections.emptyList());
+            return;
+        }
+
+        SystemState state = systemTab.getState();
+        if (state == null) {
+            model.setRows(Collections.emptyList());
+            return;
+        }
+
+        BodyInfo body = findBodyByName(state, currentBodyName);
+        if (body == null) {
+            model.setRows(Collections.emptyList());
+            return;
+        }
+
+        List<BioRow> rows = buildRows(body);
+        model.setRows(rows);
+
+        if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
+            model.updateDistances(currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
+        }
     }
 
-    private void handleScanOrganic(ScanOrganicEvent e) {
-        int bodyId = e.getBodyId();
+    private static List<BioRow> buildRows(BodyInfo body) {
+        List<BioRow> rows = new ArrayList<>();
 
-        String genus = canonicalName(nonEmpty(e.getGenusLocalised(), e.getGenus()));
-        String species = canonicalName(nonEmpty(e.getSpeciesLocalised(), e.getSpecies()));
-
-        if (genus == null || genus.isEmpty()) {
-            return;
-        }
-
-        String displayName;
-        if (species != null && !species.isEmpty()) {
-            displayName = species;
-        } else {
-            displayName = genus;
-        }
-
-        // Update "observed" map: for this genus, we now know which species is present.
-        Map<String, String> byGenus = observedByBodyIdAndGenus.get(bodyId);
-        if (byGenus == null) {
-            byGenus = new HashMap<>();
-            observedByBodyIdAndGenus.put(bodyId, byGenus);
-        }
-        byGenus.put(genus.toLowerCase(Locale.ROOT), displayName);
-
-        // Capture a sample point if we have lat/long.
-        StatusEvent st = lastStatus;
-        Double lat = null;
-        Double lon = null;
-        if (st != null) {
-            lat = st.getLatitude();
-            lon = st.getLongitude();
-        }
-        if (lat == null || lon == null) {
-            return;
-        }
-
-        // In-game rule: scanning a different species before completion resets previous partial.
-        if (activeSpeciesKey != null && !activeSpeciesKey.equals(displayName)) {
-            int prevCount = getSampleCount(bodyId, activeSpeciesKey);
-            if (prevCount > 0 && prevCount < 3) {
-                clearSamples(bodyId, activeSpeciesKey);
+        List<BioCandidate> preds = body.getPredictions();
+        if (preds != null) {
+            for (BioCandidate c : preds) {
+                if (c == null || c.getDisplayName() == null || c.getDisplayName().isBlank()) {
+                    continue;
+                }
+                rows.add(new BioRow(c.getDisplayName()));
             }
         }
 
-        activeSpeciesKey = displayName;
-        activeSpeciesGenus = genus;
-
-        addSamplePoint(bodyId, displayName, new SamplePoint(lat.doubleValue(), lon.doubleValue(), e.getTimestamp()));
-    }
-
-    private void addSamplePoint(int bodyId, String speciesKey, SamplePoint p) {
-        Map<String, List<SamplePoint>> bySpecies = samplePointsByBodyId.get(bodyId);
-        if (bySpecies == null) {
-            bySpecies = new LinkedHashMap<>();
-            samplePointsByBodyId.put(bodyId, bySpecies);
-        }
-
-        List<SamplePoint> pts = bySpecies.get(speciesKey);
-        if (pts == null) {
-            pts = new ArrayList<>();
-            bySpecies.put(speciesKey, pts);
-        }
-
-        // De-dupe: if extremely close to the most recent point, ignore.
-        if (!pts.isEmpty()) {
-            SamplePoint last = pts.get(pts.size() - 1);
-            double d = greatCircleMeters(last.lat, last.lon, p.lat, p.lon, effectiveRadiusM());
-            if (d < 2.0) {
-                return;
-            }
-        }
-
-        if (pts.size() >= 3) {
-            pts.remove(0);
-        }
-
-        pts.add(p);
-    }
-
-    private void clearSamples(int bodyId, String speciesKey) {
-        Map<String, List<SamplePoint>> bySpecies = samplePointsByBodyId.get(bodyId);
-        if (bySpecies == null) {
-            return;
-        }
-
-        bySpecies.remove(speciesKey);
-    }
-
-    private int getSampleCount(int bodyId, String speciesKey) {
-        Map<String, List<SamplePoint>> bySpecies = samplePointsByBodyId.get(bodyId);
-        if (bySpecies == null) {
-            return 0;
-        }
-
-        List<SamplePoint> pts = bySpecies.get(speciesKey);
-        if (pts == null) {
-            return 0;
-        }
-
-        return pts.size();
-    }
-
-    private void updateBoundaryVoiceIfNeeded() {
-        if (activeSpeciesKey == null) {
-            return;
-        }
-        if (!onFootOrSrv) {
-            return;
-        }
-        if (currentLat == null || currentLon == null) {
-            return;
-        }
-
-        int bodyId = currentBodyIdBestEffort();
-        if (bodyId < 0) {
-            return;
-        }
-
-        int count = getSampleCount(bodyId, activeSpeciesKey);
-        if (count <= 0 || count >= 3) {
-            wasInsideBoundary = false;
-            return;
-        }
-
-        Integer thresholdM = BioColonyDistance.metersForGenus(activeSpeciesGenus);
-        if (thresholdM == null) {
-            return;
-        }
-
-        double minDist = minDistanceToSamples(bodyId, activeSpeciesKey);
-        boolean inside = (minDist >= 0.0) && (minDist < thresholdM.intValue());
-
-        if (inside == wasInsideBoundary) {
-            return;
-        }
-
-        wasInsideBoundary = inside;
-
-        TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
-        if (inside) {
-            tts.speakf("Too close to {bio}. Need {meters} meters.", activeSpeciesKey, thresholdM);
-        } else {
-            tts.speakf("Clear for next {bio} sample.", activeSpeciesKey);
-        }
-    }
-
-    private double minDistanceToSamples(int bodyId, String speciesKey) {
-        Map<String, List<SamplePoint>> bySpecies = samplePointsByBodyId.get(bodyId);
-        if (bySpecies == null) {
-            return -1.0;
-        }
-        List<SamplePoint> pts = bySpecies.get(speciesKey);
-        if (pts == null || pts.isEmpty()) {
-            return -1.0;
-        }
-        if (currentLat == null || currentLon == null) {
-            return -1.0;
-        }
-
-        double r = effectiveRadiusM();
-        double min = Double.MAX_VALUE;
-
-        for (SamplePoint p : pts) {
-            double d = greatCircleMeters(currentLat.doubleValue(), currentLon.doubleValue(), p.lat, p.lon, r);
-            if (d < min) {
-                min = d;
-            }
-        }
-
-        return min;
-    }
-
-    private double effectiveRadiusM() {
-        Double r = currentPlanetRadiusM;
-        if (r == null || r.isNaN() || r.doubleValue() < 1000.0) {
-            return 6_371_000.0;
-        }
-        return r.doubleValue();
-    }
-
-    private int currentBodyIdBestEffort() {
-        // We do not have bodyId in Status.json. Best effort:
-        // - If we have any ScanOrganic points, that bodyId is authoritative.
-        // - Otherwise, if we have predictions, pick the one whose short name matches currentBodyName.
-
-        if (!samplePointsByBodyId.isEmpty()) {
-            // Most recent bodyId that has samples.
-            // (LinkedHashMap is not guaranteed here; just return any - typically there is only one active body.)
-            for (Integer id : samplePointsByBodyId.keySet()) {
-                if (id != null) {
-                    return id.intValue();
+        // Ensure observed display names appear even if not in predictions.
+        if (body.getObservedBioDisplayNames() != null) {
+            for (String observed : body.getObservedBioDisplayNames()) {
+                if (observed == null || observed.isBlank()) {
+                    continue;
+                }
+                boolean exists = false;
+                for (BioRow r : rows) {
+                    if (canonicalBioKey(r.displayName).equals(canonicalBioKey(observed))) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    rows.add(new BioRow(observed));
                 }
             }
         }
 
-        if (currentBodyName == null) {
-            return -1;
-        }
+        Map<String, Integer> counts = body.getBioSampleCountsSnapshot();
+        Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
 
-        String shortName = stripSystemPrefix(currentSystemName, currentBodyName);
+        for (BioRow r : rows) {
+            String key = canonicalBioKey(r.displayName);
 
-        // We do not have bodyName -> bodyId map; predictions are stored by bodyId only.
-        // So we cannot match reliably without additional state.
-        // Return the first predicted body id as a fallback.
-        for (Integer id : predictionsByBodyId.keySet()) {
-            if (id != null) {
-                return id.intValue();
+            int cnt = 0;
+            if (counts != null) {
+                // First try exact displayName (matches cache JSON keys like "Fumerola Nitris")
+                Integer v = counts.get(r.displayName);
+
+                // Then try canonical lowercase (matches runtime keys if you normalize there)
+                if (v == null) {
+                    v = counts.get(canonicalBioKey(r.displayName));
+                }
+
+                // Last-chance: case-insensitive match (covers any mixed state)
+                if (v == null) {
+                    String want = canonicalBioKey(r.displayName);
+                    for (Map.Entry<String, Integer> e : counts.entrySet()) {
+                        if (want.equals(canonicalBioKey(e.getKey()))) {
+                            v = e.getValue();
+                            break;
+                        }
+                    }
+                }
+
+                if (v != null) {
+                    cnt = v.intValue();
+                }
+            }
+            r.sampleCount = cnt;
+
+
+            if (points != null) {
+                List<BodyInfo.BioSamplePoint> pts = points.get(key);
+                if (pts != null && !pts.isEmpty()) {
+                    r.points = new ArrayList<>(pts);
+                }
             }
         }
 
-        // If nothing else, use -1 (no surface tracking).
-        @SuppressWarnings("unused")
-        String unused = shortName;
-        return -1;
-    }
-
-    private void requestRebuild() {
-        SwingUtilities.invokeLater(() -> rebuildUi());
-    }
-
-    private void rebuildUi() {
-        int bodyId = currentBodyIdBestEffort();
-
-        String bodyLabel = currentBodyName;
-        if (bodyLabel == null || bodyLabel.trim().isEmpty()) {
-            bodyLabel = "(unknown body)";
-        }
-
-        if (onFootOrSrv) {
-            header.setText("Surface biology: " + stripSystemPrefix(currentSystemName, bodyLabel));
-        } else {
-            header.setText("Surface biology (need on-foot/SRV): " + stripSystemPrefix(currentSystemName, bodyLabel));
-        }
-
-        List<RowData> rows = buildRowsForBody(bodyId);
-        tableModel.setRows(rows);
-    }
-
-    private List<RowData> buildRowsForBody(int bodyId) {
-        if (bodyId < 0) {
-            return Collections.emptyList();
-        }
-
-        List<BioCandidate> preds = predictionsByBodyId.get(bodyId);
-        if (preds == null) {
-            preds = Collections.emptyList();
-        }
-
-        Map<String, String> observedByGenus = observedByBodyIdAndGenus.get(bodyId);
-        if (observedByGenus == null) {
-            observedByGenus = Collections.emptyMap();
-        }
-
-        Map<String, List<SamplePoint>> samples = samplePointsByBodyId.get(bodyId);
-        if (samples == null) {
-            samples = Collections.emptyMap();
-        }
-
-        // Build a combined set of species display names.
-        // - Start with predictions.
-        // - Apply observed-genus filtering: if a genus has an observed species, keep only that.
-        // - Also include any sampled species that might not be in predictions.
-        Map<String, RowData> byName = new LinkedHashMap<>();
-
-        for (BioCandidate c : preds) {
-            String display = canonicalName(c.getDisplayName());
-            if (display == null || display.isEmpty()) {
-                continue;
+        // Sort: in-progress first, then 0/3, then complete, then alpha.
+        Collections.sort(rows, new Comparator<BioRow>() {
+            @Override
+            public int compare(BioRow a, BioRow b) {
+                int ra = rank(a.sampleCount);
+                int rb = rank(b.sampleCount);
+                if (ra != rb) {
+                    return Integer.compare(ra, rb);
+                }
+                return a.displayName.compareToIgnoreCase(b.displayName);
             }
 
-            String genusLower = firstWord(display).toLowerCase(Locale.ROOT);
-            String observedSpecies = observedByGenus.get(genusLower);
-            if (observedSpecies != null && !observedSpecies.equalsIgnoreCase(display)) {
-                continue;
+            private int rank(int cnt) {
+                if (cnt == 1 || cnt == 2) return 0;
+                if (cnt == 0) return 1;
+                return 2; // 3+
             }
-
-            RowData r = byName.get(display);
-            if (r == null) {
-                r = new RowData(display);
-                byName.put(display, r);
-            }
-            r.estimatedCr = c.getEstimatedPayout(Boolean.TRUE);
-            r.genus = firstWord(display);
-        }
-
-        // Ensure observed species appear even if not predicted.
-        for (String observed : observedByGenus.values()) {
-            String display = canonicalName(observed);
-            if (display == null || display.isEmpty()) {
-                continue;
-            }
-            RowData r = byName.get(display);
-            if (r == null) {
-                r = new RowData(display);
-                r.genus = firstWord(display);
-                byName.put(display, r);
-            }
-            r.observed = true;
-        }
-
-        // Ensure sampled species appear.
-        for (String sampled : samples.keySet()) {
-            String display = canonicalName(sampled);
-            if (display == null || display.isEmpty()) {
-                continue;
-            }
-            RowData r = byName.get(display);
-            if (r == null) {
-                r = new RowData(display);
-                r.genus = firstWord(display);
-                byName.put(display, r);
-            }
-        }
-
-        // Attach sample points + compute distances.
-        for (RowData r : byName.values()) {
-            List<SamplePoint> pts = samples.get(r.displayName);
-            if (pts == null) {
-                pts = Collections.emptyList();
-            }
-            r.samplePoints = pts;
-            r.sampleDistancesM = computeDistances(pts);
-            r.sampleCount = pts.size();
-        }
-
-        List<RowData> rows = new ArrayList<>(byName.values());
-        rows.sort((a, b) -> {
-            // Incomplete with samples first
-            boolean aInProgress = a.sampleCount > 0 && a.sampleCount < 3;
-            boolean bInProgress = b.sampleCount > 0 && b.sampleCount < 3;
-            if (aInProgress != bInProgress) {
-                return aInProgress ? -1 : 1;
-            }
-
-            // Observed next
-            if (a.observed != b.observed) {
-                return a.observed ? -1 : 1;
-            }
-
-            // Higher value next
-            long aVal = (a.estimatedCr != null) ? a.estimatedCr.longValue() : Long.MIN_VALUE;
-            long bVal = (b.estimatedCr != null) ? b.estimatedCr.longValue() : Long.MIN_VALUE;
-            int cmp = Long.compare(bVal, aVal);
-            if (cmp != 0) {
-                return cmp;
-            }
-
-            return a.displayName.compareToIgnoreCase(b.displayName);
         });
 
         return rows;
     }
 
-    private double[] computeDistances(List<SamplePoint> pts) {
-        double[] d = new double[]{Double.NaN, Double.NaN, Double.NaN};
-
-        if (pts == null || pts.isEmpty()) {
-            return d;
+    private void updateVoiceTransitions() {
+        if (currentLat == null || currentLon == null || currentPlanetRadius == null) {
+            return;
         }
-        if (currentLat == null || currentLon == null) {
-            return d;
+        if (systemTab == null) {
+            return;
         }
-
-        double r = effectiveRadiusM();
-
-        for (int i = 0; i < pts.size() && i < 3; i++) {
-            SamplePoint p = pts.get(i);
-            d[i] = greatCircleMeters(currentLat.doubleValue(), currentLon.doubleValue(), p.lat, p.lon, r);
+        if (currentBodyName == null || currentBodyName.isBlank()) {
+            return;
         }
 
-        return d;
+        SystemState state = systemTab.getState();
+        if (state == null) {
+            return;
+        }
+
+        BodyInfo body = findBodyByName(state, currentBodyName);
+        if (body == null) {
+            return;
+        }
+
+        Map<String, Integer> counts = body.getBioSampleCountsSnapshot();
+        Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
+
+        if (counts == null || counts.isEmpty() || points == null || points.isEmpty()) {
+            return;
+        }
+
+        // Choose first in-progress with at least one point.
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            String bioKey = e.getKey();
+            if (bioKey == null || bioKey.isBlank()) {
+                continue;
+            }
+
+            int count = (e.getValue() == null) ? 0 : e.getValue().intValue();
+            if (count <= 0 || count >= 3) {
+                continue;
+            }
+
+            List<BodyInfo.BioSamplePoint> pts = points.get(bioKey);
+            if (pts == null || pts.isEmpty()) {
+                continue;
+            }
+
+            BodyInfo.BioSamplePoint last = pts.get(pts.size() - 1);
+
+            double distM = greatCircleMeters(
+                    currentLat.doubleValue(),
+                    currentLon.doubleValue(),
+                    last.getLatitude(),
+                    last.getLongitude(),
+                    currentPlanetRadius.doubleValue());
+
+            int needed = BioColonyDistance.metersForBio(bioKey);
+            if (needed <= 0) {
+                return;
+            }
+
+            boolean inside = distM < needed;
+            Boolean prev = insideStateByBioKey.put(bioKey, Boolean.valueOf(inside));
+
+            if (prev == null || prev.booleanValue() == inside) {
+                return;
+            }
+
+            if (inside) {
+                tts.speakf("Entering clonal colony range of {species} ({meters} meters)", bioKey, Integer.valueOf(needed));
+            } else {
+                tts.speakf("Leaving clonal colony range of {species} ({meters} meters)", bioKey, Integer.valueOf(needed));
+            }
+            return;
+        }
     }
 
-    // ---------------------------------------------------------------------
-    // UI / font
-    // ---------------------------------------------------------------------
+    private static BodyInfo findBodyByName(SystemState state, String bodyName) {
+        if (state.getBodies() == null || state.getBodies().isEmpty()) {
+            return null;
+        }
+        for (BodyInfo b : state.getBodies().values()) {
+            if (b == null || b.getBodyName() == null) {
+                continue;
+            }
+            if (b.getBodyName().equalsIgnoreCase(bodyName)) {
+                return b;
+            }
+        }
+        return null;
+    }
+
+    private static String canonicalBioKey(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static double greatCircleMeters(double lat1Deg, double lon1Deg, double lat2Deg, double lon2Deg, double radiusM) {
+        double lat1 = Math.toRadians(lat1Deg);
+        double lon1 = Math.toRadians(lon1Deg);
+        double lat2 = Math.toRadians(lat2Deg);
+        double lon2 = Math.toRadians(lon2Deg);
+
+        double dLat = lat2 - lat1;
+        double dLon = lon2 - lon1;
+
+        double a =
+                Math.sin(dLat / 2.0) * Math.sin(dLat / 2.0) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                        Math.sin(dLon / 2.0) * Math.sin(dLon / 2.0);
+
+        double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
+        return radiusM * c;
+    }
 
     public void applyUiFontPreferences() {
         applyUiFont(OverlayPreferences.getUiFont());
@@ -623,61 +371,54 @@ public class BiologyTabPanel extends JPanel {
 
     public void applyUiFont(Font font) {
         if (font != null) {
-            uiFont = font;
-            header.setFont(uiFont.deriveFont(Font.BOLD));
-            table.setFont(uiFont);
-            table.setRowHeight(Math.max(22, uiFont.getSize() + 2));
-            JTableHeader th = table.getTableHeader();
-            if (th != null) {
-                th.setFont(uiFont.deriveFont(Font.BOLD));
-            }
+            setFont(font);
+            header.setFont(font);
+            table.setFont(font);
+            table.setRowHeight(Math.max(24, font.getSize() + 8));
+            table.getTableHeader().setFont(font);
         }
-
-        revalidate();
-        repaint();
+        SwingUtilities.invokeLater(() -> {
+            revalidate();
+            repaint();
+        });
     }
 
-    // ---------------------------------------------------------------------
-    // Table + renderer
-    // ---------------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Table model + rendering
+    // ------------------------------------------------------------
 
-    private static final class BiologyTable extends JTable {
+    private static final class BioRow {
+        private final String displayName;
+        private int sampleCount;
+        private List<BodyInfo.BioSamplePoint> points = Collections.emptyList();
+        private final List<Double> distancesM = new ArrayList<>();
 
-        BiologyTable(BiologyTableModel model) {
-            super(model);
+        private BioRow(String displayName) {
+            this.displayName = displayName;
         }
 
-        @Override
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-
-            Graphics2D g2 = (Graphics2D) g.create();
-            try {
-                g2.setColor(ED_ORANGE_TRANS);
-
-                int rowCount = getRowCount();
-                for (int row = 1; row < rowCount; row++) {
-                    int y = getCellRect(row, 0, true).y;
-                    g2.drawLine(0, y, getWidth(), y);
+        private void recomputeDistances(double curLat, double curLon, double radiusM) {
+            distancesM.clear();
+            if (points == null || points.isEmpty()) {
+                return;
+            }
+            for (BodyInfo.BioSamplePoint p : points) {
+                if (p == null) {
+                    continue;
                 }
-            } finally {
-                g2.dispose();
+                distancesM.add(Double.valueOf(greatCircleMeters(curLat, curLon, p.getLatitude(), p.getLongitude(), radiusM)));
             }
         }
     }
 
-    private static final class BiologyTableModel extends AbstractTableModel {
+    private static final class BioTableModel extends AbstractTableModel {
 
         private static final long serialVersionUID = 1L;
 
-        static final int COL_BIO = 0;
-        static final int COL_SAMPLES = 1;
-        static final int COL_VALUE = 2;
+        private final String[] cols = { "Bio", "Count", "Samples" };
+        private final List<BioRow> rows = new ArrayList<>();
 
-        private final String[] cols = new String[]{"Biology", "Samples", "Value"};
-        private final List<RowData> rows = new ArrayList<>();
-
-        void setRows(List<RowData> newRows) {
+        void setRows(List<BioRow> newRows) {
             rows.clear();
             if (newRows != null) {
                 rows.addAll(newRows);
@@ -685,8 +426,13 @@ public class BiologyTabPanel extends JPanel {
             fireTableDataChanged();
         }
 
-        RowData rowAt(int row) {
-            return rows.get(row);
+        void updateDistances(double curLat, double curLon, double radiusM) {
+            for (BioRow r : rows) {
+                r.recomputeDistances(curLat, curLon, radiusM);
+            }
+            if (!rows.isEmpty()) {
+                fireTableRowsUpdated(0, rows.size() - 1);
+            }
         }
 
         @Override
@@ -705,31 +451,18 @@ public class BiologyTabPanel extends JPanel {
         }
 
         @Override
-        public Class<?> getColumnClass(int columnIndex) {
-            if (columnIndex == COL_SAMPLES) {
-                return RowData.class;
-            }
-            return String.class;
-        }
-
-        @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
-            RowData r = rows.get(rowIndex);
-
-            if (columnIndex == COL_BIO) {
-                return r.displayName;
-            }
-            if (columnIndex == COL_SAMPLES) {
-                return r;
-            }
-            if (columnIndex == COL_VALUE) {
-                if (r.estimatedCr == null) {
+            BioRow r = rows.get(rowIndex);
+            switch (columnIndex) {
+                case 0:
+                    return r.displayName;
+                case 1:
+                    return r.sampleCount <= 0 ? "" : (r.sampleCount + "/3");
+                case 2:
+                    return r;
+                default:
                     return "";
-                }
-                long millions = Math.round(r.estimatedCr.longValue() / 1_000_000.0);
-                return String.format(Locale.US, "%dM Cr", Long.valueOf(millions));
             }
-            return "";
         }
 
         @Override
@@ -738,261 +471,113 @@ public class BiologyTabPanel extends JPanel {
         }
     }
 
-    private final class SamplesCellRenderer extends JPanel implements javax.swing.table.TableCellRenderer {
+    private static final class SampleDotsRenderer implements TableCellRenderer {
+
+        private final DefaultTableCellRenderer fallback = new DefaultTableCellRenderer();
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            if (!(value instanceof BioRow)) {
+                return fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            }
+            BioRow r = (BioRow) value;
+            return new SampleDotsComponent(r, table.getFont());
+        }
+    }
+
+    private static final class SampleDotsComponent extends JPanel {
 
         private static final long serialVersionUID = 1L;
 
-        private RowData row;
-        private boolean selected;
+        private final BioRow row;
+        private final Font font;
 
-        SamplesCellRenderer() {
+        SampleDotsComponent(BioRow row, Font font) {
+            this.row = row;
+            this.font = font;
             setOpaque(false);
-        }
-
-        @Override
-        public Component getTableCellRendererComponent(JTable table,
-                                                       Object value,
-                                                       boolean isSelected,
-                                                       boolean hasFocus,
-                                                       int row,
-                                                       int column) {
-            this.selected = isSelected;
-            this.row = (value instanceof RowData) ? (RowData) value : null;
-            return this;
-        }
-
-        @Override
-        public Dimension getPreferredSize() {
-            return new Dimension(160, 26);
+            setPreferredSize(new Dimension(300, 24));
         }
 
         @Override
         protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
+//            super.paintComponent(g);
 
             Graphics2D g2 = (Graphics2D) g.create();
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setFont(font);
 
-                int h = getHeight();
-                int cx0 = 16;
-                int r = Math.min(12, (h - 4) / 2);
-                int spacing = 52;
-                int cy = h / 2;
+                int x = 8;
+                int yMid = getHeight() / 2;
+                int radius = 7;
+                int gap = 10;
 
-                Color fg;
-                if (selected) {
-                    fg = Color.BLACK;
-                } else {
-                    fg = ED_ORANGE;
-                }
+                int have = Math.min(3, Math.max(0, row.sampleCount));
+                int dots = 3;
 
-                g2.setFont(uiFont.deriveFont(Font.PLAIN, Math.max(10f, uiFont.getSize2D() - 2f)));
+                for (int i = 0; i < dots; i++) {
+                    int cx = x + i * (radius * 2 + gap);
+                    int cy = yMid;
 
-                for (int i = 0; i < 3; i++) {
-                    int cx = cx0 + (i * spacing);
+                    g2.drawOval(cx, cy - radius, radius * 2, radius * 2);
 
-                    boolean hasSample = false;
-                    String text = "";
-                    if (row != null && row.sampleCount > i) {
-                        hasSample = true;
-                        double dM = row.sampleDistancesM != null && row.sampleDistancesM.length > i
-                                ? row.sampleDistancesM[i]
-                                : Double.NaN;
-                        text = fmtDistance(dM);
+                    if (i < have) {
+                        g2.fillOval(cx + 2, cy - radius + 2, (radius * 2) - 3, (radius * 2) - 3);
                     }
 
-                    Ellipse2D circle = new Ellipse2D.Double(cx - r, cy - r, r * 2.0, r * 2.0);
+                    if (row.distancesM != null && i < row.distancesM.size()) {
+                        double m = row.distancesM.get(i).doubleValue();
+                        String txt = formatMeters(m);
 
-                    if (hasSample) {
-                        g2.setColor(fg);
-                        g2.fill(circle);
-                        g2.setColor(selected ? Color.BLACK : Color.BLACK);
-                        // text will be drawn in black? That disappears. Use white.
-                        g2.setColor(Color.WHITE);
-                    } else {
-                        g2.setColor(fg);
-                        g2.draw(circle);
-                        g2.setColor(fg);
-                    }
-
-                    if (!text.isEmpty()) {
-                        int tw = g2.getFontMetrics().stringWidth(text);
-                        int th = g2.getFontMetrics().getAscent();
-                        g2.drawString(text, cx - (tw / 2), cy + (th / 2) - 2);
+                        int tx = cx + (radius * 2) + 6;
+                        int ty = cy + (font.getSize() / 2) - 1;
+                        g2.drawString(txt, tx, ty);
                     }
                 }
             } finally {
                 g2.dispose();
             }
         }
-    }
 
-    // ---------------------------------------------------------------------
-    // Row state
-    // ---------------------------------------------------------------------
-
-    private static final class RowData {
-        final String displayName;
-        String genus;
-        Long estimatedCr;
-        boolean observed;
-        int sampleCount;
-        List<SamplePoint> samplePoints = Collections.emptyList();
-        double[] sampleDistancesM = new double[]{Double.NaN, Double.NaN, Double.NaN};
-
-        RowData(String displayName) {
-            this.displayName = displayName;
-        }
-    }
-
-    private static final class SamplePoint {
-        final double lat;
-        final double lon;
-        final Instant time;
-
-        SamplePoint(double lat, double lon, Instant time) {
-            this.lat = lat;
-            this.lon = lon;
-            this.time = time;
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // Colony distance table
-    // ---------------------------------------------------------------------
-
-    private static final class BioColonyDistance {
-
-        private static final Map<String, Integer> GENUS_TO_METERS;
-
-        static {
-            Map<String, Integer> m = new HashMap<>();
-
-            // Common Odyssey exobiology minimum separation distances.
-            // (These are per-genus; most are constant for a given genus.)
-            // If you want the full table expanded, tell me what you want included.
-            m.put("bacterium", Integer.valueOf(500));
-            m.put("stratum", Integer.valueOf(500));
-            m.put("tussock", Integer.valueOf(200));
-            m.put("fungoida", Integer.valueOf(300));
-            m.put("tubus", Integer.valueOf(800));
-            m.put("clypeus", Integer.valueOf(800));
-            m.put("electricae", Integer.valueOf(1000));
-            m.put("frutexa", Integer.valueOf(150));
-            m.put("osseo", Integer.valueOf(800));
-            m.put("concha", Integer.valueOf(300));
-            m.put("aleoida", Integer.valueOf(150));
-            m.put("recepta", Integer.valueOf(800));
-            m.put("fonticulua", Integer.valueOf(500));
-            m.put("shrub", Integer.valueOf(150));
-            m.put("cornar", Integer.valueOf(300));
-
-            GENUS_TO_METERS = Collections.unmodifiableMap(m);
-        }
-
-        static Integer metersForGenus(String genusName) {
-            if (genusName == null) {
-                return null;
+        private static String formatMeters(double m) {
+            if (Double.isNaN(m) || Double.isInfinite(m)) {
+                return "";
             }
-            String g = genusName.trim().toLowerCase(Locale.ROOT);
-            if (g.isEmpty()) {
-                return null;
+            if (m < 1000.0) {
+                return String.format(Locale.US, "%.0f m", m);
             }
-            return GENUS_TO_METERS.get(g);
+            return String.format(Locale.US, "%.2f km", (m / 1000.0));
         }
     }
+    private static final class TransparentCellRenderer extends DefaultTableCellRenderer {
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
+        private static final long serialVersionUID = 1L;
 
-    private static <T> List<T> safeList(List<T> in) {
-        if (in == null) {
-            return Collections.emptyList();
-        }
-        return new ArrayList<>(in);
-    }
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table,
+                Object value,
+                boolean isSelected,
+                boolean hasFocus,
+                int row,
+                int column) {
 
-    private static String firstWord(String s) {
-        if (s == null) {
-            return "";
-        }
-        String t = s.trim();
-        int sp = t.indexOf(' ');
-        if (sp < 0) {
-            return t;
-        }
-        return t.substring(0, sp);
-    }
+            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
 
-    private static String canonicalName(String s) {
-        if (s == null) {
-            return null;
-        }
-        String t = s.trim();
-        if (t.isEmpty()) {
-            return null;
-        }
-        // Normalize whitespace
-        t = t.replaceAll("\\s+", " ");
-        return t;
-    }
+            // Keep selection highlighting readable, but otherwise allow overlay alpha.
+            if (c instanceof DefaultTableCellRenderer) {
+                DefaultTableCellRenderer r = (DefaultTableCellRenderer) c;
 
-    private static String nonEmpty(String a, String b) {
-        if (a != null && !a.trim().isEmpty()) {
-            return a;
-        }
-        return b;
-    }
-
-    private static String stripSystemPrefix(String systemName, String bodyName) {
-        if (bodyName == null) {
-            return "";
-        }
-        String t = bodyName;
-        if (systemName != null && !systemName.trim().isEmpty()) {
-            t = t.replace(systemName, "").trim();
-            if (t.isEmpty()) {
-                t = bodyName;
+                if (isSelected) {
+                    r.setOpaque(true);
+                } else {
+                    r.setOpaque(false);
+                }
             }
+            
+            return c;
         }
-        return t;
     }
 
-    private static String fmtDistance(double meters) {
-        if (Double.isNaN(meters) || meters < 0.0) {
-            return "";
-        }
-        if (meters < 1000.0) {
-            return String.format(Locale.US, "%.0fm", Double.valueOf(meters));
-        }
-        double km = meters / 1000.0;
-        if (km < 10.0) {
-            return String.format(Locale.US, "%.1fk", Double.valueOf(km));
-        }
-        return String.format(Locale.US, "%.0fk", Double.valueOf(km));
-    }
-
-    // Haversine great-circle distance on a sphere.
-    private static double greatCircleMeters(double lat1Deg,
-                                            double lon1Deg,
-                                            double lat2Deg,
-                                            double lon2Deg,
-                                            double radiusM) {
-        double lat1 = Math.toRadians(lat1Deg);
-        double lon1 = Math.toRadians(lon1Deg);
-        double lat2 = Math.toRadians(lat2Deg);
-        double lon2 = Math.toRadians(lon2Deg);
-
-        double dLat = lat2 - lat1;
-        double dLon = lon2 - lon1;
-
-        double a = Math.sin(dLat / 2.0) * Math.sin(dLat / 2.0)
-                + Math.cos(lat1) * Math.cos(lat2)
-                * Math.sin(dLon / 2.0) * Math.sin(dLon / 2.0);
-
-        double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
-        return radiusM * c;
-    }
 }

@@ -22,6 +22,7 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.SaasignalsFoundEvent;
 import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.util.EdsmClient;
 
 /**
@@ -36,6 +37,12 @@ public class SystemEventProcessor {
     private final SystemCache systemCache;
     private final EdsmClient edsmClient; // optional; may be null
 	private String clientKey;
+
+    // Last known surface position from Status.json (used to pin ScanOrganic sample points).
+    private Double lastLatitude;
+    private Double lastLongitude;
+    private String lastBodyName;
+    private boolean lastOnFootOrSrv;
 
     public SystemEventProcessor(String clientKey, SystemState state) {
         this(clientKey, state, null);
@@ -52,6 +59,11 @@ public class SystemEventProcessor {
      * Entry point: consume any event and update SystemState.
      */
     public void handleEvent(EliteLogEvent event) {
+        if (event instanceof StatusEvent) {
+            handleStatus((StatusEvent) event);
+            return;
+        }
+
         if (event instanceof LocationEvent) {
             LocationEvent e = (LocationEvent) event;
             enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
@@ -421,10 +433,28 @@ public class SystemEventProcessor {
             }
             info.addObservedBioDisplayName(displayName);
             info.recordBioSample(displayName, e.getScanType());
+            if (lastOnFootOrSrv && lastLatitude != null && lastLongitude != null) {
+                if (lastBodyName == null || lastBodyName.isBlank() || bodyName == null || bodyName.isBlank() || lastBodyName.equals(bodyName)) {
+                    info.recordBioSamplePoint(displayName, e.getScanType(), lastLatitude.doubleValue(), lastLongitude.doubleValue());
+                }
+            }
+
         }
     }
 
-    private static String firstNonBlank(String a, String b) {
+    
+    private void handleStatus(StatusEvent e) {
+        if (e == null) {
+            return;
+        }
+
+        lastLatitude = e.getLatitude();
+        lastLongitude = e.getLongitude();
+        lastBodyName = e.getBodyName();
+        lastOnFootOrSrv = e.isOnFoot() || e.isInSrv();
+    }
+
+private static String firstNonBlank(String a, String b) {
         if (a != null && !a.trim().isEmpty()) {
             return a.trim();
         }

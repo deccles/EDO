@@ -97,6 +97,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         this.routeTab = new RouteTabPanel();
         this.systemTab = new SystemTabPanel();
         this.biologyTab = new BiologyTabPanel();
+        this.biologyTab.setSystemTabPanel(systemTab);
 
         cardPanel.add(routeTab, CARD_ROUTE);
         cardPanel.add(systemTab, CARD_SYSTEM);
@@ -160,7 +161,7 @@ public class EliteOverlayTabbedPane extends JPanel {
                  systemTab.handleLogEvent(event);
                  
                  routeTab.handleLogEvent(event);
-
+                 
                  biologyTab.handleLogEvent(event);
             });
 
@@ -281,7 +282,7 @@ public class EliteOverlayTabbedPane extends JPanel {
                         entry.hoverStartMs = now;
                         entry.firedForCurrentHover = false;
                     } else if (!entry.firedForCurrentHover && now - entry.hoverStartMs >= entry.delayMs) {
-	                        // Hover delay satisfied - perform action once per hover
+                        // Hover delay satisfied – perform action once per hover
                         if (entry.action != null) {
                             SwingUtilities.invokeLater(entry.action);
                         }

@@ -193,6 +193,10 @@ public class ExobiologyAuditMain {
         System.out.println("Bodies with observed biology: " + bodyCount);
         System.out.println("Failing bodies (at least one observed species not predicted): "
                 + allCases.size());
+        
+        for (ExobiologyAuditCase x : allCases) {
+        	System.out.println(x.systemName + " " + x.bodyName + " " +  x.missingObservedDisplayNames);
+        }
         System.out.println("Audit cases written to: " + out.toAbsolutePath());
     }
 

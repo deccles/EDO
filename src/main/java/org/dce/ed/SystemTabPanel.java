@@ -915,4 +915,9 @@ public class SystemTabPanel extends JPanel {
         }
     }
 
+
+    public SystemState getState() {
+        return state;
+    }
+
 }

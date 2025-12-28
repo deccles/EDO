@@ -60,6 +60,32 @@ public class BodyInfo {
 	// Odyssey exobiology sample progress per species (1..3).
 	// Key should be the display name you show in the Bio table (canonicalized if you do that elsewhere).
 	private final Map<String, Integer> bioSampleCountsByDisplayName = new HashMap<>();
+	// NEW: sample point locations (lat/lon) recorded for each species display name.
+	// We keep up to 3 points per species, matching Odyssey's 3-sample requirement.
+	private final Map<String, List<BioSamplePoint>> bioSamplePointsByDisplayName = new HashMap<>();
+
+	// Track the currently-in-progress bio (1/3 or 2/3). When sampling a different species,
+	// the in-game behavior discards the incomplete progress from the old species.
+	private String activeIncompleteBioKey;
+
+	public static final class BioSamplePoint {
+		private final double latitude;
+		private final double longitude;
+
+		public BioSamplePoint(double latitude, double longitude) {
+			this.latitude = latitude;
+			this.longitude = longitude;
+		}
+
+		public double getLatitude() {
+			return latitude;
+		}
+
+		public double getLongitude() {
+			return longitude;
+		}
+	}
+
 
 	private int bodyId = -1;
 
@@ -404,30 +430,126 @@ public class BodyInfo {
 	 *  - "Analyse" indicates completion (3/3).
 	 */
 	public void recordBioSample(String displayName, String scanType) {
+		String key = canonBioName(displayName);
+
+	    if (key.isBlank()) {
+	        return;
+	    }
+
+	    // Completion event: force to 3/3
+	    if (scanType != null) {
+	        String st = scanType.trim().toLowerCase(Locale.ROOT);
+	        if (st.equals("analyse") || st.equals("analyze")) {
+	            bioSampleCountsByDisplayName.put(key, Integer.valueOf(3));
+	            observedBioDisplayNames.add(displayName);
+	            return;
+	        }
+	    }
+
+	    Integer cur = bioSampleCountsByDisplayName.get(key);
+	    int next = (cur == null ? 0 : cur.intValue()) + 1;
+
+	    if (next > 3) {
+	        next = 3;
+	    }
+
+	    bioSampleCountsByDisplayName.put(key, Integer.valueOf(next));
+	}
+
+	/**
+	 * Snapshot of recorded sample points for this body.
+	 * Keys are canonicalized display names (same keys used by {@link #recordBioSample(String, String)}).
+	 */
+	public Map<String, List<BioSamplePoint>> getBioSamplePointsSnapshot() {
+		Map<String, List<BioSamplePoint>> out = new HashMap<>();
+		for (Map.Entry<String, List<BioSamplePoint>> e : bioSamplePointsByDisplayName.entrySet()) {
+			List<BioSamplePoint> pts = e.getValue();
+			if (pts == null || pts.isEmpty()) {
+				continue;
+			}
+			out.put(e.getKey(), new ArrayList<>(pts));
+		}
+		return out;
+	}
+
+	/**
+	 * Replace all stored sample points (used when loading from cache).
+	 */
+	public void setBioSamplePoints(Map<String, List<BioSamplePoint>> pointsByDisplayName) {
+		bioSamplePointsByDisplayName.clear();
+		activeIncompleteBioKey = null;
+
+		if (pointsByDisplayName == null || pointsByDisplayName.isEmpty()) {
+			return;
+		}
+
+		for (Map.Entry<String, List<BioSamplePoint>> e : pointsByDisplayName.entrySet()) {
+			String key = canonBioName(e.getKey());
+			List<BioSamplePoint> pts = e.getValue();
+			if (pts == null || pts.isEmpty()) {
+				continue;
+			}
+			List<BioSamplePoint> copy = new ArrayList<>(pts);
+			if (copy.size() > 3) {
+				copy = copy.subList(0, 3);
+			}
+			bioSamplePointsByDisplayName.put(key, copy);
+
+			int cnt = bioSampleCountsByDisplayName.getOrDefault(key, 0);
+			if (cnt > 0 && cnt < 3) {
+				activeIncompleteBioKey = key;
+			}
+		}
+	}
+
+	/**
+	 * Record the lat/lon of the current sample point for the given species display name.
+	 *
+	 * @param displayName species display name (genus + species, or genus)
+	 * @param scanType    ScanOrganic scan type ("Log" increments; "Analyse" completes)
+	 * @param latitude    degrees
+	 * @param longitude   degrees
+	 */
+	public void recordBioSamplePoint(String displayName, String scanType, double latitude, double longitude) {
 		if (displayName == null || displayName.isBlank()) {
 			return;
 		}
 
 		String key = canonBioName(displayName);
 
-		int current = bioSampleCountsByDisplayName.getOrDefault(key, 0);
-		int next = current;
-
-		if (scanType != null) {
-			String st = scanType.toLowerCase(Locale.ROOT);
-			if ("analyse".equals(st) || "analyze".equals(st)) {
-				next = 3;
-			} else if ("log".equals(st)) {
-				next = Math.min(3, current + 1);
+		// If the player begins sampling a different species while incomplete, discard the old incomplete samples.
+		int currentCount = bioSampleCountsByDisplayName.getOrDefault(key, 0);
+		if (currentCount < 3) {
+			if (activeIncompleteBioKey != null && !activeIncompleteBioKey.equals(key)) {
+				bioSamplePointsByDisplayName.remove(activeIncompleteBioKey);
+				// also clear the old sample count if it wasn't complete
+				int oldCnt = bioSampleCountsByDisplayName.getOrDefault(activeIncompleteBioKey, 0);
+				if (oldCnt > 0 && oldCnt < 3) {
+					bioSampleCountsByDisplayName.remove(activeIncompleteBioKey);
+				}
 			}
-		} else {
-			next = Math.min(3, current + 1);
+			activeIncompleteBioKey = key;
 		}
 
-		if (next != current) {
-			bioSampleCountsByDisplayName.put(key, next);
+		List<BioSamplePoint> pts = bioSamplePointsByDisplayName.computeIfAbsent(key, k -> new ArrayList<>());
+		int max = 3;
+
+		String st = scanType == null ? null : scanType.toLowerCase(Locale.ROOT);
+		if ("analyse".equals(st) || "analyze".equals(st)) {
+			// When analyzed, the sample is complete; keep whatever points we already captured.
+			activeIncompleteBioKey = null;
+			return;
+		}
+
+		// For a "Log" point, append if we have room.
+		if (pts.size() < max) {
+			pts.add(new BioSamplePoint(latitude, longitude));
+		} else {
+			// If somehow we get extra, overwrite the last one.
+			pts.set(max - 1, new BioSamplePoint(latitude, longitude));
 		}
 	}
+
 
 	public void setAtmoOrType(String atmoOrType) {
 		this.atmoOrType = atmoOrType;
