@@ -8,6 +8,11 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.BasicStroke;
+import java.awt.Stroke;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.awt.RenderingHints;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,6 +58,12 @@ public class BiologyTabPanel extends JPanel {
     private final JTable table = new JTable(model);
     private final JScrollPane scroll = new JScrollPane(table);
 
+    private final BioMapPanel mapPanel = new BioMapPanel(model);
+
+    // Recent movement samples for computing a stable "movement heading".
+    private final Deque<PosSample> movement = new ArrayDeque<>();
+    private Double movementHeadingDeg; // 0..360, where 0 is north
+
     private SystemTabPanel systemTab;
 
     private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
@@ -92,7 +103,16 @@ public class BiologyTabPanel extends JPanel {
         scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
-        add(scroll, BorderLayout.CENTER);
+
+        mapPanel.setOpaque(false);
+        mapPanel.setPreferredSize(new Dimension(260, 260));
+
+        JPanel center = new JPanel(new BorderLayout());
+        center.setOpaque(false);
+        center.add(scroll, BorderLayout.CENTER);
+        center.add(mapPanel, BorderLayout.SOUTH);
+
+        add(center, BorderLayout.CENTER);
 
         setPreferredSize(new Dimension(560, 320));
     }
@@ -113,6 +133,10 @@ public class BiologyTabPanel extends JPanel {
             currentLon = e.getLongitude();
             currentPlanetRadius = e.getPlanetRadius();
             currentBodyName = e.getBodyName();
+
+            if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
+                recordMovementSample(e.getTimestamp(), currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
+            }
 
             refreshTableForCurrentBody();
 
@@ -155,7 +179,62 @@ public class BiologyTabPanel extends JPanel {
         if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
             model.updateDistances(currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
         }
+
+        mapPanel.setShipState(currentLat, currentLon, currentPlanetRadius, movementHeadingDeg);
     }
+
+
+private void recordMovementSample(Instant timestamp, double lat, double lon, double radiusM) {
+    long t = (timestamp == null) ? System.currentTimeMillis() : timestamp.toEpochMilli();
+
+    // Only incorporate samples that represent actual movement.
+    // Otherwise (sitting still / jitter), we keep the last heading and don't let it drift/reset.
+    PosSample last = movement.peekLast();
+    if (last != null) {
+        double distM = greatCircleMeters(last.lat, last.lon, lat, lon, radiusM);
+        if (distM < 2.0) {
+            return;
+        }
+    }
+
+    movement.addLast(new PosSample(lat, lon, t));
+
+    // Keep only the last 3 movement samples (2 segments) for a responsive heading.
+    while (movement.size() > 3) {
+        movement.removeFirst();
+    }
+
+    if (movement.size() < 2) {
+        // Not enough movement points to establish a direction; keep existing heading.
+        return;
+    }
+
+    // Average bearings between successive movement samples.
+    double sumSin = 0.0;
+    double sumCos = 0.0;
+    int n = 0;
+
+    PosSample prev = null;
+    for (PosSample s : movement) {
+        if (prev != null) {
+            double brng = bearingDeg(prev.lat, prev.lon, s.lat, s.lon);
+            double rad = Math.toRadians(brng);
+            sumSin += Math.sin(rad);
+            sumCos += Math.cos(rad);
+            n++;
+        }
+        prev = s;
+    }
+
+    if (n == 0) {
+        return;
+    }
+
+    double avgRad = Math.atan2(sumSin, sumCos);
+    double deg = (Math.toDegrees(avgRad) + 360.0) % 360.0;
+    movementHeadingDeg = Double.valueOf(deg);
+}
+
 
     private static List<BioRow> buildRows(BodyInfo body) {
         List<BioRow> rows = new ArrayList<>();
@@ -201,11 +280,21 @@ public class BiologyTabPanel extends JPanel {
         Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
 
         for (BioRow r : rows) {
-            r.sampleCount = lookupCount(counts, r.displayName);
-
+            // Elite only tracks ONE active genus at a time; snapshot counts can represent the current genus.
+            // If we have recorded sample points for this row, those are ground truth.
             List<BodyInfo.BioSamplePoint> pts = lookupPoints(points, r.displayName);
             if (pts != null && !pts.isEmpty()) {
                 r.points = new ArrayList<>(pts);
+                r.sampleCount = r.points.size();
+            } else {
+                r.sampleCount = lookupCount(counts, r.displayName);
+            }
+
+            if (r.sampleCount < 0) {
+                r.sampleCount = 0;
+            }
+            if (r.sampleCount > 3) {
+                r.sampleCount = 3;
             }
 
             r.genusKey = genusKeyForRow(r.displayName, candByKey.get(canonicalBioKey(r.displayName)));
@@ -475,6 +564,24 @@ public class BiologyTabPanel extends JPanel {
         return radiusM * c;
     }
 
+
+private static double bearingDeg(double lat1Deg, double lon1Deg, double lat2Deg, double lon2Deg) {
+    // Initial bearing from point1 -> point2 (0..360, 0 = North), great-circle.
+    double lat1 = Math.toRadians(lat1Deg);
+    double lat2 = Math.toRadians(lat2Deg);
+    double dLon = Math.toRadians(lon2Deg - lon1Deg);
+
+    double y = Math.sin(dLon) * Math.cos(lat2);
+    double x =
+            Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+    double brng = Math.atan2(y, x);
+    double deg = (Math.toDegrees(brng) + 360.0) % 360.0;
+    return deg;
+}
+
+
     public void applyUiFontPreferences() {
         applyUiFont(OverlayPreferences.getUiFont());
     }
@@ -545,7 +652,243 @@ public class BiologyTabPanel extends JPanel {
     // Table model + rendering
     // ------------------------------------------------------------
 
-    private static final class BioRow {
+    
+    private static final class PosSample {
+        private final double lat;
+        private final double lon;
+        private final long timeMs;
+
+        private PosSample(double lat, double lon, long timeMs) {
+            this.lat = lat;
+            this.lon = lon;
+            this.timeMs = timeMs;
+        }
+    }
+
+    private static final class BioMapPanel extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private final BioTableModel model;
+
+        private Double shipLat;
+        private Double shipLon;
+        private Double radiusM;
+        private Double headingDeg; // movement heading (up), 0=north
+
+        private final Stroke lineStroke = new BasicStroke(2.0f);
+
+        private BioMapPanel(BioTableModel model) {
+            super();
+            this.model = model;
+        }
+
+        private void setShipState(Double shipLat, Double shipLon, Double radiusM, Double headingDeg) {
+            this.shipLat = shipLat;
+            this.shipLon = shipLon;
+            this.radiusM = radiusM;
+            // Keep the last valid heading so the map doesn't "snap" back to 0 when we're stopped.
+            if (headingDeg != null) {
+                this.headingDeg = headingDeg;
+            }
+
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                int w = getWidth();
+                int h = getHeight();
+                int size = Math.min(w, h);
+
+                int x0 = (w - size) / 2;
+                int y0 = (h - size) / 2;
+
+                int pad = 12;
+                int cx = x0 + size / 2;
+                int cy = y0 + size / 2;
+
+                // Border
+                g2.setColor(ED_ORANGE);
+                g2.drawRect(x0 + 1, y0 + 1, size - 2, size - 2);
+
+                if (shipLat == null || shipLon == null || radiusM == null) {
+                    drawShip(g2, cx, cy);
+                    drawCompass(g2, x0, y0, size, 0.0);
+                    return;
+                }
+
+                double up = (headingDeg == null) ? 0.0 : headingDeg.doubleValue();
+                double upRad = Math.toRadians(up);
+
+                // Determine scale based on farthest tracked point.
+                double maxDist = 0.0;
+                for (int i = 0; i < model.getRowCount(); i++) {
+                    BioRow r = model.getRowAt(i);
+                    if (r == null) {
+                        continue;
+                    }
+                    if (r.sampleCount >= 3) {
+                        continue;
+                    }
+                    if (r.points == null || r.points.isEmpty()) {
+                        continue;
+                    }
+
+                    for (BodyInfo.BioSamplePoint p : r.points) {
+                        if (p == null) {
+                            continue;
+                        }
+                        double d = greatCircleMeters(shipLat.doubleValue(), shipLon.doubleValue(), p.getLatitude(), p.getLongitude(), radiusM.doubleValue());
+                        if (d > maxDist) {
+                            maxDist = d;
+                        }
+                    }
+                }
+
+                if (maxDist < 1.0) {
+                    maxDist = 1.0;
+                }
+
+                double half = (size / 2.0) - pad - 10.0;
+                if (half < 10.0) {
+                    half = 10.0;
+                }
+                double scale = half / maxDist;
+
+                // Draw lines to any recorded sample points.
+                g2.setStroke(lineStroke);
+                g2.setFont(getFont().deriveFont(Font.PLAIN, 12f));
+                FontMetrics fm = g2.getFontMetrics();
+
+                for (int i = 0; i < model.getRowCount(); i++) {
+                    BioRow r = model.getRowAt(i);
+                    if (r == null) {
+                        continue;
+                    }
+                    if (r.sampleCount >= 3) {
+                        continue;
+                    }
+                    if (r.points == null || r.points.isEmpty()) {
+                        continue;
+                    }
+
+                    Color c = colorForSamples(r.sampleCount);
+                    g2.setColor(c);
+
+                    for (BodyInfo.BioSamplePoint p : r.points) {
+                        if (p == null) {
+                            continue;
+                        }
+
+                        double distM = greatCircleMeters(
+                                shipLat.doubleValue(),
+                                shipLon.doubleValue(),
+                                p.getLatitude(),
+                                p.getLongitude(),
+                                radiusM.doubleValue());
+
+                        // Bearing is degrees clockwise from true north.
+                        double brng = bearingDeg(shipLat.doubleValue(), shipLon.doubleValue(), p.getLatitude(), p.getLongitude());
+
+                        // Convert to map coordinates where "up" is the current movement heading.
+                        // Using relative bearing avoids sign/axis confusion (bearing is not a standard math angle).
+                        double relRad = Math.toRadians(brng - up);
+
+                        // Map axes: +Y is forward (up), +X is right.
+                        double rx = distM * Math.sin(relRad);
+                        double ry = distM * Math.cos(relRad);
+
+                        int x1 = cx + (int) Math.round(rx * scale);
+                        int y1 = cy - (int) Math.round(ry * scale);
+
+                        g2.drawLine(cx, cy, x1, y1);
+
+                        // Endpoint marker
+                        g2.fillOval(x1 - 3, y1 - 3, 6, 6);
+
+                        // Distance label at midpoint.
+                        int mx = (cx + x1) / 2;
+                        int my = (cy + y1) / 2;
+
+                        String label = formatDistance(distM);
+                        int tw = fm.stringWidth(label);
+
+                        // Small backing to improve legibility
+                        g2.setColor(ED_DARK);
+                        g2.fillRoundRect(mx - tw / 2 - 4, my - fm.getAscent(), tw + 8, fm.getHeight(), 8, 8);
+                        g2.setColor(c);
+                        g2.drawString(label, mx - tw / 2, my);
+                    }
+                }
+
+                drawShip(g2, cx, cy);
+                drawCompass(g2, x0, y0, size, up);
+
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        private static void drawShip(Graphics2D g2, int cx, int cy) {
+            g2.setColor(Color.WHITE);
+            g2.fillOval(cx - 5, cy - 5, 10, 10);
+            g2.setColor(Color.BLACK);
+            g2.drawOval(cx - 5, cy - 5, 10, 10);
+        }
+
+        private static void drawCompass(Graphics2D g2, int x0, int y0, int size, double headingDeg) {
+            int r = 26;
+            int cx = x0 + size - r - 10;
+            int cy = y0 + r + 10;
+
+            g2.setColor(ED_DARK);
+            g2.fillOval(cx - r, cy - r, 2 * r, 2 * r);
+
+            g2.setColor(ED_ORANGE);
+            g2.drawOval(cx - r, cy - r, 2 * r, 2 * r);
+
+            // North direction in map coordinates where "up" is movement heading.
+            // Relative bearing to north is (0 - heading).
+            double relRad = Math.toRadians(0.0 - headingDeg);
+            double nx = Math.sin(relRad);
+            double ny = Math.cos(relRad);
+
+            int ax = cx + (int) Math.round(nx * (r - 6));
+            int ay = cy - (int) Math.round(ny * (r - 6));
+
+            g2.drawLine(cx, cy, ax, ay);
+            g2.fillOval(ax - 2, ay - 2, 4, 4);
+
+            g2.setFont(g2.getFont().deriveFont(Font.BOLD, 12f));
+            g2.drawString("N", cx - 4, cy - r + 14);
+
+            int hdg = (int) Math.round((headingDeg + 360.0) % 360.0);
+            g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 11f));
+            String s = "HDG " + hdg + "deg";
+            g2.drawString(s, cx - r, cy + r + 14);
+        }
+
+        private static String formatDistance(double meters) {
+            if (Double.isNaN(meters)) {
+                return "";
+            }
+            if (meters >= 1000.0) {
+                double km = meters / 1000.0;
+                km = Math.round(km * 10.0) / 10.0;
+                return String.format(Locale.ROOT, "%.1fkm", Double.valueOf(km));
+            }
+            return String.format(Locale.ROOT, "%dm", Integer.valueOf((int) Math.round(meters)));
+        }
+    }
+
+private static final class BioRow {
         private final String displayName;
         private int sampleCount;
         private String genusKey = "";
@@ -560,7 +903,7 @@ public class BiologyTabPanel extends JPanel {
         private void recomputeDistances(double curLat, double curLon, double radiusM) {
             distancesM.clear();
 
-            // Complete: don’t track distances anymore
+            // Complete: don't track distances anymore
             if (sampleCount >= 3) {
                 return;
             }
@@ -854,7 +1197,7 @@ public class BiologyTabPanel extends JPanel {
             return;
         }
 
-        // Build the same rows the UI uses so we pick the same “active” in-progress item.
+        // Build the same rows the UI uses so we pick the same "active" in-progress item.
         List<BioRow> rows = buildRows(body);
         if (rows == null || rows.isEmpty()) {
             return;
@@ -882,7 +1225,7 @@ public class BiologyTabPanel extends JPanel {
 
         int needed = active.requiredMeters;
         if (needed <= 0) {
-            // Fall back to lookup by genus if the row didn’t get it for some reason.
+            // Fall back to lookup by genus if the row didn't get it for some reason.
             needed = BioColonyDistance.metersForBio(active.genusKey);
         }
         if (needed <= 0) {
@@ -905,7 +1248,7 @@ public class BiologyTabPanel extends JPanel {
 
         Boolean prev = insideStateByBioKey.put(bioKey, Boolean.valueOf(inside));
         if (prev == null) {
-            // First time we’ve evaluated this target; don’t speak.
+            // First time we've evaluated this target; don't speak.
             return;
         }
 
