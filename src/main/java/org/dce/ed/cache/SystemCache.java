@@ -39,6 +39,12 @@ public final class SystemCache {
 
     private static final String CACHE_FILE_NAME = ".edOverlaySystems.json";
 
+    /**
+     * Optional override for where the cache JSON is stored.
+     * Used by tools like RescanJournalsMain when --cache is provided.
+     */
+    public static final String CACHE_PATH_PROPERTY = "edo.cacheFile";
+
     private static final SystemCache INSTANCE = new SystemCache();
 
     private final Gson gson;
@@ -54,11 +60,38 @@ public final class SystemCache {
                 .setPrettyPrinting()
                 .serializeSpecialFloatingPointValues()
                 .create();
-        String home = System.getProperty("user.home");
-        if (home == null || home.isEmpty()) {
-            home = ".";
+
+        String override = System.getProperty(CACHE_PATH_PROPERTY);
+        if (override != null && !override.isBlank()) {
+            this.cachePath = Paths.get(override).toAbsolutePath().normalize();
+        } else {
+            String home = System.getProperty("user.home");
+            if (home == null || home.isEmpty()) {
+                home = ".";
+            }
+            this.cachePath = Paths.get(home, CACHE_FILE_NAME);
         }
-        this.cachePath = Paths.get(home, CACHE_FILE_NAME);
+    }
+
+    /**
+     * Clears the in-memory cache and deletes the persisted JSON cache file.
+     *
+     * Intended for tools that want a true "start from scratch" rebuild.
+     */
+    public synchronized void clearAndDeleteOnDisk() {
+    	System.out.println("Delete cachefile " + cachePath);
+        // Mark loaded so ensureLoaded() won't re-load from disk later in this JVM.
+        loaded = true;
+
+        byAddress.clear();
+        byName.clear();
+        lastLoadedSystem = null;
+
+        try {
+            Files.deleteIfExists(cachePath);
+        } catch (IOException ex) {
+            System.err.println("SystemCache: failed to delete cache file " + cachePath + ": " + ex.getMessage());
+        }
     }
 
     public static SystemCache getInstance() {

@@ -107,6 +107,10 @@ public class RescanJournalsMain {
         EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
         Path journalDirectory = reader.getJournalDirectory();
 
+        if (forcedCacheFile != null) {
+            System.setProperty(SystemCache.CACHE_PATH_PROPERTY, forcedCacheFile.toString());
+        }
+
         Instant lastImport = null;
         if (!forceFull) {
             lastImport = readLastImportInstant(journalDirectory);
@@ -137,6 +141,10 @@ public class RescanJournalsMain {
         System.out.println("Loaded " + events.size() + " events from journal files.");
 
         SystemCache cache = SystemCache.getInstance();
+        if (forceFull)
+        {
+            cache.clearAndDeleteOnDisk();
+        }
 
         SystemState state = new SystemState();
         SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state);
