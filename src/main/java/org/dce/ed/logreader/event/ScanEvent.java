@@ -60,9 +60,9 @@ public final class ScanEvent extends EliteLogEvent {
     private final Double surfaceTemperature;
     private final Double orbitalPeriod;
     private final String volcanism;
-    private final boolean wasDiscovered;
-    private final boolean wasMapped;
-    private final boolean wasFootfalled;
+    private final Boolean wasDiscovered;
+    private final Boolean wasMapped;
+    private final Boolean wasFootfalled;
 
 	private final String starType;
     private final List<ParentRef> parents;
@@ -84,9 +84,9 @@ public final class ScanEvent extends EliteLogEvent {
                      Double surfaceTemperature,
                      Double orbitalPeriod,
                      String volcanism,
-                     boolean wasDiscovered,
-                     boolean wasMapped,
-                     boolean wasFootfalled, 
+                     Boolean wasDiscovered,
+                     Boolean wasMapped,
+                     Boolean wasFootfalled,
                      String starType,
                      List<ParentRef> parents) {
 
@@ -159,11 +159,11 @@ public final class ScanEvent extends EliteLogEvent {
         return volcanism;
     }
 
-    public boolean isWasDiscovered() {
+    public Boolean getWasDiscovered() {
         return wasDiscovered;
     }
 
-    public boolean isWasMapped() {
+    public Boolean getWasMapped() {
         return wasMapped;
     }
 
@@ -186,7 +186,8 @@ public final class ScanEvent extends EliteLogEvent {
 	/**
 	 * @return the wasFootfalled
 	 */
-	public boolean isWasFootfalled() {
-		return wasFootfalled;
-	}
+	public Boolean getWasFootfalled() {
+        return wasFootfalled;
+    }
+
 }

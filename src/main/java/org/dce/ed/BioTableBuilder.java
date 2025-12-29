@@ -92,7 +92,8 @@ final class BioTableBuilder {
             boolean hasObservedNames = observedNamesRaw != null && !observedNamesRaw.isEmpty();
             boolean hasPreds = preds != null && !preds.isEmpty();
 
-            boolean firstBonus = !b.getWasFootfalled();
+            boolean firstBonus = !Boolean.TRUE.equals(b.getWasFootfalled());
+
             // If literally nothing but "hasBio", show a generic message
             if (!hasGenusPrefixes && !hasObservedNames && !hasPreds) {
                 rows.add(Row.bio(b.getBodyId(),
@@ -198,15 +199,12 @@ final class BioTableBuilder {
 
                 for (Map.Entry<String, GenusSummary> e : byGenus.entrySet()) {
                     String genus = e.getKey();
-                    GenusSummary summary = e.getValue();
+                    GenusSummary gs = e.getValue();
 
-                    String label = summary.count > 1
-                            ? genus + " (" + summary.count + ")"
-                            : genus;
-
+                    String label = genus + " (" + gs.count + ")";
                     String valueText = "";
-                    if (summary.maxCr != null) {
-                        long millions = Math.round(summary.maxCr / 1_000_000.0);
+                    if (gs.maxCr != null) {
+                        long millions = Math.round(gs.maxCr / 1_000_000.0);
                         valueText = String.format(Locale.US, "%dM Cr", millions);
                     }
 
@@ -217,77 +215,68 @@ final class BioTableBuilder {
             }
 
             //
-            // CASE B: We have genus info and/or observed species.
+            // CASE B: We have some genus / confirmed info (either genus prefixes OR concrete observed names).
+            // We display genus headers (green) for observed genus, and rows for confirmed species.
+            // If confirmed species exists for a genus, it REPLACES predictions for that genus.
             //
 
-            // Predictions indexed by canonical name and genus
-            Map<String, ExobiologyData.BioCandidate> predictedByCanonName = new LinkedHashMap<>();
+            // Build:
+            //   predictedByGenus: genus -> list of predicted candidates
+            //   predictedByCanonName: canonical name -> candidate
+            //   confirmedByGenus: genus -> list of canonical confirmed names
             Map<String, List<ExobiologyData.BioCandidate>> predictedByGenus = new LinkedHashMap<>();
+            Map<String, ExobiologyData.BioCandidate> predictedByCanonName = new LinkedHashMap<>();
+            Map<String, List<String>> confirmedByGenus = new LinkedHashMap<>();
+
             if (preds != null) {
                 for (ExobiologyData.BioCandidate cand : preds) {
                     String canon = canonicalBioName(cand.getDisplayName());
                     predictedByCanonName.put(canon, cand);
-                    String genusKey = firstWord(canon).toLowerCase(Locale.ROOT);
-                    predictedByGenus
-                            .computeIfAbsent(genusKey, g -> new ArrayList<>())
-                            .add(cand);
+
+                    String genus = firstWord(canon).toLowerCase(Locale.ROOT);
+                    predictedByGenus.computeIfAbsent(genus, k -> new ArrayList<>()).add(cand);
                 }
             }
 
-            // Confirmed species, grouped by genus, using canonical names
-            Map<String, List<String>> confirmedByGenus = new LinkedHashMap<>();
             if (observedNamesRaw != null) {
-                for (String rawName : observedNamesRaw) {
-                    if (rawName == null || rawName.isEmpty()) {
-                        continue;
-                    }
-                    String canon = canonicalBioName(rawName);
-                    String genusKey = firstWord(canon).toLowerCase(Locale.ROOT);
-                    confirmedByGenus
-                            .computeIfAbsent(genusKey, g -> new ArrayList<>())
-                            .add(canon);
+                for (String raw : observedNamesRaw) {
+                    String canon = canonicalBioName(raw);
+                    String genus = firstWord(canon).toLowerCase(Locale.ROOT);
+                    confirmedByGenus.computeIfAbsent(genus, k -> new ArrayList<>()).add(canon);
                 }
             }
 
-            // Build genus order:
-            //  - first: order from observed genus prefixes
-            //  - then any extra genera we only have from predictions / confirmed species
+            // Genus ordering: observed genus first, then remaining predicted genus.
             List<String> genusOrder = new ArrayList<>();
+
             if (genusPrefixes != null) {
                 for (String gp : genusPrefixes) {
-                    if (gp == null || gp.isEmpty()) {
+                    if (gp == null || gp.isBlank()) {
                         continue;
                     }
-                    String key = gp.toLowerCase(Locale.ROOT);
-                    if (!genusOrder.contains(key)) {
-                        genusOrder.add(key);
+                    String g = gp.trim().toLowerCase(Locale.ROOT);
+                    if (!genusOrder.contains(g)) {
+                        genusOrder.add(g);
                     }
                 }
             }
-            for (String key : predictedByGenus.keySet()) {
-                if (!genusOrder.contains(key)) {
-                    genusOrder.add(key);
-                }
-            }
-            for (String key : confirmedByGenus.keySet()) {
-                if (!genusOrder.contains(key)) {
-                    genusOrder.add(key);
+
+            for (String g : predictedByGenus.keySet()) {
+                if (!genusOrder.contains(g)) {
+                    genusOrder.add(g);
                 }
             }
 
-            // Sort genus blocks by value, with any confirmed (green) genus first.
-            // This keeps already-sampled biology at the top even if the payout is lower.
+            // Sort genusOrder: observed genus (green) first, then by max value desc, then name
             genusOrder.sort((g1, g2) -> {
-                boolean g1Observed = isGenusObserved(confirmedByGenus.get(g1));
-                boolean g2Observed = isGenusObserved(confirmedByGenus.get(g2));
-
+                boolean g1Observed = observedGenusLower.contains(g1);
+                boolean g2Observed = observedGenusLower.contains(g2);
                 if (g1Observed != g2Observed) {
                     return g1Observed ? -1 : 1;
                 }
 
-                long g1Val = genusMaxValue(g1, predictedByGenus, predictedByCanonName, confirmedByGenus);
-                long g2Val = genusMaxValue(g2, predictedByGenus, predictedByCanonName, confirmedByGenus);
-
+                long g1Val = genusMaxValue(g1, predictedByGenus, predictedByCanonName, confirmedByGenus, firstBonus);
+                long g2Val = genusMaxValue(g2, predictedByGenus, predictedByCanonName, confirmedByGenus, firstBonus);
                 int cmp = Long.compare(g2Val, g1Val);
                 if (cmp != 0) {
                     return cmp;
@@ -338,7 +327,7 @@ final class BioTableBuilder {
                     List<SpeciesRow> speciesRows = new ArrayList<>();
                     for (String canonName : confirmedForGenus) {
                         ExobiologyData.BioCandidate cand = predictedByCanonName.get(canonName);
-                        Long cr = (cand != null) ? cand.getEstimatedPayout(true) : null;
+                        Long cr = (cand != null) ? cand.getEstimatedPayout(firstBonus) : null;
                         speciesRows.add(new SpeciesRow(canonName, cr));
                     }
 
@@ -366,8 +355,8 @@ final class BioTableBuilder {
                     }
                 } else if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
                     predictedForGenus.sort((c1, c2) -> {
-                        long v1 = c1.getEstimatedPayout(true);
-                        long v2 = c2.getEstimatedPayout(true);
+                        long v1 = c1.getEstimatedPayout(firstBonus);
+                        long v2 = c2.getEstimatedPayout(firstBonus);
                         int cmp = Long.compare(v2, v1);
                         if (cmp != 0) {
                             return cmp;
@@ -379,7 +368,7 @@ final class BioTableBuilder {
 
                     for (ExobiologyData.BioCandidate cand : predictedForGenus) {
                         String name = canonicalBioName(cand.getDisplayName());
-                        long cr = cand.getEstimatedPayout(true);
+                        long cr = cand.getEstimatedPayout(firstBonus);
                         long millions = Math.round(cr / 1_000_000.0);
                         String valueText = String.format(Locale.US, "%dM Cr", millions);
                         rows.add(Row.bio(b.getBodyId(), name, valueText));
@@ -412,12 +401,14 @@ final class BioTableBuilder {
             return Long.MIN_VALUE;
         }
 
+        boolean firstBonus = !Boolean.TRUE.equals(b.getWasFootfalled());
+
         long max = Long.MIN_VALUE;
         for (ExobiologyData.BioCandidate c : preds) {
             if (c == null) {
                 continue;
             }
-            long v = c.getEstimatedPayout(true);
+            long v = c.getEstimatedPayout(firstBonus);
             if (v > max) {
                 max = v;
             }
@@ -435,7 +426,8 @@ final class BioTableBuilder {
     private static long genusMaxValue(String genusKey,
                                       Map<String, List<ExobiologyData.BioCandidate>> predictedByGenus,
                                       Map<String, ExobiologyData.BioCandidate> predictedByCanonName,
-                                      Map<String, List<String>> confirmedByGenus) {
+                                      Map<String, List<String>> confirmedByGenus,
+                                      boolean firstBonus) {
         if (genusKey == null) {
             return Long.MIN_VALUE;
         }
@@ -448,7 +440,7 @@ final class BioTableBuilder {
                 if (cand == null) {
                     continue;
                 }
-                long v = cand.getEstimatedPayout(true);
+                long v = cand.getEstimatedPayout(firstBonus);
                 if (v > max) {
                     max = v;
                 }
@@ -466,7 +458,7 @@ final class BioTableBuilder {
             if (cand == null) {
                 continue;
             }
-            long v = cand.getEstimatedPayout(true);
+            long v = cand.getEstimatedPayout(firstBonus);
             if (v > max) {
                 max = v;
             }

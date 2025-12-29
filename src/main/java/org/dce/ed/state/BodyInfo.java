@@ -126,11 +126,11 @@ public class BodyInfo {
 	private Double surfaceTempK;
 	private String volcanism;
 
-	private Boolean wasDiscovered = false;
+	private Boolean wasDiscovered = null;
 
-	private Boolean wasFootfalled = false;
+	private Boolean wasFootfalled = null;
 
-	private Boolean wasMapped = false;
+	private Boolean wasMapped = null;
 	private Double orbitalPeriod;
 
 	public void addObservedBioDisplayName(String name) {

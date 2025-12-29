@@ -405,9 +405,9 @@ public class EliteLogParser {
                 ? obj.get("OrbitalPeriod").getAsDouble()
                 : null;
         String volcanism = getString(obj, "Volcanism");
-        boolean wasDiscovered = obj.has("WasDiscovered") ? obj.get("WasDiscovered").getAsBoolean(): false;
-        boolean wasMapped = obj.has("WasMapped") ? obj.get("WasMapped").getAsBoolean() : false;
-        boolean wasFootfalled= obj.has("WasFootfalled") ? obj.get("WasFootfalled").getAsBoolean() : false;
+        Boolean wasDiscovered = obj.has("WasDiscovered") ? Boolean.valueOf(obj.get("WasDiscovered").getAsBoolean()) : null;
+        Boolean wasMapped = obj.has("WasMapped") ? Boolean.valueOf(obj.get("WasMapped").getAsBoolean()) : null;
+        Boolean wasFootfalled = obj.has("WasFootfalled") ? Boolean.valueOf(obj.get("WasFootfalled").getAsBoolean()) : null;
         
         String starType = getString(obj, "StarType");
 

@@ -24,194 +24,194 @@ import org.dce.ed.state.SystemState;
  */
 public class RescanJournalsMain {
 
-    private static final String LAST_IMPORT_FILENAME = "edo-cache.lastRescanTimestamp";
+	private static final String LAST_IMPORT_FILENAME = "edo-cache.lastRescanTimestamp";
 
-    private static Instant readLastImportInstant(Path journalDirectory) {
-        if (journalDirectory == null) {
-            return null;
-        }
-        Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
-        if (!Files.isRegularFile(cursor)) {
-            return null;
-        }
-        try {
-            String text = Files.readString(cursor, StandardCharsets.UTF_8).trim();
-            if (text.isEmpty()) {
-                return null;
-            }
-            return Instant.parse(text);
-        } catch (Exception ex) {
-            System.err.println("Failed to read last import timestamp from " + cursor + ": " + ex.getMessage());
-            return null;
-        }
-    }
+	private static Instant readLastImportInstant(Path journalDirectory) {
+		if (journalDirectory == null) {
+			return null;
+		}
+		Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
+		if (!Files.isRegularFile(cursor)) {
+			return null;
+		}
+		try {
+			String text = Files.readString(cursor, StandardCharsets.UTF_8).trim();
+			if (text.isEmpty()) {
+				return null;
+			}
+			return Instant.parse(text);
+		} catch (Exception ex) {
+			System.err.println("Failed to read last import timestamp from " + cursor + ": " + ex.getMessage());
+			return null;
+		}
+	}
 
-    private static void writeLastImportInstant(Path journalDirectory, Instant instant) {
-        if (journalDirectory == null || instant == null) {
-            return;
-        }
-        Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
-        try {
-            Files.writeString(cursor, instant.toString(), StandardCharsets.UTF_8);
-        } catch (Exception ex) {
-            System.err.println("Failed to write last import timestamp to " + cursor + ": " + ex.getMessage());
-        }
-    }
+	private static void writeLastImportInstant(Path journalDirectory, Instant instant) {
+		if (journalDirectory == null || instant == null) {
+			return;
+		}
+		Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
+		try {
+			Files.writeString(cursor, instant.toString(), StandardCharsets.UTF_8);
+		} catch (Exception ex) {
+			System.err.println("Failed to write last import timestamp to " + cursor + ": " + ex.getMessage());
+		}
+	}
 
-    public static void main(String[] args) throws IOException {
-        System.out.println("Rescanning Elite Dangerous journals and rebuilding local system cache...");
+	public static void main(String[] args) throws IOException {
+		System.out.println("Rescanning Elite Dangerous journals and rebuilding local system cache...");
 
-        boolean forceFull = false;
-        Path forcedJournalFile = null;
-        Path forcedCacheFile = null;
-        if (args != null) {
-            for (int i = 0; i < args.length; i++) {
-                String arg = args[i];
+		boolean forceFull = false;
+		Path forcedJournalFile = null;
+		Path forcedCacheFile = null;
+		if (args != null) {
+			for (int i = 0; i < args.length; i++) {
+				String arg = args[i];
 
-                if ("--full".equalsIgnoreCase(arg)) {
-                    forceFull = true;
-                    continue;
-                }
+				if ("--full".equalsIgnoreCase(arg)) {
+					forceFull = true;
+					continue;
+				}
 
-                if ("--journal".equalsIgnoreCase(arg) || "-j".equalsIgnoreCase(arg)) {
-                    if (i + 1 < args.length) {
-                        forcedJournalFile = Path.of(args[++i]).toAbsolutePath().normalize();
-                    }
-                    continue;
-                }
+				if ("--journal".equalsIgnoreCase(arg) || "-j".equalsIgnoreCase(arg)) {
+					if (i + 1 < args.length) {
+						forcedJournalFile = Path.of(args[++i]).toAbsolutePath().normalize();
+					}
+					continue;
+				}
 
-                if ("--cache".equalsIgnoreCase(arg)
-                        || "--cacheFile".equalsIgnoreCase(arg)
-                        || "-c".equalsIgnoreCase(arg)) {
-                    if (i + 1 < args.length) {
-                        forcedCacheFile = Path.of(args[++i]).toAbsolutePath().normalize();
-                    }
-                }
-            }
-        }
+				if ("--cache".equalsIgnoreCase(arg)
+						|| "--cacheFile".equalsIgnoreCase(arg)
+						|| "-c".equalsIgnoreCase(arg)) {
+					if (i + 1 < args.length) {
+						forcedCacheFile = Path.of(args[++i]).toAbsolutePath().normalize();
+					}
+				}
+			}
+		}
 
-        rescanJournals(forceFull, forcedJournalFile, forcedCacheFile);
-    }
+		rescanJournals(forceFull, forcedJournalFile, forcedCacheFile);
+	}
 
-    public static void rescanJournals(boolean forceFull) throws IOException {
-        // Keep default GUI behavior unchanged.
-        rescanJournals(forceFull, null, null);
-    }
+	public static void rescanJournals(boolean forceFull) throws IOException {
+		// Keep default GUI behavior unchanged.
+		rescanJournals(forceFull, null, null);
+	}
 
-    /**
-     * Optional CLI-oriented overload:
-     *  - forcedJournalFile: if provided, rescan ONLY that file (no copying into the game journal directory).
-     *  - forcedCacheFile: if provided, sets a system property that SystemCache may honor.
-     */
-    public static void rescanJournals(boolean forceFull, Path forcedJournalFile, Path forcedCacheFile) throws IOException {
-        EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-        Path journalDirectory = reader.getJournalDirectory();
+	/**
+	 * Optional CLI-oriented overload:
+	 *  - forcedJournalFile: if provided, rescan ONLY that file (no copying into the game journal directory).
+	 *  - forcedCacheFile: if provided, sets a system property that SystemCache may honor.
+	 */
+	public static void rescanJournals(boolean forceFull, Path forcedJournalFile, Path forcedCacheFile) throws IOException {
+		EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+		Path journalDirectory = reader.getJournalDirectory();
 
-        if (forcedCacheFile != null) {
-            System.setProperty(SystemCache.CACHE_PATH_PROPERTY, forcedCacheFile.toString());
-        }
+		if (forcedCacheFile != null) {
+			System.setProperty(SystemCache.CACHE_PATH_PROPERTY, forcedCacheFile.toString());
+		}
 
-        Instant lastImport = null;
-        if (!forceFull) {
-            lastImport = readLastImportInstant(journalDirectory);
-            if (lastImport == null) {
-                System.out.println("No previous journal import timestamp found; doing full rescan.");
-            } else {
-                System.out.println("Last journal import time (UTC): " + lastImport);
-            }
-        } else {
-            System.out.println("Forcing full rescan (--full). Ignoring any existing import timestamp.");
-        }
+		Instant lastImport = null;
+		if (!forceFull) {
+			lastImport = readLastImportInstant(journalDirectory);
+			if (lastImport == null) {
+				System.out.println("No previous journal import timestamp found; doing full rescan.");
+			} else {
+				System.out.println("Last journal import time (UTC): " + lastImport);
+			}
+		} else {
+			System.out.println("Forcing full rescan (--full). Ignoring any existing import timestamp.");
+		}
 
-        List<EliteLogEvent> events;
-        if (forcedJournalFile != null) {
-            // We intentionally do NOT stage/copy anything into the live journal directory
-            // (EDMC watches that directory and will ingest anything we drop there).
-            //
-            // Add a tiny helper method to EliteJournalReader:
-            //   List<EliteLogEvent> readEventsFromJournalFile(Path journalFile)
-            // which reads/parses exactly like your normal directory scan.
-            events = reader.readEventsFromJournalFile(forcedJournalFile);
-        } else if (lastImport == null) {
-            events = reader.readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
-        } else {
-            events = reader.readEventsSince(lastImport);
-        }
+		List<EliteLogEvent> events;
+		if (forcedJournalFile != null) {
+			// We intentionally do NOT stage/copy anything into the live journal directory
+			// (EDMC watches that directory and will ingest anything we drop there).
+			//
+			// Add a tiny helper method to EliteJournalReader:
+			//   List<EliteLogEvent> readEventsFromJournalFile(Path journalFile)
+			// which reads/parses exactly like your normal directory scan.
+			events = reader.readEventsFromJournalFile(forcedJournalFile);
+		} else if (lastImport == null) {
+			events = reader.readEventsFromLastNJournalFiles(Integer.MAX_VALUE);
+		} else {
+			events = reader.readEventsSince(lastImport);
+		}
 
-        System.out.println("Loaded " + events.size() + " events from journal files.");
+		System.out.println("Loaded " + events.size() + " events from journal files.");
 
-        SystemCache cache = SystemCache.getInstance();
-        if (forceFull)
-        {
-            cache.clearAndDeleteOnDisk();
-        }
+		SystemCache cache = SystemCache.getInstance();
+		if (forceFull)
+		{
+			cache.clearAndDeleteOnDisk();
+		}
 
-        SystemState state = new SystemState();
-        SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state);
+		SystemState state = new SystemState();
+		SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state);
 
-        Instant newestEventTimestamp = lastImport;
+		Instant newestEventTimestamp = lastImport;
 
-        for (EliteLogEvent event : events) {
-            Instant ts = event.getTimestamp();
-            if (ts != null && (newestEventTimestamp == null || ts.isAfter(newestEventTimestamp))) {
-                newestEventTimestamp = ts;
-            }
+		for (EliteLogEvent event : events) {
+			Instant ts = event.getTimestamp();
+			if (ts != null && (newestEventTimestamp == null || ts.isAfter(newestEventTimestamp))) {
+				newestEventTimestamp = ts;
+			}
 
-            // IMPORTANT:
-            // SystemEventProcessor.enterSystem(...) clears bodies when we jump/relocate to a new system.
-            // To avoid losing the previous system's accumulated state, persist BEFORE processing the
-            // Location/FSDJump that causes the reset.
-            if (event instanceof LocationEvent) {
-                LocationEvent le = (LocationEvent) event;
-                persistIfSystemIsChanging(cache, state, le.getStarSystem(), le.getSystemAddress());
-            } else if (event instanceof FsdJumpEvent) {
-                FsdJumpEvent je = (FsdJumpEvent) event;
-                persistIfSystemIsChanging(cache, state, je.getStarSystem(), je.getSystemAddress());
-            }
+			// IMPORTANT:
+				// SystemEventProcessor.enterSystem(...) clears bodies when we jump/relocate to a new system.
+			// To avoid losing the previous system's accumulated state, persist BEFORE processing the
+			// Location/FSDJump that causes the reset.
+			if (event instanceof LocationEvent) {
+				LocationEvent le = (LocationEvent) event;
+				persistIfSystemIsChanging(cache, state, le.getStarSystem(), le.getSystemAddress());
+			} else if (event instanceof FsdJumpEvent) {
+				FsdJumpEvent je = (FsdJumpEvent) event;
+				persistIfSystemIsChanging(cache, state, je.getStarSystem(), je.getSystemAddress());
+			}
 
-            processor.handleEvent(event);
-//            persistIfStarScan(cache, state, event);
-        }
+			processor.handleEvent(event);
+			//            persistIfStarScan(cache, state, event);
+		}
 
-        // Persist the final system (if valid)
-        cache.storeSystem(state);
+		// Persist the final system (if valid)
+		cache.storeSystem(state);
 
-        if (journalDirectory != null && newestEventTimestamp != null) {
-            writeLastImportInstant(journalDirectory, newestEventTimestamp);
-            System.out.println("Updated last journal import time to: " + newestEventTimestamp);
-        }
+		if (journalDirectory != null && newestEventTimestamp != null) {
+			writeLastImportInstant(journalDirectory, newestEventTimestamp);
+			System.out.println("Updated last journal import time to: " + newestEventTimestamp);
+		}
 
-        System.out.println("Rescan complete.");
-    }
+		System.out.println("Rescan complete.");
+	}
 
-    private static void persistIfSystemIsChanging(SystemCache cache, SystemState state, String nextName, long nextAddr) {
-        String curName = state.getSystemName();
-        long curAddr = state.getSystemAddress();
+	private static void persistIfSystemIsChanging(SystemCache cache, SystemState state, String nextName, long nextAddr) {
+		String curName = state.getSystemName();
+		long curAddr = state.getSystemAddress();
 
-        boolean sameName = nextName != null && nextName.equals(curName);
-        boolean sameAddr = nextAddr != 0L && nextAddr == curAddr;
+		boolean sameName = nextName != null && nextName.equals(curName);
+		boolean sameAddr = nextAddr != 0L && nextAddr == curAddr;
 
-        // Only treat it as "same system" if BOTH match (when available).
-        if (sameName && sameAddr) {
-            return;
-        }
+		// Only treat it as "same system" if BOTH match (when available).
+		if (sameName && sameAddr) {
+			return;
+		}
 
-        cache.storeSystem(state);
-    }
-    private static void persistIfStarScan(SystemCache cache, SystemState state, EliteLogEvent event) {
-        if (!(event instanceof ScanEvent)) {
-            return;
-        }
+		cache.storeSystem(state);
+	}
+	private static void persistIfStarScan(SystemCache cache, SystemState state, EliteLogEvent event) {
+		if (!(event instanceof ScanEvent)) {
+			return;
+		}
 
-        ScanEvent se = (ScanEvent) event;
+		ScanEvent se = (ScanEvent) event;
 
-        // Star scans have StarType and distance 0; BodyID 0 is common but not required.
-        String st = se.getStarType();
-        if (st == null || st.isEmpty()) {
-            return;
-        }
+		// Star scans have StarType and distance 0; BodyID 0 is common but not required.
+		String st = se.getStarType();
+		if (st == null || st.isEmpty()) {
+			return;
+		}
 
-        cache.storeSystem(state);
-    }
+		cache.storeSystem(state);
+	}
 
 }
