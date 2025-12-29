@@ -10,6 +10,7 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.BasicStroke;
 import java.awt.Stroke;
+import java.awt.Insets;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -60,6 +61,10 @@ public class BiologyTabPanel extends JPanel {
 
     private final BioMapPanel mapPanel = new BioMapPanel(model);
 
+    // Custom center layout so the table is fixed-height (based on max rows ever seen)
+    // and the map takes the remaining space as a square.
+    private final CenterLayoutPanel center = new CenterLayoutPanel();
+
     // Recent movement samples for computing a stable "movement heading".
     private final Deque<PosSample> movement = new ArrayDeque<>();
     private Double movementHeadingDeg; // 0..360, where 0 is north
@@ -105,13 +110,9 @@ public class BiologyTabPanel extends JPanel {
         scroll.getViewport().setOpaque(false);
 
         mapPanel.setOpaque(false);
-        mapPanel.setPreferredSize(new Dimension(260, 260));
 
-        JPanel center = new JPanel(new BorderLayout());
         center.setOpaque(false);
-        center.add(scroll, BorderLayout.CENTER);
-        center.add(mapPanel, BorderLayout.SOUTH);
-
+        center.setTableAndMap(scroll, mapPanel);
         add(center, BorderLayout.CENTER);
 
         setPreferredSize(new Dimension(560, 320));
@@ -158,23 +159,36 @@ public class BiologyTabPanel extends JPanel {
 
         if (currentBodyName == null || currentBodyName.isBlank()) {
             model.setRows(Collections.emptyList());
+            header.setText("No specimens detected");
             return;
         }
 
         SystemState state = systemTab.getState();
         if (state == null) {
             model.setRows(Collections.emptyList());
+            header.setText("No specimens detected");
             return;
         }
 
         BodyInfo body = findBodyByName(state, currentBodyName);
         if (body == null) {
             model.setRows(Collections.emptyList());
+            header.setText("No specimens detected");
             return;
         }
 
         List<BioRow> rows = buildRows(body);
         model.setRows(rows);
+
+        if (rows == null || rows.isEmpty()) {
+            header.setText("No specimens detected");
+        } else {
+            header.setText("Biology");
+        }
+
+        // Keep the table height sized to the maximum number of rows ever observed for this body.
+        // This avoids the table shrinking when rows are filtered away.
+        center.updateFixedTableHeight(table, model);
 
         if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
             model.updateDistances(currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
@@ -234,6 +248,91 @@ private void recordMovementSample(Instant timestamp, double lat, double lon, dou
     double deg = (Math.toDegrees(avgRad) + 360.0) % 360.0;
     movementHeadingDeg = Double.valueOf(deg);
 }
+
+    private static final class CenterLayoutPanel extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private JScrollPane scroll;
+        private BioMapPanel map;
+
+        private int fixedTableHeightPx = 0;
+
+        CenterLayoutPanel() {
+            super(null);
+            setBorder(new EmptyBorder(0, 0, 0, 0));
+            setOpaque(false);
+        }
+
+        void setTableAndMap(JScrollPane scroll, BioMapPanel map) {
+            this.scroll = scroll;
+            this.map = map;
+
+            removeAll();
+            if (scroll != null) {
+                add(scroll);
+            }
+            if (map != null) {
+                add(map);
+            }
+        }
+
+        void updateFixedTableHeight(JTable table, BioTableModel model) {
+            if (table == null || model == null) {
+                return;
+            }
+
+            JTableHeader th = table.getTableHeader();
+            int headerH = (th == null) ? 0 : th.getPreferredSize().height;
+            int rowsH = table.getRowHeight() * Math.max(6, model.getMaxRowsSeen());
+
+            fixedTableHeightPx = headerH + rowsH;
+            revalidate();
+        }
+
+        @Override
+        public void doLayout() {
+            Insets in = getInsets();
+            int w = Math.max(0, getWidth() - in.left - in.right);
+            int h = Math.max(0, getHeight() - in.top - in.bottom);
+
+            int y = in.top;
+
+            int tableH = Math.min(h, Math.max(0, fixedTableHeightPx));
+            if (scroll != null) {
+                scroll.setBounds(in.left, y, w, tableH);
+            }
+            y += tableH;
+
+            int remainingH = Math.max(0, h - tableH);
+
+            int maxSize = Math.min(w, remainingH);
+            int size = (int) Math.floor(maxSize * 0.80);
+            if (size < 0) {
+                size = 0;
+            }
+
+            if (map != null) {
+                int x = in.left + Math.max(0, (w - size) / 2);
+                int yy = y + Math.max(0, (remainingH - size) / 2);
+                map.setBounds(x, yy, size, size);
+            }
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            int w = 560;
+            int tableH = Math.max(0, fixedTableHeightPx);
+            int mapSize = 260;
+            if (map != null) {
+                Dimension mp = map.getPreferredSize();
+                if (mp != null) {
+                    mapSize = Math.max(mp.width, mp.height);
+                }
+            }
+            return new Dimension(w, tableH + mapSize);
+        }
+    }
 
 
     private static List<BioRow> buildRows(BodyInfo body) {
@@ -929,6 +1028,8 @@ private static final class BioRow {
         private final String[] cols = { "Bio", "Count", "Min (m)", "Samples" };
         private final List<BioRow> rows = new ArrayList<>();
 
+        private int maxRowsSeen = 0;
+
         void setRows(List<BioRow> newRows) {
             rows.clear();
 
@@ -936,7 +1037,15 @@ private static final class BioRow {
                 rows.addAll(newRows);
             }
 
+            if (rows.size() > maxRowsSeen) {
+                maxRowsSeen = rows.size();
+            }
+
             fireTableDataChanged();
+        }
+
+        int getMaxRowsSeen() {
+            return Math.max(1, maxRowsSeen);
         }
 
         BioRow getRowAt(int row) {

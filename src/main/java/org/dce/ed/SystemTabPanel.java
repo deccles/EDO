@@ -694,7 +694,7 @@ public class SystemTabPanel extends JPanel {
                     double g = b.getGravityMS() / 9.80665;
                     return String.format(Locale.US, "%.2f g", g);
                 case 2:
-                    String atmo = b.getAtmoOrType() != null ? b.getAtmoOrType() : "";
+                    String atmo = b.getAtmosphere() != null ? b.getAtmosphere() : "";
                     atmo = atmo.replaceAll("content body",  "body");
                     atmo = atmo.replaceAll("atmosphere",  "");
                     return atmo;
