@@ -261,9 +261,18 @@ public class SystemEventProcessor {
         	info.setStarType(e.getStarType());
         }
 
-        info.setWasMapped(e.isWasMapped());
-        info.setWasDiscovered(e.isWasDiscovered());
-        info.setWasFootfalled(e.isWasFootfalled());
+        if (e.getWasMapped() != null)
+        {
+            info.setWasMapped(e.getWasMapped());
+        }
+        if (e.getWasDiscovered() != null)
+        {
+            info.setWasDiscovered(e.getWasDiscovered());
+        }
+        if (e.getWasFootfalled() != null)
+        {
+            info.setWasFootfalled(e.getWasFootfalled());
+        }
         
         info.setOrbitalPeriod(e.getOrbitalPeriod());
         
@@ -433,12 +442,21 @@ public class SystemEventProcessor {
             }
             info.addObservedBioDisplayName(displayName);
             info.recordBioSample(displayName, e.getScanType());
+
             if (lastOnFootOrSrv && lastLatitude != null && lastLongitude != null) {
-                if (lastBodyName == null || lastBodyName.isBlank() || bodyName == null || bodyName.isBlank() || lastBodyName.equals(bodyName)) {
-                    info.recordBioSamplePoint(displayName, e.getScanType(), lastLatitude.doubleValue(), lastLongitude.doubleValue());
+                if (lastBodyName == null
+                        || lastBodyName.isBlank()
+                        || bodyName == null
+                        || bodyName.isBlank()
+                        || lastBodyName.equals(bodyName)) {
+                	System.out.println("record bio sample point");
+                    info.recordBioSamplePoint(
+                            displayName,
+                            e.getScanType(),
+                            lastLatitude.doubleValue(),
+                            lastLongitude.doubleValue());
                 }
             }
-
         }
     }
 
@@ -451,10 +469,12 @@ public class SystemEventProcessor {
         lastLatitude = e.getLatitude();
         lastLongitude = e.getLongitude();
         lastBodyName = e.getBodyName();
-        lastOnFootOrSrv = e.isOnFoot() || e.isInSrv();
+
+        // This is the ONLY flag that matters for "we have real surface coordinates".
+        lastOnFootOrSrv = e.getDecodedFlags() != null && e.getDecodedFlags().hasLatLong;
     }
 
-private static String firstNonBlank(String a, String b) {
+    private static String firstNonBlank(String a, String b) {
         if (a != null && !a.trim().isEmpty()) {
             return a.trim();
         }

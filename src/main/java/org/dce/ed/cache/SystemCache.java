@@ -517,18 +517,43 @@ public final class SystemCache {
             return;
         }
 
+        // Merge-on-save: preserve certain fields from the existing on-disk cache when the
+        // current in-memory SystemState does not currently have them populated.
+        ensureLoaded();
+        CachedSystem existing = get(state.getSystemAddress(), state.getSystemName());
+
+        Map<Integer, CachedBody> existingBodies = new HashMap<>();
+        Map<String, CachedBody> existingBodiesByName = new HashMap<>();
+        if (existing != null && existing.bodies != null) {
+            for (CachedBody eb : existing.bodies) {
+                if (eb == null) {
+                    continue;
+                }
+                existingBodies.put(Integer.valueOf(eb.bodyId), eb);
+                if (eb.name != null && !eb.name.isEmpty()) {
+                    existingBodiesByName.put(canonicalName(eb.name), eb);
+                }
+            }
+        }
+
         List<CachedBody> list = new ArrayList<>();
 
         for (BodyInfo b : state.getBodies().values()) {
-        	if (b.getBodyId() == -1) {
-        		System.out.println("Skipping body with id -1");
-        		continue;
-        	}
+            if (b.getBodyId() == -1) {
+//                System.out.println("Skipping body with id -1");
+                continue;
+            }
+
+            CachedBody prev = existingBodies.get(Integer.valueOf(b.getBodyId()));
+            if (prev == null && b.getBodyName() != null && !b.getBodyName().isEmpty()) {
+                prev = existingBodiesByName.get(canonicalName(b.getBodyName()));
+            }
+
             CachedBody cb = new CachedBody();
             cb.name = b.getBodyName();
             cb.bodyId = b.getBodyId();
             cb.starSystem = b.getStarSystem();
-            
+
             cb.starPos = state.getStarPos();
             cb.distanceLs = b.getDistanceLs();
             cb.gravityMS = b.getGravityMS();
@@ -548,45 +573,64 @@ public final class SystemCache {
             cb.parentStar = b.getParentStar();
             cb.parentStarBodyId = b.getParentStarBodyId();
             cb.starType = b.getStarType();
-            
+
             cb.wasMapped = b.getWasMapped();
             cb.wasDiscovered = b.getWasDiscovered();
             cb.wasFootfalled = b.getWasFootfalled();
-            
-            
+
+            // Preserve cache truth when the current session hasn't learned these flags yet.
+            // These flags are monotonic in practice (once true, they don't become false).
+            if (prev != null) {
+                if (cb.wasMapped == null || (Boolean.FALSE.equals(cb.wasMapped) && Boolean.TRUE.equals(prev.wasMapped))) {
+                    cb.wasMapped = prev.wasMapped;
+                }
+                if (cb.wasDiscovered == null || (Boolean.FALSE.equals(cb.wasDiscovered) && Boolean.TRUE.equals(prev.wasDiscovered))) {
+                    cb.wasDiscovered = prev.wasDiscovered;
+                }
+                if (cb.wasFootfalled == null || (Boolean.FALSE.equals(cb.wasFootfalled) && Boolean.TRUE.equals(prev.wasFootfalled))) {
+                    cb.wasFootfalled = prev.wasFootfalled;
+                }
+            }
+
             cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
             if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
                 cb.predictions = b.getPredictions();
             }
-            
+
             Map<String, Integer> counts = b.getBioSampleCountsSnapshot();
             if (counts != null && !counts.isEmpty()) {
                 cb.bioSampleCountsByDisplayName = counts;
 
-            Map<String, List<BodyInfo.BioSamplePoint>> points = b.getBioSamplePointsSnapshot();
-            if (points != null && !points.isEmpty()) {
-                Map<String, List<CachedBody.BioSamplePoint>> out = new HashMap<>();
-                for (Map.Entry<String, List<BodyInfo.BioSamplePoint>> e : points.entrySet()) {
-                    if (e.getValue() == null || e.getValue().isEmpty()) {
-                        continue;
+                Map<String, List<BodyInfo.BioSamplePoint>> points = b.getBioSamplePointsSnapshot();
+                if (points != null && !points.isEmpty()) {
+                    Map<String, List<CachedBody.BioSamplePoint>> out = new HashMap<>();
+                    for (Map.Entry<String, List<BodyInfo.BioSamplePoint>> e : points.entrySet()) {
+                        if (e.getValue() == null || e.getValue().isEmpty()) {
+                            continue;
+                        }
+                        List<CachedBody.BioSamplePoint> pts = new ArrayList<>();
+                        for (BodyInfo.BioSamplePoint p : e.getValue()) {
+                            pts.add(new CachedBody.BioSamplePoint(p.getLatitude(), p.getLongitude()));
+                        }
+                        out.put(e.getKey(), pts);
                     }
-                    List<CachedBody.BioSamplePoint> pts = new ArrayList<>();
-                    for (BodyInfo.BioSamplePoint p : e.getValue()) {
-                        pts.add(new CachedBody.BioSamplePoint(p.getLatitude(), p.getLongitude()));
-                    }
-                    out.put(e.getKey(), pts);
+                    cb.bioSamplePointsByDisplayName = out;
+                } else if (prev != null
+                        && prev.bioSamplePointsByDisplayName != null
+                        && !prev.bioSamplePointsByDisplayName.isEmpty()) {
+                    cb.bioSamplePointsByDisplayName = prev.bioSamplePointsByDisplayName;
+                } else {
+                    cb.bioSamplePointsByDisplayName = null;
                 }
-                cb.bioSamplePointsByDisplayName = out;
-            } else {
-                cb.bioSamplePointsByDisplayName = null;
-            }
-
+            } else if (prev != null
+                    && prev.bioSampleCountsByDisplayName != null
+                    && !prev.bioSampleCountsByDisplayName.isEmpty()) {
+                // Preserve rescan-built history when live session doesn't have it populated.
+                cb.bioSampleCountsByDisplayName = prev.bioSampleCountsByDisplayName;
+                cb.bioSamplePointsByDisplayName = prev.bioSamplePointsByDisplayName;
             } else {
                 cb.bioSampleCountsByDisplayName = null;
-            }
-            
-            if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
-                cb.observedGenusPrefixes = new java.util.HashSet<>(b.getObservedGenusPrefixes());
+                cb.bioSamplePointsByDisplayName = null;
             }
 
             if (b.getObservedGenusPrefixes() != null && !b.getObservedGenusPrefixes().isEmpty()) {
@@ -600,9 +644,10 @@ public final class SystemCache {
             } else {
                 cb.observedBioDisplayNames = null;
             }
-            
+
             list.add(cb);
         }
+
         put(state.getSystemAddress(),
                 state.getSystemName(),
                 state.getStarPos(),
@@ -613,7 +658,6 @@ public final class SystemCache {
                 list);
     }
 
-    
     private synchronized void save() {
         try {
             List<CachedSystem> systems = new ArrayList<>();

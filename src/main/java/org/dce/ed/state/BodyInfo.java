@@ -690,6 +690,9 @@ public class BodyInfo {
 	public void setRadius(Double radius) {
 		this.radius = radius;
 	}
+	public Double getRadius() {
+	    return radius;
+	}
 
 	public void setStarPos(double[] starPos) {
 		this.starPos = starPos;
