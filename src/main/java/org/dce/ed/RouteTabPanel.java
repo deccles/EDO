@@ -29,6 +29,7 @@ import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.cache.CachedSystem;
@@ -44,8 +45,8 @@ import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
-import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.util.EdsmClient;
 
 import com.google.gson.JsonArray;
@@ -130,8 +131,22 @@ public class RouteTabPanel extends JPanel {
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
+            @Override
+            protected void configureEnclosingScrollPane() {
+                super.configureEnclosingScrollPane();
+
+                // LAF can install a shadow/outline for tables inside scroll panes.
+                // Clear it AFTER JTable is actually attached to the JScrollPane.
+                Container p = SwingUtilities.getAncestorOfClass(JScrollPane.class, this);
+                if (p instanceof JScrollPane) {
+                    JScrollPane sp = (JScrollPane)p;
+                    sp.setBorder(null);
+                    sp.setViewportBorder(null);
+                }
+            }
         };
         table.setOpaque(false);
+        table.setBorder(null);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
         table.setRowHeight(computeRowHeight(table, uiFont, 6));
@@ -269,11 +284,31 @@ public class RouteTabPanel extends JPanel {
         JScrollPane scroll = new JScrollPane(table);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
-        scroll.setBorder(new EmptyBorder(0, 0, 0, 0));
+        scroll.setBorder(null);
+        scroll.setViewportBorder(null);
 
+        if (scroll.getViewport() != null) {
+            scroll.getViewport().setBorder(null);
+        }
+
+        if (scroll.getColumnHeader() != null) {
+            scroll.getColumnHeader().setBorder(null);
+        }
+
+        JTableHeader th = table.getTableHeader();
+        if (th != null) {
+            th.setBorder(null);
+        }
+        th.setBorder(null);
+        
+        
+        
         add(headerLabel, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
-
+        
+        scroll.setColumnHeaderView(null);
+        table.setTableHeader(null);
+        
         SwingUtilities.invokeLater(() -> {
             TableColumnModel cols = table.getColumnModel();
             cols.getColumn(COL_MARKER).setMinWidth(20);

@@ -1,20 +1,16 @@
 package org.dce.ed;
 
-import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
+import java.awt.Insets;
 import java.awt.MouseInfo;
 import java.awt.Point;
 import java.awt.PointerInfo;
 import java.awt.Rectangle;
-import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
@@ -26,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map.Entry;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -39,7 +36,6 @@ import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
-import org.dce.ed.ui.EdoUi;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -58,19 +54,29 @@ public class EliteOverlayTabbedPane extends JPanel {
     private static final String CARD_LOG = "LOG";
 
     private static final int TAB_HOVER_DELAY_MS = 500;
-    
+
+    private static final Color TAB_ORANGE = new Color(255, 140, 0, 220);
+    private static final Color TAB_WHITE = new Color(255, 255, 255, 230);
+
+    // Restores the original "bigger" tab look (padding inside the outline)
+    private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
+
     private final CardLayout cardLayout;
     private final JPanel cardPanel;
-    
+
     private final RouteTabPanel routeTab;
     private final SystemTabPanel systemTab;
     private final BiologyTabPanel biologyTab;
 
+    private JButton routeButton;
+    private JButton systemButton;
+    private JButton biologyButton;
+
     public EliteOverlayTabbedPane() {
         super(new BorderLayout());
-        
+
         boolean opaque = !OverlayPreferences.isOverlayTransparent();
-        
+
         setOpaque(opaque);
 
         // ----- Tab bar (row of buttons) -----
@@ -79,18 +85,18 @@ public class EliteOverlayTabbedPane extends JPanel {
 
         ButtonGroup group = new ButtonGroup();
 
-        JButton routeButton = createTabButton("Route");
-        JButton systemButton = createTabButton("System");
-        JButton biologyButton = createTabButton("Biology");
-        
+        routeButton = createTabButton("Route");
+        systemButton = createTabButton("System");
+        biologyButton = createTabButton("Biology");
+
         group.add(routeButton);
         group.add(systemButton);
         group.add(biologyButton);
-        
+
         tabBar.add(routeButton);
         tabBar.add(systemButton);
         tabBar.add(biologyButton);
-        
+
         // ----- Card area with the actual tab contents -----
         cardLayout = new CardLayout();
         cardPanel = new JPanel(cardLayout);
@@ -109,27 +115,30 @@ public class EliteOverlayTabbedPane extends JPanel {
         cardPanel.add(biologyTab, CARD_BIOLOGY);
 
         systemButton.setSelected(true);
+        applyTabButtonStyle(routeButton);
+        applyTabButtonStyle(systemButton);
+        applyTabButtonStyle(biologyButton);
         systemTab.refreshFromCache();
-        
+
         // Wire up buttons to show cards
         routeButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                cardLayout.show(cardPanel, CARD_ROUTE);
+                selectTab(CARD_ROUTE, routeButton);
             }
         });
 
         systemButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                cardLayout.show(cardPanel, CARD_SYSTEM);
+                selectTab(CARD_SYSTEM, systemButton);
             }
         });
 
         biologyButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                cardLayout.show(cardPanel, CARD_BIOLOGY);
+                selectTab(CARD_BIOLOGY, biologyButton);
             }
         });
 
@@ -137,44 +146,37 @@ public class EliteOverlayTabbedPane extends JPanel {
         installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick());
         installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick());
         installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick());
-        
-        
+
         // Select Route tab by default
         systemButton.doClick();
 
         add(tabBar, BorderLayout.NORTH);
-        
-        // Hook live journal monitoring into System tab (existing behavior)
+
+        // Hook live journal monitoring into tabs (existing behavior)
         try {
             LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
 
             monitor.addListener(event -> {
-            	
-            	this.handleLogEvent(event);
-            	
-                if (event instanceof StatusEvent) {
-                	StatusEvent flagEvent = (StatusEvent)event;
-                	
-                	if (flagEvent.isFsdCharging())
-                		showRouteTabFromStatusWatcher();
-                }
-                
-                // Log tab (if you added a live handler there)
-//                 logTab.handleLogEvent(event);
 
-                // System tab
-                 systemTab.handleLogEvent(event);
-                 
-                 routeTab.handleLogEvent(event);
-                 
-                 biologyTab.handleLogEvent(event);
+                this.handleLogEvent(event);
+
+                if (event instanceof StatusEvent) {
+                    StatusEvent flagEvent = (StatusEvent) event;
+
+                    if (flagEvent.isFsdCharging()) {
+                        showRouteTabFromStatusWatcher();
+                    }
+                }
+
+                systemTab.handleLogEvent(event);
+                routeTab.handleLogEvent(event);
+                biologyTab.handleLogEvent(event);
             });
 
-//            monitor.start(); // if your monitor requires an explicit start
         } catch (Exception ex) {
             ex.printStackTrace();
         }
-        
+
         // Start watcher that syncs tabs with in-game Galaxy/System map
         GuiFocusWatcher watcher = new GuiFocusWatcher(this);
         Thread watcherThread = new Thread(watcher, "ED-GuiFocusWatcher");
@@ -185,22 +187,23 @@ public class EliteOverlayTabbedPane extends JPanel {
     }
 
     private void handleLogEvent(EliteLogEvent event) {
-    	if (event instanceof FsdJumpEvent
-    		|| event instanceof FssDiscoveryScanEvent) {
-    		showSystemTabFromStatusWatcher();
-    	}
-    	if (event instanceof StartJumpEvent) {
-    		showRouteTabFromStatusWatcher();
-    	}
-	}
+        if (event instanceof FsdJumpEvent
+                || event instanceof FssDiscoveryScanEvent) {
+            showSystemTabFromStatusWatcher();
+        }
+        if (event instanceof StartJumpEvent) {
+            showRouteTabFromStatusWatcher();
+        }
+    }
 
-	/**
+    /**
      * Attach a generic hover handler to a button; when the mouse rests over
      * the button for the given delay, the action is invoked on the EDT.
      */
     private static void installHoverSwitch(JButton button, int delayMs, Runnable action) {
         TabHoverPoller.register(button, delayMs, action);
     }
+
     /**
      * Global tab hover poller: periodically polls the global mouse position and,
      * if it is resting on any registered tab button longer than the configured
@@ -268,7 +271,6 @@ public class EliteOverlayTabbedPane extends JPanel {
                 try {
                     buttonLoc = button.getLocationOnScreen();
                 } catch (IllegalStateException ex) {
-                    // Component not yet realized
                     entry.hoverStartMs = -1L;
                     entry.firedForCurrentHover = false;
                     continue;
@@ -283,18 +285,15 @@ public class EliteOverlayTabbedPane extends JPanel {
 
                 if (bounds.contains(mouseOnScreen)) {
                     if (entry.hoverStartMs < 0L) {
-                        // Just started hovering this button
                         entry.hoverStartMs = now;
                         entry.firedForCurrentHover = false;
                     } else if (!entry.firedForCurrentHover && now - entry.hoverStartMs >= entry.delayMs) {
-                        // Hover delay satisfied – perform action once per hover
                         if (entry.action != null) {
                             SwingUtilities.invokeLater(entry.action);
                         }
                         entry.firedForCurrentHover = true;
                     }
                 } else {
-                    // Mouse is somewhere else
                     entry.hoverStartMs = -1L;
                     entry.firedForCurrentHover = false;
                 }
@@ -308,23 +307,70 @@ public class EliteOverlayTabbedPane extends JPanel {
             }
         }
     }
+
     private JButton createTabButton(String text) {
         JButton button = new JButton(text);
         button.setFocusable(false);
+        button.setFocusPainted(false);
         button.setFont(button.getFont().deriveFont(Font.BOLD, 11f));
+
         // Slightly translucent dark background so tabs are legible but not huge blocks
         button.setOpaque(!OverlayPreferences.isOverlayTransparent());
         button.setBackground(new Color(50, 50, 50, 220));
-        button.setForeground(Color.WHITE);
+
+        applyTabButtonStyle(button);
         return button;
     }
 
+    private javax.swing.border.Border createTabBorder(Color c) {
+        return javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(c, 1, true),
+                javax.swing.BorderFactory.createEmptyBorder(
+                        TAB_PADDING.top,
+                        TAB_PADDING.left,
+                        TAB_PADDING.bottom,
+                        TAB_PADDING.right
+                )
+        );
+    }
+
+    private void selectTab(String cardName, JButton selectedButton) {
+        if (routeButton != null) {
+            routeButton.setSelected(selectedButton == routeButton);
+        }
+        if (systemButton != null) {
+            systemButton.setSelected(selectedButton == systemButton);
+        }
+        if (biologyButton != null) {
+            biologyButton.setSelected(selectedButton == biologyButton);
+        }
+
+        applyTabButtonStyle(routeButton);
+        applyTabButtonStyle(systemButton);
+        applyTabButtonStyle(biologyButton);
+
+        cardLayout.show(cardPanel, cardName);
+    }
+
+    private void applyTabButtonStyle(JButton button) {
+        if (button == null) {
+            return;
+        }
+
+        Color c = button.isSelected() ? TAB_WHITE : TAB_ORANGE;
+
+        // This restores size/padding compared to a bare LineBorder.
+        button.setMargin(TAB_PADDING);
+        button.setForeground(c);
+        button.setBorder(createTabBorder(c));
+    }
+
     private void showRouteTabFromStatusWatcher() {
-        SwingUtilities.invokeLater(() -> cardLayout.show(cardPanel, CARD_ROUTE));
+        SwingUtilities.invokeLater(() -> selectTab(CARD_ROUTE, routeButton));
     }
 
     private void showSystemTabFromStatusWatcher() {
-        SwingUtilities.invokeLater(() -> cardLayout.show(cardPanel, CARD_SYSTEM));
+        SwingUtilities.invokeLater(() -> selectTab(CARD_SYSTEM, systemButton));
     }
 
     /**
@@ -364,7 +410,6 @@ public class EliteOverlayTabbedPane extends JPanel {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (IOException e) {
-                    // Status.json may not exist yet or be briefly locked; ignore and retry
                     try {
                         Thread.sleep(500L);
                     } catch (InterruptedException ie) {
@@ -405,16 +450,7 @@ public class EliteOverlayTabbedPane extends JPanel {
             }
         }
     }
-    /**
-     * Generic hover handler that runs a callback after the mouse rests over
-     * a component for a configured delay. Can be reused for other hover-based
-     * behaviors.
-     */
-    /**
-     * Generic hover handler that runs a callback after the mouse rests over
-     * a component for a configured delay. Can be reused for other hover-based
-     * behaviors.
-     */
+
     private static class HoverSwitchHandler extends MouseAdapter {
 
         private final Timer hoverTimer;
@@ -432,13 +468,11 @@ public class EliteOverlayTabbedPane extends JPanel {
 
         @Override
         public void mouseEntered(MouseEvent e) {
-            // Still helps in non pass-through mode
             hoverTimer.restart();
         }
 
         @Override
         public void mouseMoved(MouseEvent e) {
-            // Key for pass-through mode: same idea as LongHoverCopyHandler
             hoverTimer.restart();
         }
 
@@ -468,60 +502,4 @@ public class EliteOverlayTabbedPane extends JPanel {
         revalidate();
         repaint();
     }
-    
-    private static final class TabButton extends JButton {
-
-        private boolean selected;
-
-        TabButton(String text) {
-            super(text);
-            setOpaque(false);
-            setContentAreaFilled(false);
-            setBorderPainted(false);
-            setFocusPainted(false);
-            setFocusable(false);
-        }
-
-        void setSelectedTab(boolean selected) {
-            this.selected = selected;
-            repaint();
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            try {
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                // Pick colors based on selection
-                Color stroke = selected ? Color.WHITE : EdoUi.ED_ORANGE;
-                Color fill = selected ? Color.WHITE : EdoUi.ED_ORANGE;
-
-                // If you already draw your “outlined text” elsewhere, keep that logic and
-                // just swap the colors using selected.
-                String text = getText();
-                FontMetrics fm = g2.getFontMetrics(getFont());
-                int x = (getWidth() - fm.stringWidth(text)) / 2;
-                int y = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
-
-                // Outline stroke
-                g2.setStroke(new BasicStroke(2f));
-                g2.setColor(stroke);
-                // simple outline effect: draw text multiple times around
-                g2.drawString(text, x - 1, y);
-                g2.drawString(text, x + 1, y);
-                g2.drawString(text, x, y - 1);
-                g2.drawString(text, x, y + 1);
-
-                // Fill
-                g2.setColor(fill);
-                g2.drawString(text, x, y);
-
-            } finally {
-                g2.dispose();
-            }
-        }
-    }
-
-    
 }

@@ -1153,7 +1153,7 @@ private final class BioMapPanel extends JPanel {
             g2.setColor(new Color(0, 0, 0, 80));
             g2.fillRect(x0, y0, side, side);
             g2.setColor(new Color(255, 140, 0, 140));
-            g2.drawRect(x0, y0, side - 1, side - 1);
+//            g2.drawRect(x0, y0, side - 1, side - 1);
 
             if (!haveShip) {
                 g2.setColor(Color.WHITE);
