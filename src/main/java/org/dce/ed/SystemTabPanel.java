@@ -87,7 +87,7 @@ public class SystemTabPanel extends JPanel {
     public SystemTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
-        setBackground(Color.BLACK);
+//        setBackground(Color.BLACK);
         // Header label
         headerLabel = new JTextField("Waiting for system data…");
         headerLabel.addKeyListener(new KeyListener() {
@@ -278,6 +278,7 @@ public class SystemTabPanel extends JPanel {
         headerPanel.setOpaque(false);
         headerPanel.add(headerLabel, BorderLayout.WEST);
         headerPanel.add(headerSummaryLabel, BorderLayout.CENTER);
+        headerPanel.setBorder(null);
 
         add(headerPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
@@ -717,7 +718,14 @@ public class SystemTabPanel extends JPanel {
             BodyInfo b = r.body;
             switch (col) {
                 case 0:
-                    return b.getShortName() != null ? b.getShortName() : "";
+                	String shortName = b.getShortName();
+                    if (shortName != null
+                            && b.getStarType() != null
+                            && b.getStarSystem() != null
+                            && shortName.equals(b.getStarSystem())) {
+                        return "*";
+                    }
+                    return shortName != null ? shortName : "";
                 case 1:
                     if (b.getGravityMS() == null) return "";
                     double g = b.getGravityMS() / 9.80665;
