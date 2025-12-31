@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Insets;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
@@ -39,24 +40,14 @@ import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.awt.geom.Line2D;
+import java.awt.geom.Ellipse2D;
+import java.awt.BasicStroke;
 
 public class BiologyTabPanel extends JPanel {
-
-    private static final boolean BIO_DEBUG = false;
-    private static long bioDebugLastMs = 0;
-
-    private static void bioDebugOncePerSec(String msg) {
-        if (!BIO_DEBUG) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        if (now - bioDebugLastMs >= 1000) {
-            bioDebugLastMs = now;
-            System.out.println(msg);
-        }
-    }
-
-
 
     private static final long serialVersionUID = 1L;
 
@@ -68,6 +59,29 @@ public class BiologyTabPanel extends JPanel {
     private final BioTableModel model = new BioTableModel();
     private final JTable table = new JTable(model);
     private final JScrollPane scroll = new JScrollPane(table);
+
+    private final BioMapPanel mapPanel = new BioMapPanel();
+
+    private final CenterLayoutPanel center = new CenterLayoutPanel();
+private static final int REQUIRED_SAMPLES = 3;
+
+private static final class MovementSample {
+    private final Instant t;
+    private final double lat;
+    private final double lon;
+    private final double radiusM;
+
+    private MovementSample(Instant t, double lat, double lon, double radiusM) {
+        this.t = t;
+        this.lat = lat;
+        this.lon = lon;
+        this.radiusM = radiusM;
+    }
+}
+
+private final Deque<MovementSample> movement = new ArrayDeque<>();
+private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough movement.
+
 
     private SystemTabPanel systemTab;
 
@@ -108,9 +122,13 @@ public class BiologyTabPanel extends JPanel {
         scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
-        add(scroll, BorderLayout.CENTER);
 
-        setPreferredSize(new Dimension(560, 320));
+        mapPanel.setOpaque(false);
+
+        center.setOpaque(false);
+        center.setTableAndMap(scroll, mapPanel);
+        add(center, BorderLayout.CENTER);
+setPreferredSize(new Dimension(560, 320));
     }
 
     public void setSystemTabPanel(SystemTabPanel systemTab) {
@@ -125,16 +143,37 @@ public class BiologyTabPanel extends JPanel {
         if (event instanceof StatusEvent) {
             StatusEvent e = (StatusEvent) event;
 
-            currentLat = e.getLatitude();
-            currentLon = e.getLongitude();
-            currentPlanetRadius = e.getPlanetRadius();
-            currentBodyName = e.getBodyName();
+            Double newLat = e.getLatitude();
+            Double newLon = e.getLongitude();
+            Double newRadius = e.getPlanetRadius();
+            String newBodyName = e.getBodyName();
 
-            refreshTableForCurrentBody();
+            boolean bodyChanged = newBodyName != null && !newBodyName.isBlank() && !newBodyName.equals(currentBodyName);
 
-//            if (e.isOnFoot() || e.isInSrv()) {
-                updateVoiceTransitions();
-//            }
+            currentLat = newLat;
+            currentLon = newLon;
+            currentPlanetRadius = newRadius;
+            currentBodyName = newBodyName;
+
+
+if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
+    recordMovementSample(e.getTimestamp(), currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
+
+    double hdg = movementHeadingDeg == null ? 0.0 : movementHeadingDeg.doubleValue();
+    mapPanel.setShipHeadingDeg(hdg);
+    mapPanel.setShipLatLon(currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
+}
+
+
+            // Only rebuild rows when the body changes; otherwise just update distances/heading/map.
+            if (bodyChanged) {
+                refreshTableForCurrentBody();
+            } else if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
+                model.updateDistances(currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
+                table.repaint();
+            }
+
+            updateVoiceTransitions();
             return;
         }
 
@@ -168,12 +207,94 @@ public class BiologyTabPanel extends JPanel {
         List<BioRow> rows = buildRows(body);
         model.setRows(rows);
 
+        center.updateFixedTableHeight(table, model);
         if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
             model.updateDistances(currentLat.doubleValue(), currentLon.doubleValue(), currentPlanetRadius.doubleValue());
         }
     }
 
-    private static List<BioRow> buildRows(BodyInfo body) {
+    
+    private static final class CenterLayoutPanel extends JPanel {
+
+        private static final long serialVersionUID = 1L;
+
+        private JScrollPane scroll;
+        private BioMapPanel map;
+
+        private int fixedTableHeightPx = 0;
+
+        CenterLayoutPanel() {
+            super(null);
+            setBorder(new EmptyBorder(0, 0, 0, 0));
+            setOpaque(false);
+        }
+
+        void setTableAndMap(JScrollPane scroll, BioMapPanel map) {
+            this.scroll = scroll;
+            this.map = map;
+
+            removeAll();
+            if (scroll != null) {
+                add(scroll);
+            }
+            if (map != null) {
+                add(map);
+            }
+        }
+
+        void updateFixedTableHeight(JTable table, BioTableModel model) {
+            if (table == null || model == null) {
+                return;
+            }
+
+            JTableHeader th = table.getTableHeader();
+            int headerH = (th == null) ? 0 : th.getPreferredSize().height;
+
+            // minimum of 6 rows, but never shrink once we've seen more
+            int rows = Math.max(6, model.getMaxRowsSeen());
+            int rowsH = table.getRowHeight() * Math.max(1, rows);
+
+            fixedTableHeightPx = headerH + rowsH;
+            revalidate();
+        }
+
+        @Override
+        public void doLayout() {
+            Insets in = getInsets();
+            int w = Math.max(0, getWidth() - in.left - in.right);
+            int h = Math.max(0, getHeight() - in.top - in.bottom);
+
+            int y = in.top;
+
+            // Reserve space for the map (about 80% of the available square).
+            int minMapPx = 80; // keep it from collapsing to 0
+            int availableSquare = Math.min(w, h);
+            int desiredMap = (int) Math.round(availableSquare * 0.8);
+            desiredMap = Math.max(minMapPx, desiredMap);
+
+            int maxTableH = Math.max(0, h - desiredMap);
+            int tableH = Math.min(maxTableH, Math.max(0, fixedTableHeightPx));
+
+            if (scroll != null) {
+                scroll.setBounds(in.left, y, w, tableH);
+            }
+            y += tableH;
+
+            int remainingH = Math.max(0, h - tableH);
+
+            int square = Math.min(w, remainingH);
+            int mapSize = (int) Math.round(square * 0.8);
+            mapSize = Math.max(0, Math.min(mapSize, square));
+
+            if (map != null) {
+                int x = in.left + Math.max(0, (w - mapSize) / 2);
+                int yMap = y + Math.max(0, (remainingH - mapSize) / 2);
+                map.setBounds(x, yMap, mapSize, mapSize);
+            }
+        }
+    }
+
+private static List<BioRow> buildRows(BodyInfo body) {
         List<BioRow> rows = new ArrayList<>();
 
         Map<String, BioCandidate> candByKey = new HashMap<>();
@@ -193,14 +314,15 @@ public class BiologyTabPanel extends JPanel {
             }
         }
 
+        // Ensure observed entries appear even if they weren't predicted
         if (body.getObservedBioDisplayNames() != null) {
             for (String observed : body.getObservedBioDisplayNames()) {
                 if (observed == null || observed.isBlank()) {
                     continue;
                 }
 
-                boolean exists = false;
                 String ok = canonicalBioKey(observed);
+                boolean exists = false;
                 for (BioRow r : rows) {
                     if (canonicalBioKey(r.displayName).equals(ok)) {
                         exists = true;
@@ -217,14 +339,29 @@ public class BiologyTabPanel extends JPanel {
         Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
 
         for (BioRow r : rows) {
-            r.sampleCount = lookupCount(counts, r.displayName);
 
+            // Elite only tracks ONE active genus at a time; snapshot counts can reflect only that active genus.
+            // If we have recorded sample points for this row, those are ground truth for progress / bubble filling.
             List<BodyInfo.BioSamplePoint> pts = lookupPoints(points, r.displayName);
-            if (pts != null && !pts.isEmpty()) {
+            int ptsCount = (pts == null) ? 0 : pts.size();
+            int countFromSnapshot = lookupCount(counts, r.displayName);
+
+            if (ptsCount > 0) {
                 r.points = new ArrayList<>(pts);
+
+                // If the player finished (Analyse) but we didn't record a 3rd point (common),
+                // let the snapshot promote completion, otherwise drive progress from points.
+                if (countFromSnapshot >= REQUIRED_SAMPLES) {
+                    r.sampleCount = REQUIRED_SAMPLES;
+                } else {
+                    r.sampleCount = Math.min(ptsCount, REQUIRED_SAMPLES);
+                }
+            } else {
+                r.sampleCount = Math.min(Math.max(countFromSnapshot, 0), REQUIRED_SAMPLES);
             }
 
-            r.genusKey = genusKeyForRow(r.displayName, candByKey.get(canonicalBioKey(r.displayName)));
+            BioCandidate cand = candByKey.get(canonicalBioKey(r.displayName));
+            r.genusKey = genusKeyForRow(r.displayName, cand);
             r.requiredMeters = BioColonyDistance.metersForBio(r.genusKey);
         }
 
@@ -236,7 +373,6 @@ public class BiologyTabPanel extends JPanel {
             public int compare(BioRow a, BioRow b) {
                 int ra = rank(a.sampleCount);
                 int rb = rank(b.sampleCount);
-
                 if (ra != rb) {
                     return Integer.compare(ra, rb);
                 }
@@ -244,10 +380,10 @@ public class BiologyTabPanel extends JPanel {
             }
 
             private int rank(int cnt) {
-                if (cnt >= 3) {
+                if (cnt >= REQUIRED_SAMPLES) {
                     return 0;
                 }
-                if (cnt == 1 || cnt == 2) {
+                if (cnt > 0) {
                     return 1;
                 }
                 return 2;
@@ -491,6 +627,21 @@ public class BiologyTabPanel extends JPanel {
         return radiusM * c;
     }
 
+    private static String formatMetersFixed(double meters) {
+        if (Double.isNaN(meters) || Double.isInfinite(meters)) {
+            return "";
+        }
+
+        if (meters < 1000.0) {
+            return String.format(java.util.Locale.ROOT, "%.0fm", meters);
+        }
+
+        double km = meters / 1000.0;
+        // nearest tenth
+        km = Math.round(km * 10.0) / 10.0;
+        return String.format(java.util.Locale.ROOT, "%.1fkm", km);
+    }
+
     public void applyUiFontPreferences() {
         applyUiFont(OverlayPreferences.getUiFont());
     }
@@ -602,6 +753,9 @@ public class BiologyTabPanel extends JPanel {
         private final String[] cols = { "Bio", "Count", "Min (m)", "Samples" };
         private final List<BioRow> rows = new ArrayList<>();
 
+        // Track the maximum row count we've ever shown so the table height doesn't shrink.
+        private int maxRowsSeen = 0;
+
         void setRows(List<BioRow> newRows) {
             rows.clear();
 
@@ -609,7 +763,15 @@ public class BiologyTabPanel extends JPanel {
                 rows.addAll(newRows);
             }
 
+            if (rows.size() > maxRowsSeen) {
+                maxRowsSeen = rows.size();
+            }
+
             fireTableDataChanged();
+        }
+
+        int getMaxRowsSeen() {
+            return Math.max(maxRowsSeen, rows.size());
         }
 
         BioRow getRowAt(int row) {
@@ -619,23 +781,13 @@ public class BiologyTabPanel extends JPanel {
             return rows.get(row);
         }
 
+        List<BioRow> getRowsSnapshot() {
+            return new ArrayList<>(rows);
+        }
+
         void updateDistances(double curLat, double curLon, double radiusM) {
-
-            bioDebugOncePerSec("[BIO][DIST] updateDistances rows=" + rows.size()
-                    + " lat=" + curLat + " lon=" + curLon + " r=" + radiusM);
-
             for (BioRow r : rows) {
                 r.recomputeDistances(curLat, curLon, radiusM);
-            }
-
-            if (!rows.isEmpty()) {
-                BioRow r0 = rows.get(0);
-                int pts = (r0.points == null) ? 0 : r0.points.size();
-                int dsz = (r0.distancesM == null) ? 0 : r0.distancesM.size();
-                bioDebugOncePerSec("[BIO][DIST] row0=" + r0.displayName
-                        + " sampleCount=" + r0.sampleCount
-                        + " pts=" + pts + " dsz=" + dsz
-                        + (dsz > 0 ? (" d0=" + r0.distancesM.get(0)) : ""));
             }
 
             if (!rows.isEmpty()) {
@@ -781,16 +933,6 @@ public class BiologyTabPanel extends JPanel {
 
                 FontMetrics fm = g2.getFontMetrics();
 
-                if (BIO_DEBUG) {
-                    int pts = (row.points == null) ? 0 : row.points.size();
-                    int dsz = (row.distancesM == null) ? 0 : row.distancesM.size();
-                    bioDebugOncePerSec("[BIO][RENDER] " + row.displayName
-                            + " sampleCount=" + row.sampleCount
-                            + " pts=" + pts + " dsz=" + dsz
-                            + (dsz > 0 ? (" d0=" + row.distancesM.get(0)) : ""));
-                }
-
-
                 // Fixed width bubble sized for up to "999m" (and "9.9km" if wider)
                 int bubbleW = Math.max(fm.stringWidth("999m"), fm.stringWidth("9.9km")) + 14;
                 int bubbleH = 16;
@@ -825,7 +967,7 @@ public class BiologyTabPanel extends JPanel {
                     boolean filled = i < have;
 
                     String txt = null;
-                    if (row.distancesM != null && i < row.distancesM.size() && filled) {
+                    if (row.distancesM != null && i < row.distancesM.size()) {
                         txt = formatMetersFixed(row.distancesM.get(i).doubleValue());
                     }
 
@@ -964,5 +1106,200 @@ public class BiologyTabPanel extends JPanel {
                     Integer.valueOf(needed));
         }
     }
+
+
+
+private final class BioMapPanel extends JPanel {
+
+    private static final long serialVersionUID = 1L;
+
+    private double shipLat;
+    private double shipLon;
+    private double shipRadiusM;
+    private boolean haveShip;
+
+    private double shipHeadingDeg; // 0=N, clockwise. "Up" on map.
+
+    private BioMapPanel() {
+        setOpaque(false);
+    }
+
+    private void setShipLatLon(double lat, double lon, double radiusM) {
+        this.shipLat = lat;
+        this.shipLon = lon;
+        this.shipRadiusM = radiusM;
+        this.haveShip = true;
+        repaint();
+    }
+
+    private void setShipHeadingDeg(double headingDeg) {
+        this.shipHeadingDeg = headingDeg;
+        repaint();
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            int side = Math.min(w, h);
+            int x0 = (w - side) / 2;
+            int y0 = (h - side) / 2;
+
+            // Border / background
+            g2.setColor(new Color(0, 0, 0, 80));
+            g2.fillRect(x0, y0, side, side);
+            g2.setColor(new Color(255, 140, 0, 140));
+            g2.drawRect(x0, y0, side - 1, side - 1);
+
+            if (!haveShip) {
+                g2.setColor(Color.WHITE);
+                String msg = "No position";
+                FontMetrics fm = g2.getFontMetrics();
+                int tx = x0 + (side - fm.stringWidth(msg)) / 2;
+                int ty = y0 + (side + fm.getAscent()) / 2;
+                g2.drawString(msg, tx, ty);
+                return;
+            }
+
+            int cx = x0 + side / 2;
+            int cy = y0 + side / 2;
+
+            // Draw ship marker
+            int r = 6;
+            g2.setColor(Color.WHITE);
+            g2.fill(new Ellipse2D.Double(cx - r, cy - r, r * 2, r * 2));
+            g2.setColor(Color.BLACK);
+            g2.draw(new Ellipse2D.Double(cx - r, cy - r, r * 2, r * 2));
+
+            // Collect target points: use all rows' recorded sample points (incomplete only)
+            java.util.List<BioRow> rows = model.getRowsSnapshot();
+            if (rows == null || rows.isEmpty()) {
+                g2.setColor(Color.WHITE);
+                String msg = "No specimens detected";
+                FontMetrics fm = g2.getFontMetrics();
+                int tx = x0 + (side - fm.stringWidth(msg)) / 2;
+                int ty = y0 + (side + fm.getAscent()) / 2;
+                g2.drawString(msg, tx, ty);
+            } else {
+                double maxDistM = 1.0;
+                for (BioRow row : rows) {
+                    if (row == null || row.sampleCount >= REQUIRED_SAMPLES || row.points == null) {
+                        continue;
+                    }
+                    for (BodyInfo.BioSamplePoint p : row.points) {
+                        if (p == null) {
+                            continue;
+                        }
+                        double d = greatCircleMeters(shipLat, shipLon, p.getLatitude(), p.getLongitude(), shipRadiusM);
+                        if (d > maxDistM) {
+                            maxDistM = d;
+                        }
+                    }
+                }
+                // leave margin so labels fit
+                double scale = (side * 0.42) / maxDistM;
+
+                for (BioRow row : rows) {
+                    if (row == null || row.sampleCount >= REQUIRED_SAMPLES || row.points == null || row.points.isEmpty()) {
+                        continue;
+                    }
+                    for (BodyInfo.BioSamplePoint p : row.points) {
+                        double d = greatCircleMeters(shipLat, shipLon, p.getLatitude(), p.getLongitude(), shipRadiusM);
+                        double brng = bearingDeg(shipLat, shipLon, p.getLatitude(), p.getLongitude());
+                        double rel = Math.toRadians(brng - shipHeadingDeg);
+
+                        double dx = Math.sin(rel) * d;
+                        double dy = -Math.cos(rel) * d;
+
+                        int tx = cx + (int) Math.round(dx * scale);
+                        int ty = cy + (int) Math.round(dy * scale);
+
+                        g2.setStroke(new BasicStroke(2f));
+                        g2.setColor(new Color(255, 140, 0, 220));
+                        g2.draw(new Line2D.Double(cx, cy, tx, ty));
+
+                        // distance label at midpoint
+                        String label = BiologyTabPanel.formatMetersFixed(d);
+                        FontMetrics fm = g2.getFontMetrics();
+                        int mx = (cx + tx) / 2;
+                        int my = (cy + ty) / 2;
+                        g2.setColor(Color.WHITE);
+                        g2.drawString(label, mx - fm.stringWidth(label) / 2, my - 2);
+                    }
+                }
+            }
+
+            // Compass (upper right)
+            int pad = 10;
+            int compR = 22;
+            int compCx = x0 + side - pad - compR;
+            int compCy = y0 + pad + compR;
+
+            g2.setColor(new Color(0, 0, 0, 140));
+            g2.fill(new Ellipse2D.Double(compCx - compR, compCy - compR, compR * 2, compR * 2));
+            g2.setColor(new Color(255, 255, 255, 200));
+            g2.draw(new Ellipse2D.Double(compCx - compR, compCy - compR, compR * 2, compR * 2));
+
+            double relN = Math.toRadians(0.0 - shipHeadingDeg);
+            double nx = Math.sin(relN);
+            double ny = -Math.cos(relN);
+
+            int nx2 = compCx + (int) Math.round(nx * (compR - 4));
+            int ny2 = compCy + (int) Math.round(ny * (compR - 4));
+
+            g2.draw(new Line2D.Double(compCx, compCy, nx2, ny2));
+            g2.drawString("N", nx2 - 4, ny2 - 2);
+        } finally {
+            g2.dispose();
+        }
+    }
+}
+
+private void recordMovementSample(Instant t, double lat, double lon, double radiusM) {
+    if (t == null) {
+        return;
+    }
+
+    MovementSample last = movement.peekLast();
+    if (last != null) {
+        double d = greatCircleMeters(last.lat, last.lon, lat, lon, radiusM);
+        // Ignore tiny jitter; do not let "stopped" updates influence heading.
+        if (d < 2.0) {
+            return;
+        }
+    }
+
+    movement.addLast(new MovementSample(t, lat, lon, radiusM));
+    while (movement.size() > 3) {
+        movement.removeFirst();
+    }
+
+    if (movement.size() >= 2) {
+        MovementSample a = movement.peekFirst();
+        MovementSample b = movement.peekLast();
+        if (a != null && b != null) {
+            movementHeadingDeg = bearingDeg(a.lat, a.lon, b.lat, b.lon);
+        }
+    }
+}
+
+private static double bearingDeg(double lat1, double lon1, double lat2, double lon2) {
+    double phi1 = Math.toRadians(lat1);
+    double phi2 = Math.toRadians(lat2);
+    double dLambda = Math.toRadians(lon2 - lon1);
+
+    double y = Math.sin(dLambda) * Math.cos(phi2);
+    double x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
+
+    double theta = Math.atan2(y, x);
+    double deg = Math.toDegrees(theta);
+    deg = (deg + 360.0) % 360.0;
+    return deg;
+}
 
 }
