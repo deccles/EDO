@@ -18,8 +18,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
@@ -29,6 +32,8 @@ import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
+import javax.swing.plaf.basic.BasicScrollBarUI;
+import javax.swing.plaf.basic.BasicScrollPaneUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
@@ -82,7 +87,7 @@ public class SystemTabPanel extends JPanel {
     public SystemTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
-
+        setBackground(Color.BLACK);
         // Header label
         headerLabel = new JTextField("Waiting for system data…");
         headerLabel.addKeyListener(new KeyListener() {
@@ -110,14 +115,15 @@ public class SystemTabPanel extends JPanel {
             }
         });
         headerLabel.setForeground(ED_ORANGE);
-        headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+//        headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setOpaque(false);
+        headerLabel.setBorder(null);
         headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 
         headerSummaryLabel = new JLabel();
         headerSummaryLabel.setForeground(ED_ORANGE);
         headerSummaryLabel.setFont(uiFont.deriveFont(Font.BOLD));
-        headerSummaryLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+//        headerSummaryLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerSummaryLabel.setOpaque(false);
         
         // Table setup
@@ -126,6 +132,13 @@ public class SystemTabPanel extends JPanel {
         table.setOpaque(false);
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
+        
+        table.setBorder(null);//new EmptyBorder(0,0,0,0));
+        table.setShowHorizontalLines(false);
+        table.setShowVerticalLines(false);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setGridColor(new Color(0, 0, 0, 0));
+        
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
         // NEW: apply ED font to table cells
@@ -133,11 +146,12 @@ public class SystemTabPanel extends JPanel {
         table.setRowHeight(24);
 
         JTableHeader header = table.getTableHeader();
-        header.setOpaque(true);
+        header.setOpaque(false);
         header.setForeground(ED_ORANGE);
         header.setBackground(Color.BLACK);
         header.setFont(uiFont.deriveFont(Font.BOLD));
-
+        header.setBorder(null);
+        
         header.setDefaultRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table,
@@ -154,7 +168,7 @@ public class SystemTabPanel extends JPanel {
                 label.setForeground(ED_ORANGE);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
-                label.setBorder(new EmptyBorder(0, 4, 0, 4));
+//                label.setBorder(new EmptyBorder(0, 4, 0, 4));
 
                 return label;
             }
@@ -248,7 +262,7 @@ public class SystemTabPanel extends JPanel {
         scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
-
+        
         JViewport headerViewport = scrollPane.getColumnHeader();
         if (headerViewport != null) {
             headerViewport.setOpaque(false);
@@ -259,14 +273,16 @@ public class SystemTabPanel extends JPanel {
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
         setBorder(new EmptyBorder(4, 4, 4, 4));
-        
+
         JPanel headerPanel = new JPanel(new BorderLayout());
         headerPanel.setOpaque(false);
         headerPanel.add(headerLabel, BorderLayout.WEST);
         headerPanel.add(headerSummaryLabel, BorderLayout.CENTER);
+
         add(headerPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
+        
      // Column widths preserved
         TableColumnModel columns = table.getColumnModel();
         columns.getColumn(0).setPreferredWidth(40);
@@ -601,6 +617,19 @@ public class SystemTabPanel extends JPanel {
             super(model);
         }
 
+        @Override
+        protected void configureEnclosingScrollPane() {
+            super.configureEnclosingScrollPane();
+
+            // JTable may have just installed a LAF "table scrollpane" border with a shadow.
+            Container p = SwingUtilities.getAncestorOfClass(JScrollPane.class, this);
+            if (p instanceof JScrollPane) {
+                JScrollPane sp = (JScrollPane)p;
+                sp.setBorder(null);
+                sp.setViewportBorder(null);
+            }
+        }
+        
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);

@@ -48,6 +48,12 @@ public class OverlayFrame extends JFrame {
     private static final String PREF_KEY_WIDTH = "overlay.width";
     private static final String PREF_KEY_HEIGHT = "overlay.height";
 
+    private final LineBorder overlayBorder = new LineBorder(
+            new java.awt.Color(200, 200, 255, 180),
+            1,
+            true
+    );
+    
     private final Preferences prefs = Preferences.userNodeForPackage(OverlayFrame.class);
 
     private HWND hwnd;
@@ -92,11 +98,7 @@ public class OverlayFrame extends JFrame {
         content.setBackground(new java.awt.Color(0, 0, 0, 0));
 
         // Subtle border so you can see the edges
-        getRootPane().setBorder(new LineBorder(
-                new java.awt.Color(200, 200, 255, 180),
-                1,
-                true
-        ));
+        getRootPane().setBorder(overlayBorder);
 
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setAlwaysOnTop(true);
@@ -225,6 +227,14 @@ public class OverlayFrame extends JFrame {
         }
 
         User32.INSTANCE.SetWindowLong(hwnd, WinUser.GWL_EXSTYLE, exStyle);
+        
+        if (enable) {
+            getRootPane().setBorder(null);
+        } else {
+            getRootPane().setBorder(overlayBorder);
+        }
+
+        revalidate();
     }
 
     public void loadBoundsFromPreferences(
@@ -469,10 +479,10 @@ public class OverlayFrame extends JFrame {
         }
 
         // Only show crosshair when pass-through is enabled
-        if (!passThroughEnabled) {
-            crosshairOverlay.setVisible(false);
-            return;
-        }
+//        if (!passThroughEnabled) {
+//            crosshairOverlay.setVisible(false);
+//            return;
+//        }
 
         PointerInfo pi = MouseInfo.getPointerInfo();
         if (pi == null) {
@@ -499,6 +509,7 @@ public class OverlayFrame extends JFrame {
                 crosshairOverlay.setVisible(true);
             }
         } else {
+            crosshairOverlay.setCrosshairPoint(null);
             crosshairOverlay.setVisible(false);
         }
     }
@@ -533,10 +544,14 @@ public class OverlayFrame extends JFrame {
                 int x = crosshairPoint.x;
                 int y = crosshairPoint.y;
 
-                // Vertical line
-                g2.drawLine(x, 0, x, getHeight());
-                // Horizontal line
-                g2.drawLine(0, y, getWidth(), y);
+                int arm = 10;
+
+                // Horizontal segment
+                g2.drawLine(x - arm, y, x + arm, y);
+
+                // Vertical segment
+                g2.drawLine(x, y - arm, x, y + arm);
+
             } finally {
                 g2.dispose();
             }
