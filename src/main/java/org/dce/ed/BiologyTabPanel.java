@@ -1,18 +1,24 @@
 package org.dce.ed;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.Insets;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,20 +46,13 @@ import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
-import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.awt.geom.Line2D;
-import java.awt.geom.Ellipse2D;
-import java.awt.BasicStroke;
+import org.dce.ed.ui.EdoUi;
 
 public class BiologyTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
-    private static final Color ED_ORANGE = new Color(255, 140, 0);
-    private static final Color ED_DARK = new Color(0, 0, 0);
-    private static final Color TEXT_BLACK = Color.BLACK;
+
 
     private final JLabel header = new JLabel("Biology");
     private final BioTableModel model = new BioTableModel();
@@ -99,7 +98,7 @@ private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough 
         setOpaque(false);
 
         header.setOpaque(false);
-        header.setForeground(ED_ORANGE);
+        header.setForeground(EdoUi.ED_ORANGE);
         add(header, BorderLayout.NORTH);
 
         table.setFillsViewportHeight(true);
@@ -672,8 +671,8 @@ private static List<BioRow> buildRows(BodyInfo body) {
         }
 
         th.setOpaque(true);
-        th.setForeground(ED_ORANGE);
-        th.setBackground(ED_DARK);
+        th.setForeground(EdoUi.ED_ORANGE);
+        th.setBackground(EdoUi.ED_DARK);
 
         th.setDefaultRenderer(new DefaultTableCellRenderer() {
 
@@ -690,8 +689,8 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
                 JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
                 label.setOpaque(true);
-                label.setBackground(ED_DARK);
-                label.setForeground(ED_ORANGE);
+                label.setBackground(EdoUi.ED_DARK);
+                label.setForeground(EdoUi.ED_ORANGE);
                 label.setBorder(new EmptyBorder(0, 6, 0, 6));
                 return label;
             }
@@ -705,7 +704,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
         if (samples > 0) {
             return Color.YELLOW;
         }
-        return ED_ORANGE;
+        return EdoUi.ED_ORANGE;
     }
 
     // ------------------------------------------------------------
@@ -850,7 +849,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
         private BioTextCellRenderer(BioTableModel model) {
             this.model = model;
             setOpaque(false);
-            setForeground(ED_ORANGE);
+            setForeground(EdoUi.ED_ORANGE);
         }
 
         @Override
@@ -876,10 +875,10 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 if (column == 0 || column == 1 || column == 2) {
                     label.setForeground(colorForSamples(r.sampleCount));
                 } else {
-                    label.setForeground(ED_ORANGE);
+                    label.setForeground(EdoUi.ED_ORANGE);
                 }
             } else {
-                label.setForeground(ED_ORANGE);
+                label.setForeground(EdoUi.ED_ORANGE);
             }
 
             label.setBorder(new EmptyBorder(0, 6, 0, 6));
@@ -901,7 +900,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
             if (!(value instanceof BioRow)) {
                 DefaultTableCellRenderer fallback = new DefaultTableCellRenderer();
                 fallback.setOpaque(false);
-                fallback.setForeground(ED_ORANGE);
+                fallback.setForeground(EdoUi.ED_ORANGE);
                 return fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             }
 
@@ -980,7 +979,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
                     }
 
                     if (txt != null && !txt.isBlank()) {
-                        g2.setColor(TEXT_BLACK);
+                        g2.setColor(EdoUi.TEXT_BLACK);
                         int tx = x + (bubbleW - fm.stringWidth(txt)) / 2;
                         int ty = yMid + (fm.getAscent() / 2) - 1;
                         g2.drawString(txt, tx, ty);

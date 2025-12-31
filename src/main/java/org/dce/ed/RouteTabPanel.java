@@ -45,6 +45,7 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
+import org.dce.ed.ui.EdoUi;
 import org.dce.ed.util.EdsmClient;
 
 import com.google.gson.JsonArray;
@@ -65,34 +66,27 @@ public class RouteTabPanel extends JPanel {
 
     private Font uiFont = OverlayPreferences.getUiFont();
 
-    private static final Color ED_ORANGE = new Color(255, 140, 0);
-    private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
-    private static final Color ED_ORANGE_LESS_TRANS = new Color(255, 140, 0, 96);
-    private static final Color STATUS_GRAY = new Color(210, 210, 210);
-    private static final Color STATUS_BLUE = new Color(100, 149, 237);
-    private static final Color STATUS_YELLOW = new Color(255, 215, 0);
-
     // Orange / gray checkmarks for fully discovered systems.
     private static final Icon ICON_FULLY_DISCOVERED_VISITED =
-            new StatusCircleIcon(ED_ORANGE, "\u2713");
+            new StatusCircleIcon(EdoUi.ED_ORANGE, "\u2713");
     private static final Icon ICON_FULLY_DISCOVERED_NOT_VISITED =
-            new StatusCircleIcon(STATUS_GRAY, "\u2713");
+            new StatusCircleIcon(EdoUi.STATUS_GRAY, "\u2713");
 
     // Crossed-out eye equivalents when any body is missing discovery.commander.
     // (Rendered as an X in a colored circle; you can swap to a real eye icon later.)
     private static final Icon ICON_DISCOVERY_MISSING_VISITED =
-            new StatusCircleIcon(STATUS_BLUE, "X");
+            new StatusCircleIcon(EdoUi.STATUS_BLUE, "X");
     private static final Icon ICON_DISCOVERY_MISSING_NOT_VISITED =
-            new StatusCircleIcon(STATUS_GRAY, "X");
+            new StatusCircleIcon(EdoUi.STATUS_GRAY, "X");
 
     // BodyCount mismatch between EDSM bodyCount and the number of bodies returned.
     private static final Icon ICON_BODYCOUNT_MISMATCH_VISITED =
-            new StatusCircleIcon(STATUS_YELLOW, "!");
+            new StatusCircleIcon(EdoUi.STATUS_YELLOW, "!");
     private static final Icon ICON_BODYCOUNT_MISMATCH_NOT_VISITED =
-            new StatusCircleIcon(STATUS_GRAY, "!");
+            new StatusCircleIcon(EdoUi.STATUS_GRAY, "!");
 
     private static final Icon ICON_UNKNOWN =
-            new StatusCircleIcon(STATUS_GRAY, "?");
+            new StatusCircleIcon(EdoUi.STATUS_GRAY, "?");
 
     // Column indexes
     private static final int COL_MARKER    = 0;
@@ -124,7 +118,7 @@ public class RouteTabPanel extends JPanel {
         this.edsmClient = new EdsmClient();
 
         headerLabel = new JLabel("Route: (no data)");
-        headerLabel.setForeground(ED_ORANGE);
+        headerLabel.setForeground(EdoUi.ED_ORANGE);
         headerLabel.setBorder(new EmptyBorder(4, 4, 4, 4));
         headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 
@@ -141,14 +135,14 @@ public class RouteTabPanel extends JPanel {
         table.setFillsViewportHeight(true);
         table.setShowGrid(false);
         table.setRowHeight(computeRowHeight(table, uiFont, 6));
-        table.setForeground(ED_ORANGE);
+        table.setForeground(EdoUi.ED_ORANGE);
         table.setBackground(new Color(0, 0, 0, 0));
         table.setSelectionForeground(Color.BLACK);
         table.setSelectionBackground(new Color(255, 255, 255, 64));
         table.setFont(uiFont);
         table.getTableHeader().setReorderingAllowed(false);
         table.getTableHeader().setResizingAllowed(true);
-        table.getTableHeader().setForeground(ED_ORANGE);
+        table.getTableHeader().setForeground(EdoUi.ED_ORANGE);
         table.getTableHeader().setBackground(new Color(0, 0, 0, 0));
         table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 
@@ -157,7 +151,7 @@ public class RouteTabPanel extends JPanel {
             private static final long serialVersionUID = 1L;
             {
                 setOpaque(false);
-                setForeground(ED_ORANGE);
+                setForeground(EdoUi.ED_ORANGE);
             }
 
             @Override
@@ -175,7 +169,7 @@ public class RouteTabPanel extends JPanel {
                                                                   column);
 
                 if (c instanceof JLabel) {
-                    c.setForeground(ED_ORANGE);
+                    c.setForeground(EdoUi.ED_ORANGE);
                     // Add a bit of vertical padding for readability
                     ((JLabel) c).setBorder(new EmptyBorder(3, 4, 3, 4));
                 }
@@ -193,7 +187,7 @@ public class RouteTabPanel extends JPanel {
                 super.paintComponent(g2);
 
                 // ED_ORANGE separator line at the bottom of each row
-                g2.setColor(ED_ORANGE_TRANS);
+                g2.setColor(EdoUi.ED_ORANGE_TRANS);
                 int y = getHeight() - 1;
                 g2.drawLine(0, y, getWidth(), y);
 
@@ -217,7 +211,7 @@ public class RouteTabPanel extends JPanel {
             {
                 setOpaque(false);
                 setHorizontalAlignment(SwingConstants.RIGHT);
-                setForeground(ED_ORANGE);
+                setForeground(EdoUi.ED_ORANGE);
             }
 
             @Override
@@ -233,7 +227,7 @@ public class RouteTabPanel extends JPanel {
                                                                   false,
                                                                   row,
                                                                   column);
-                c.setForeground(ED_ORANGE);
+                c.setForeground(EdoUi.ED_ORANGE);
                 if (c instanceof JLabel) {
                     // Slight right padding for numbers
                     ((JLabel) c).setBorder(new EmptyBorder(3, 4, 3, 8));
@@ -251,7 +245,7 @@ public class RouteTabPanel extends JPanel {
 
                 super.paintComponent(g2);
 
-                g2.setColor(ED_ORANGE_TRANS);
+                g2.setColor(EdoUi.ED_ORANGE_TRANS);
                 int y = getHeight() - 1;
                 g2.drawLine(0, y, getWidth(), y);
 
@@ -1108,7 +1102,7 @@ default:
 
             super.paintComponent(g2);
 
-            g2.setColor(ED_ORANGE_TRANS);
+            g2.setColor(EdoUi.ED_ORANGE_TRANS);
             int y = getHeight() - 1;
             g2.drawLine(0, y, getWidth(), y);
 
@@ -1136,12 +1130,12 @@ default:
                 // 1) CURRENT system always wins (never blink / never outline)
             	String cachedSystemName = getCurrentSystemName();
                 if (system.equals(cachedSystemName)) {
-                    icon = new TriangleIcon(ED_ORANGE, 10, 10);
+                    icon = new TriangleIcon(EdoUi.ED_ORANGE, 10, 10);
 
                 // 2) Pending jump: blink solid triangle / blank (suppress outline during jump)
                 } else if (system.equals(pendingJumpSystemName)) {
                     if (jumpFlashOn) {
-                        icon = new TriangleIcon(ED_ORANGE, 10, 10);
+                        icon = new TriangleIcon(EdoUi.ED_ORANGE, 10, 10);
                     } else {
                         icon = null;
                     }
@@ -1149,7 +1143,7 @@ default:
                 // 3) Target system: outline triangle, only when NOT in a pending jump
                 } else if (system.equals(targetSystemName)) {
                     if (pendingJumpSystemName == null) {
-                        icon = new OutlineTriangleIcon(ED_ORANGE_LESS_TRANS, 10, 10, 2f);
+                        icon = new OutlineTriangleIcon(EdoUi.ED_ORANGE_LESS_TRANS, 10, 10, 2f);
                     } else {
                         icon = null;
                     }
@@ -1172,7 +1166,7 @@ default:
 
             super.paintComponent(g2);
 
-            g2.setColor(ED_ORANGE_TRANS);
+            g2.setColor(EdoUi.ED_ORANGE_TRANS);
             int y = getHeight() - 1;
             g2.drawLine(0, y, getWidth(), y);
 
