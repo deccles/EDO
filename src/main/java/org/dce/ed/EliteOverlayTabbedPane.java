@@ -63,6 +63,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
     private final CardLayout cardLayout;
     private final JPanel cardPanel;
+    private final JPanel tabBar;
 
     private final RouteTabPanel routeTab;
     private final SystemTabPanel systemTab;
@@ -80,7 +81,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         setOpaque(opaque);
 
         // ----- Tab bar (row of buttons) -----
-        JPanel tabBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        tabBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
         tabBar.setOpaque(opaque);
         tabBar.setBackground(Color.black);
         ButtonGroup group = new ButtonGroup();
@@ -487,7 +488,24 @@ public class EliteOverlayTabbedPane extends JPanel {
         }
     }
 
-    public void applyUiFontPreferences() {
+    
+    public void applyOverlayTransparency(boolean transparent) {
+        boolean opaque = !transparent;
+
+        setOpaque(opaque);
+        setBackground(transparent ? new Color(0, 0, 0, 0) : Color.black);
+
+        tabBar.setOpaque(opaque);
+        tabBar.setBackground(transparent ? new Color(0, 0, 0, 0) : Color.black);
+
+        cardPanel.setOpaque(opaque);
+        cardPanel.setBackground(transparent ? new Color(0, 0, 0, 0) : Color.black);
+
+        revalidate();
+        repaint();
+    }
+
+public void applyUiFontPreferences() {
         systemTab.applyUiFontPreferences();
         routeTab.applyUiFontPreferences();
         biologyTab.applyUiFontPreferences();
