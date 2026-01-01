@@ -2,7 +2,6 @@ package org.dce.ed;
 
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.Preferences;
@@ -12,6 +11,7 @@ import javax.swing.SwingUtilities;
 import org.dce.ed.logreader.RescanJournalsMain;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import org.dce.ed.util.AppIconUtil;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
@@ -32,9 +32,13 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     public EliteDangerousOverlay() {
         this.prefs = Preferences.userNodeForPackage(EliteDangerousOverlay.class);
         this.overlayFrame = new OverlayFrame();
+        
+    	AppIconUtil.applyAppIcon(overlayFrame, "/org/dce/ed/edsm/locate_icon.png");
     }
 
     public static void main(String[] args) {
+
+    	
     	String commander = "villanous";
     	
     	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
