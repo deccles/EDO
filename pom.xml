@@ -3,7 +3,7 @@
 
 	<groupId>org.dce</groupId>
 	<artifactId>EliteDangerousOverlay</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.0.2-SNAPSHOT</version>
 
 	<name>EliteDangerousOverlay</name>
 	<description>EliteDangerousOverlay</description>
@@ -120,7 +120,8 @@
 							<goal>shade</goal>
 						</goals>
 						<configuration>
-							<!-- Produce a single jar (no classifier like "-shaded") -->
+							<!-- Produce a single jar (no classifier like
+							"-shaded") -->
 							<shadedArtifactAttached>false</shadedArtifactAttached>
 							<createDependencyReducedPom>false</createDependencyReducedPom>
 
@@ -138,10 +139,12 @@
 
 							<!-- Set Main-Class + merge ServiceLoader resources -->
 							<transformers>
-								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+								<transformer
+									implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
 									<mainClass>${main.class}</mainClass>
 								</transformer>
-								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+								<transformer
+									implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
 							</transformers>
 						</configuration>
 					</execution>
@@ -149,5 +152,122 @@
 			</plugin>
 		</plugins>
 	</build>
+	<profiles>
+		<profile>
+			<id>installer</id>
+
+			<properties>
+				<!-- IMPORTANT: set this to a real JDK home that contains
+				bin\jpackage.exe -->
+				<jdk.home>${project.basedir}/dist/EDO/jdk21.0.9_10</jdk.home>
+
+				<app.name>EDO Overlay</app.name>
+				<app.version>0.0.1</app.version>
+
+				<!-- Where jpackage will read the jar from -->
+				<jpackage.input.dir>${project.build.directory}</jpackage.input.dir>
+
+				<!-- Where the installer will be written -->
+				<jpackage.dest.dir>${project.basedir}\dist\installer</jpackage.dest.dir>
+
+				<main.jar>EDO-Overlay.jar</main.jar>
+				<vendor>EDO</vendor>
+			</properties>
+
+			<build>
+				<plugins>
+					<plugin>
+						<artifactId>maven-resources-plugin</artifactId>
+						<version>3.3.1</version>
+						<executions>
+							<execution>
+								<id>copy-jnativehook-dll</id>
+								<phase>package</phase>
+								<goals>
+									<goal>copy-resources</goal>
+								</goals>
+								<configuration>
+									<outputDirectory>${project.build.directory}</outputDirectory>
+									<resources>
+										<resource>
+											<directory>${project.basedir}\src\main\resources\native</directory>
+											<includes>
+												<include>JNativeHook.x86_64.dll</include>
+											</includes>
+										</resource>
+									</resources>
+									<overwrite>true</overwrite>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+
+
+					<plugin>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>exec-maven-plugin</artifactId>
+						<version>3.5.0</version>
+						<executions>
+							<execution>
+								<id>jpackage-msi</id>
+								<phase>package</phase>
+								<goals>
+									<goal>exec</goal>
+								</goals>
+								<configuration>
+									<executable>${jdk.home}/bin/jpackage.exe</executable>
+									<workingDirectory>${project.basedir}</workingDirectory>
+
+									<arguments>
+										<argument>--type</argument>
+										<argument>msi</argument>
+
+										<argument>--name</argument>
+										<argument>${app.name}</argument>
+
+										<argument>--app-version</argument>
+										<argument>${app.version}</argument>
+
+										<argument>--vendor</argument>
+										<argument>${vendor}</argument>
+
+										<argument>--input</argument>
+										<argument>${jpackage.input.dir}</argument>
+
+										<argument>--main-jar</argument>
+										<argument>${main.jar}</argument>
+
+										<argument>--dest</argument>
+										<argument>${jpackage.dest.dir}</argument>
+
+										<!-- “nice installer” bits -->
+										<argument>--win-menu</argument>
+										<argument>--win-shortcut</argument>
+										<argument>--win-dir-chooser</argument>
+
+										<argument>--icon</argument>
+										<argument>
+											${project.basedir}\src\main\resources\edo.ico</argument>
+
+										<argument>--win-console</argument>
+
+										<argument>--java-options</argument>
+										<argument>-Djava.library.path=$APPDIR</argument>
+
+										<!-- optional JVM tuning -->
+										<argument>--java-options</argument>
+										<argument>-Xms256m</argument>
+										<argument>--java-options</argument>
+										<argument>-Xmx1024m</argument>
+									</arguments>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 
 </project>

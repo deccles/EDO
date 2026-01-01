@@ -162,7 +162,7 @@ public class PreferencesDialog extends JDialog {
         // --- Custom path field + browse button ---
         gbc.gridx = 0;
         gbc.gridy++;
-        JLabel pathLabel = new JLabel("Custom journal folder (for testing):");
+        JLabel pathLabel = new JLabel("Custom journal folder:");
         content.add(pathLabel, gbc);
 
         gbc.gridx = 1;

@@ -37,8 +37,8 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     public static void main(String[] args) {
     	String commander = "villanous";
     	
-//    	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
-//    	ttsSprintf.speakf("{n} species discovered including one kickass {species}", 5, "stratum tectonicus");
+    	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
+    	ttsSprintf.speakf("Welcome commander");
     	
     	System.setProperty("awt.useSystemAAFontSettings", "on");
     	System.setProperty("swing.aatext", "true");
