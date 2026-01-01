@@ -265,14 +265,12 @@ if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
 
             int y = in.top;
 
-            // Reserve space for the map (about 80% of the available square).
-            int minMapPx = 80; // keep it from collapsing to 0
-            int availableSquare = Math.min(w, h);
-            int desiredMap = (int) Math.round(availableSquare * 0.8);
-            desiredMap = Math.max(minMapPx, desiredMap);
+            // Keep the map from collapsing completely.
+            int minMapPx = 80;
 
-            int maxTableH = Math.max(0, h - desiredMap);
-            int tableH = Math.min(maxTableH, Math.max(0, fixedTableHeightPx));
+            // Give the table what it wants (fixedTableHeightPx), but ensure we leave min space for the map.
+            int maxTableH = Math.max(0, h - minMapPx);
+            int tableH = Math.min(Math.max(0, fixedTableHeightPx), maxTableH);
 
             if (scroll != null) {
                 scroll.setBounds(in.left, y, w, tableH);
@@ -281,7 +279,10 @@ if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
 
             int remainingH = Math.max(0, h - tableH);
 
+            // Map uses whatever remains. Keep it square and centered.
             int square = Math.min(w, remainingH);
+
+            // Keep the previous "smaller than full square" look (0.8), but adapt to remaining space.
             int mapSize = (int) Math.round(square * 0.8);
             mapSize = Math.max(0, Math.min(mapSize, square));
 
