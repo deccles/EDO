@@ -134,21 +134,10 @@ public class OverlayFrame extends JFrame {
     }
 
     private static int calcBorderDragThicknessPx() {
-        // 96 DPI is typical "100%" baseline on Windows.
-        int dpi = Toolkit.getDefaultToolkit().getScreenResolution();
-        float scale = dpi / 96.0f;
-
-        // 18px @ 100% feels good; clamp for sanity.
-        int px = Math.round(18.0f * scale);
-        if (px < 12) {
-            px = 12;
-        }
-        if (px > 36) {
-            px = 36;
-        }
-        return px;
+        double scale = Toolkit.getDefaultToolkit().getScreenResolution() / 96.0;
+        int px = (int) Math.round(16 * scale); // was smaller/lower
+        return Math.max(px, 16);
     }
-
     private static void installResizeHandlerRecursive(Component c, ResizeHandler handler) {
         if (c == null) {
             return;
@@ -437,10 +426,12 @@ public class OverlayFrame extends JFrame {
 
             frame.setBounds(newX, newY, newW, newH);
         }
-
         private int calcCursor(MouseEvent e) {
-            // Convert mouse point from the source component into frame coordinates
-            Point p = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), frame.getRootPane());
+            // IMPORTANT: e.getX()/getY() are relative to the component that fired the event.
+            // Convert to root-pane coordinates so hit-testing matches the actual window edges.
+            Component src = (Component) e.getSource();
+            Point p = SwingUtilities.convertPoint(src, e.getPoint(), frame.getRootPane());
+
             int x = p.x;
             int y = p.y;
 
@@ -472,6 +463,7 @@ public class OverlayFrame extends JFrame {
                 return Cursor.DEFAULT_CURSOR;
             }
         }
+
     }
 
     private void updateCrosshair() {
