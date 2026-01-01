@@ -82,7 +82,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         // ----- Tab bar (row of buttons) -----
         JPanel tabBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
         tabBar.setOpaque(opaque);
-
+        tabBar.setBackground(Color.black);
         ButtonGroup group = new ButtonGroup();
 
         routeButton = createTabButton("Route");

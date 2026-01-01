@@ -113,7 +113,7 @@ public class PreferencesDialog extends JDialog {
         gbc.insets = new Insets(4, 4, 4, 4);
 
         // Transparency toggle
-        JLabel transparencyLabel = new JLabel("Make overlay mouse-click transparent:");
+        JLabel transparencyLabel = new JLabel("Make overlay transparent:");
         overlayTransparentCheckBox = new JCheckBox();
         overlayTransparentCheckBox.setOpaque(false);
 
