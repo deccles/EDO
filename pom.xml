@@ -1,14 +1,20 @@
 <project>
 	<modelVersion>4.0.0</modelVersion>
+
 	<groupId>org.dce</groupId>
 	<artifactId>EliteDangerousOverlay</artifactId>
-	<version>1.0.0-SNAPSHOT</version>
+	<version>0.0.1-SNAPSHOT</version>
+
 	<name>EliteDangerousOverlay</name>
 	<description>EliteDangerousOverlay</description>
 
 	<properties>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<!-- Fat jar settings -->
+		<main.class>org.dce.ed.EliteDangerousOverlay</main.class>
+		<fatjar.finalName>EDO-Overlay</fatjar.finalName>
 	</properties>
 
 	<dependencyManagement>
@@ -40,17 +46,20 @@
 			<artifactId>regions</artifactId>
 			<version>2.25.66</version>
 		</dependency>
+
 		<!-- optional but recommended so the SDK can log nicely -->
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-simple</artifactId>
 			<version>2.0.16</version>
 		</dependency>
+
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>profiles</artifactId>
 			<version>2.25.69</version>
 		</dependency>
+
 		<!-- JNA core -->
 		<dependency>
 			<groupId>net.java.dev.jna</groupId>
@@ -83,9 +92,12 @@
 			<version>1.1.4</version>
 		</dependency>
 
-
 	</dependencies>
+
 	<build>
+		<!-- Name output jar deterministically: target/EDO-Overlay.jar -->
+		<finalName>${fatjar.finalName}</finalName>
+
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -95,8 +107,47 @@
 					<release>21</release>
 				</configuration>
 			</plugin>
+
+			<!-- Fat jar -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>3.6.0</version>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<!-- Produce a single jar (no classifier like "-shaded") -->
+							<shadedArtifactAttached>false</shadedArtifactAttached>
+							<createDependencyReducedPom>false</createDependencyReducedPom>
+
+							<!-- Avoid signature collisions -->
+							<filters>
+								<filter>
+									<artifact>*:*</artifact>
+									<excludes>
+										<exclude>META-INF/*.SF</exclude>
+										<exclude>META-INF/*.DSA</exclude>
+										<exclude>META-INF/*.RSA</exclude>
+									</excludes>
+								</filter>
+							</filters>
+
+							<!-- Set Main-Class + merge ServiceLoader resources -->
+							<transformers>
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+									<mainClass>${main.class}</mainClass>
+								</transformer>
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+							</transformers>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
-
 
 </project>
