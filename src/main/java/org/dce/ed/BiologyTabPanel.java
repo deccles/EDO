@@ -108,9 +108,9 @@ private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough 
         table.setOpaque(false);
         table.setDefaultRenderer(Object.class, new BioTextCellRenderer(model));
 
-        // Columns: Bio | Count | Min (m) | Samples
+        // Columns: Bio | Credits | Min (m) | Samples
         table.getColumnModel().getColumn(0).setPreferredWidth(260); // Bio
-        table.getColumnModel().getColumn(1).setPreferredWidth(70);  // Count
+        table.getColumnModel().getColumn(1).setPreferredWidth(110); // Credits
         table.getColumnModel().getColumn(2).setPreferredWidth(90);  // Min (m)
         table.getColumnModel().getColumn(3).setPreferredWidth(340); // Samples
 
@@ -337,6 +337,8 @@ private static List<BioRow> buildRows(BodyInfo body) {
         Map<String, Integer> counts = body.getBioSampleCountsSnapshot();
         Map<String, List<BodyInfo.BioSamplePoint>> points = body.getBioSamplePointsSnapshot();
 
+        boolean firstBonus = !Boolean.TRUE.equals(body.getWasFootfalled());
+
         for (BioRow r : rows) {
 
             // Elite only tracks ONE active genus at a time; snapshot counts can reflect only that active genus.
@@ -362,6 +364,14 @@ private static List<BioRow> buildRows(BodyInfo body) {
             BioCandidate cand = candByKey.get(canonicalBioKey(r.displayName));
             r.genusKey = genusKeyForRow(r.displayName, cand);
             r.requiredMeters = BioColonyDistance.metersForBio(r.genusKey);
+
+            if (cand != null) {
+                long cr = cand.getEstimatedPayout(firstBonus);
+                long millions = Math.round(cr / 1_000_000.0);
+                r.creditsText = String.format(Locale.US, "%dM Cr", millions);
+            } else {
+                r.creditsText = "";
+            }
         }
 
         collapseRowsByGenus(body, rows, candByKey);
@@ -714,6 +724,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
     private static final class BioRow {
         private final String displayName;
         private int sampleCount;
+        private String creditsText = "";
         private String genusKey = "";
         private int requiredMeters;
         private List<BodyInfo.BioSamplePoint> points = Collections.emptyList();
@@ -749,7 +760,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
         private static final long serialVersionUID = 1L;
 
-        private final String[] cols = { "Bio", "Count", "Min (m)", "Samples" };
+        private final String[] cols = { "Bio", "Credits", "Min (m)", "Samples" };
         private final List<BioRow> rows = new ArrayList<>();
 
         // Track the maximum row count we've ever shown so the table height doesn't shrink.
@@ -817,10 +828,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 return r.displayName;
             }
             if (columnIndex == 1) {
-                if (r.sampleCount <= 0) {
-                    return "";
-                }
-                return r.sampleCount + "/3";
+                return r.creditsText;
             }
             if (columnIndex == 2) {
                 if (r.requiredMeters <= 0) {
@@ -871,7 +879,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
             BioRow r = model.getRowAt(row);
             if (r != null) {
-                // Color Bio, Count, Min columns by status.
+                // Color Bio, Credits, Min columns by status.
                 if (column == 0 || column == 1 || column == 2) {
                     label.setForeground(colorForSamples(r.sampleCount));
                 } else {
