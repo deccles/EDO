@@ -179,6 +179,16 @@ public class OverlayFrame extends JFrame {
     public void togglePassThrough() {
         passThroughEnabled = !passThroughEnabled;
         applyPassThrough(passThroughEnabled);
+
+        // Pass-through is easiest to use when the overlay is transparent.
+        // This is a temporary visual change only; when pass-through is disabled
+        // we revert back to whatever the preference is currently set to.
+        if (passThroughEnabled) {
+            applyOverlayTransparency(true);
+        } else {
+            applyOverlayTransparency(OverlayPreferences.isOverlayTransparent());
+        }
+
         titleBar.setPassThrough(passThroughEnabled); // hide/show X
         System.out.println("Pass-through " + (passThroughEnabled ? "ENABLED" : "DISABLED"));
         repaint();
