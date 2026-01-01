@@ -250,7 +250,7 @@ if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
             int headerH = (th == null) ? 0 : th.getPreferredSize().height;
 
             // minimum of 6 rows, but never shrink once we've seen more
-            int rows = Math.max(6, model.getMaxRowsSeen());
+            int rows = Math.max(8, model.getMaxRowsSeen());
             int rowsH = table.getRowHeight() * Math.max(1, rows);
 
             fixedTableHeightPx = headerH + rowsH;
