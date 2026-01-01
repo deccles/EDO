@@ -27,7 +27,7 @@ import javax.swing.border.EmptyBorder;
  * - Provides a custom-painted gear button (opens Preferences)
  */
 public class TitleBarPanel extends JPanel {
-    private static final int TOP_RESIZE_STRIP = 6;
+    public static final int TOP_RESIZE_STRIP = 6;
     
     private final OverlayFrame frame;
     private Point dragOffset;

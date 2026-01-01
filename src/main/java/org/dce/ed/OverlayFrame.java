@@ -128,7 +128,7 @@ public class OverlayFrame extends JFrame {
         // Add custom resize handler for edges/corners.
         // IMPORTANT: attach recursively so resizing works even when cursor is over child components.
         int dragThickness = calcBorderDragThicknessPx();
-        ResizeHandler resizeHandler = new ResizeHandler(this, dragThickness);
+        ResizeHandler resizeHandler = new ResizeHandler(this, TitleBarPanel.TOP_RESIZE_STRIP);
         installResizeHandlerRecursive(getRootPane(), resizeHandler);
         installResizeHandlerRecursive(getContentPane(), resizeHandler);
     }
@@ -439,10 +439,13 @@ public class OverlayFrame extends JFrame {
         }
 
         private int calcCursor(MouseEvent e) {
-            int x = e.getX();
-            int y = e.getY();
-            int w = frame.getWidth();
-            int h = frame.getHeight();
+            // Convert mouse point from the source component into frame coordinates
+            Point p = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), frame.getRootPane());
+            int x = p.x;
+            int y = p.y;
+
+            int w = frame.getRootPane().getWidth();
+            int h = frame.getRootPane().getHeight();
 
             boolean left = x < borderDragThickness;
             boolean right = x >= w - borderDragThickness;
