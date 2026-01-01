@@ -22,7 +22,19 @@ public class OverlayContentPanel extends JPanel {
         add(tabbedPane, BorderLayout.CENTER);
     }
 
-    public void applyUiFontPreferences() {
+    
+    public void applyOverlayTransparency(boolean transparent) {
+        boolean opaque = !transparent;
+        setOpaque(opaque);
+        setBackground(transparent ? new java.awt.Color(0, 0, 0, 0) : java.awt.Color.black);
+
+        tabbedPane.applyOverlayTransparency(transparent);
+
+        revalidate();
+        repaint();
+    }
+
+public void applyUiFontPreferences() {
         tabbedPane.applyUiFontPreferences();
         revalidate();
         repaint();

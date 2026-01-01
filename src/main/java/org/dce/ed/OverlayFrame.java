@@ -122,6 +122,8 @@ public class OverlayFrame extends JFrame {
         contentPanel = new OverlayContentPanel(this);
         add(contentPanel, BorderLayout.CENTER);
 
+        applyOverlayTransparency(OverlayPreferences.isOverlayTransparent());
+
         // Load saved bounds if available; otherwise use defaults
         loadBoundsFromPreferences(prefs, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
 
@@ -200,6 +202,26 @@ public class OverlayFrame extends JFrame {
         revalidate();
         repaint();
     }
+
+    public void applyOverlayTransparency(boolean transparent) {
+        java.awt.Color bg = transparent ? new java.awt.Color(0, 0, 0, 0) : java.awt.Color.black;
+
+        setBackground(bg);
+
+        if (getContentPane() instanceof javax.swing.JComponent) {
+            javax.swing.JComponent cp = (javax.swing.JComponent) getContentPane();
+            cp.setOpaque(!transparent);
+            cp.setBackground(bg);
+        }
+
+        if (contentPanel != null) {
+            contentPanel.applyOverlayTransparency(transparent);
+        }
+
+        revalidate();
+        repaint();
+    }
+
 
     private void applyPassThrough(boolean enable) {
         if (hwnd == null) {

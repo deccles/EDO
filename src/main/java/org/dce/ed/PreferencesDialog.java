@@ -51,6 +51,7 @@ public class PreferencesDialog extends JDialog {
 
     private boolean okPressed;
     private final Font originalUiFont;
+    private final boolean originalOverlayTransparent;
 
     public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
             "Joanna",
@@ -67,6 +68,7 @@ public class PreferencesDialog extends JDialog {
         super(owner, "Overlay Preferences", true);
         this.clientKey = clientKey;
         this.originalUiFont = OverlayPreferences.getUiFont();
+        this.originalOverlayTransparent = OverlayPreferences.isOverlayTransparent();
         this.okPressed = false;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -118,8 +120,9 @@ public class PreferencesDialog extends JDialog {
         overlayTransparentCheckBox.setOpaque(false);
 
         // Load current transparency preference
-        boolean transparent = OverlayPreferences.isOverlayTransparent();
-        overlayTransparentCheckBox.setSelected(transparent);
+        overlayTransparentCheckBox.setSelected(originalOverlayTransparent);
+
+        overlayTransparentCheckBox.addActionListener(e -> applyLiveOverlayTransparencyPreview());
 
         content.add(transparencyLabel, gbc);
         gbc.gridx = 1;
@@ -307,7 +310,9 @@ public class PreferencesDialog extends JDialog {
         if (!(getOwner() instanceof OverlayFrame)) {
             return;
         }
-        ((OverlayFrame) getOwner()).applyUiFontPreview(originalUiFont);
+        OverlayFrame f = (OverlayFrame) getOwner();
+        f.applyUiFontPreview(originalUiFont);
+        f.applyOverlayTransparency(originalOverlayTransparent);
     }
 
 private JPanel createSpeechPanel() {
@@ -454,7 +459,9 @@ private JPanel createSpeechPanel() {
             okPressed = true;
             applyAndSavePreferences();
             if (getOwner() instanceof OverlayFrame) {
-                ((OverlayFrame) getOwner()).applyUiFontPreferences();
+                OverlayFrame f = (OverlayFrame) getOwner();
+                f.applyOverlayTransparency(overlayTransparentCheckBox != null && overlayTransparentCheckBox.isSelected());
+                f.applyUiFontPreferences();
             }
             dispose();
         });
@@ -537,4 +544,12 @@ private JPanel createSpeechPanel() {
 
 // Other tabs can be wired into OverlayPreferences later as needed.
     }
+    private void applyLiveOverlayTransparencyPreview() {
+        if (!(getOwner() instanceof OverlayFrame)) {
+            return;
+        }
+        boolean transparent = overlayTransparentCheckBox != null && overlayTransparentCheckBox.isSelected();
+        ((OverlayFrame) getOwner()).applyOverlayTransparency(transparent);
+    }
+
 }
