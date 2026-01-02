@@ -229,11 +229,6 @@ public final class ExobiologyData {
                 warn("BodyAttributes was null");
                 return false;
             }
-            if (name.contains("Fungoida Gelata") && bodyTypes.contains(PlanetType.HIGH_METAL) && atmospheres.contains(AtmosphereType.CO2)) {
-            	
-//            		System.out.println("Found it");
-            }
-            
             
             if (!bodyTypes.isEmpty() && (body.planetType == null || !bodyTypes.contains(body.planetType))) {
                 return false;
