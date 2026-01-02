@@ -733,6 +733,7 @@ public class SystemTabPanel extends JPanel {
                 case 2:
                     String atmo = b.getAtmosphere() != null ? b.getAtmosphere() : "";
                     atmo = atmo.replaceAll("content body",  "body");
+                    atmo = atmo.replaceAll("No atmosphere",  "");
                     atmo = atmo.replaceAll("atmosphere",  "");
                     return atmo;
                 case 3:
