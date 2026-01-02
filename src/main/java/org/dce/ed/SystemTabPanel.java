@@ -1,6 +1,8 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
@@ -16,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.JButton;
@@ -48,6 +51,7 @@ import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
@@ -81,6 +85,10 @@ public class SystemTabPanel extends JPanel {
     private final SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state, new EdsmClient());
 
     private final EdsmClient edsmClient = new EdsmClient();
+
+    // UI highlight state (independent of JTable selection)
+    private volatile Integer nearBodyId;
+    private volatile Integer targetedBodyId;
 
 	private JLabel headerSummaryLabel;
     
@@ -325,6 +333,26 @@ public class SystemTabPanel extends JPanel {
         // 1) Mutate domain state (can be on background thread)
         processor.handleEvent(event);
 
+        // Status events can arrive very frequently; avoid rebuilding/persisting the whole table.
+        if (event instanceof StatusEvent) {
+            StatusEvent e = (StatusEvent) event;
+
+            Integer newNear = resolveBodyIdByName(e.getBodyName());
+            Integer newTarget = resolveBodyIdByName(e.getDestinationName());
+
+            boolean changed =
+                    !Objects.equals(nearBodyId, newNear)
+                    || !Objects.equals(targetedBodyId, newTarget);
+
+            nearBodyId = newNear;
+            targetedBodyId = newTarget;
+
+            if (changed) {
+                SwingUtilities.invokeLater(() -> table.repaint());
+            }
+            return;
+        }
+
         // 2) If we jumped, do the heavy load/merge off the EDT,
         //    then refresh UI on the EDT.
         if (event instanceof BioScanPredictionEvent) {
@@ -447,6 +475,34 @@ public class SystemTabPanel extends JPanel {
         rebuildTable();
         persistIfPossible();
     }
+
+    private Integer resolveBodyIdByName(String bodyName) {
+        if (bodyName == null || bodyName.isBlank()) {
+            return null;
+        }
+        // Prefer exact match on full body name (Status.json uses the full name).
+        for (BodyInfo b : state.getBodies().values()) {
+            if (b == null) {
+                continue;
+            }
+            String n = b.getBodyName();
+            if (bodyName.equals(n)) {
+                return b.getBodyId();
+            }
+        }
+        // Fallback: match shortName (table display) for edge cases.
+        for (BodyInfo b : state.getBodies().values()) {
+            if (b == null) {
+                continue;
+            }
+            String sn = b.getShortName();
+            if (bodyName.equals(sn)) {
+                return b.getBodyId();
+            }
+        }
+        return null;
+    }
+
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
 
     // ---------------------------------------------------------------------
@@ -637,6 +693,7 @@ public class SystemTabPanel extends JPanel {
 
             Graphics2D g2 = (Graphics2D) g.create();
             try {
+                // 1) System separators (existing behavior)
                 g2.setColor(ED_ORANGE_TRANS);
 
                 int rowCount = tableModel.getRowCount();
@@ -655,9 +712,89 @@ public class SystemTabPanel extends JPanel {
                         }
                     }
                 }
+
+                // 2) Targeted-body faint outline (Destination)
+                // 3) Near-body stronger outline (BodyName)
+                // If both point at the same body, only draw the stronger outline.
+                Integer target = targetedBodyId;
+                Integer near = nearBodyId;
+
+                if (target != null && Objects.equals(target, near)) {
+                    target = null;
+                }
+
+                if (target != null) {
+                    drawBodyBlockOutline(g2, target,
+                            new Color(ED_ORANGE.getRed(), ED_ORANGE.getGreen(), ED_ORANGE.getBlue(), 110),
+                            new BasicStroke(2.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10.0f,
+                                    new float[] { 8.0f, 8.0f }, 0.0f));
+                }
+
+                if (near != null) {
+                    drawBodyBlockOutline(g2, near,
+                            new Color(ED_ORANGE.getRed(), ED_ORANGE.getGreen(), ED_ORANGE.getBlue(), 220),
+                            new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                }
+
             } finally {
                 g2.dispose();
             }
+        }
+
+        private void drawBodyBlockOutline(Graphics2D g2, int bodyId, Color color, BasicStroke stroke) {
+            int rowCount = tableModel.getRowCount();
+
+            int startRow = -1;
+            int endRow = -1;
+
+            for (int row = 0; row < rowCount; row++) {
+                Row r = tableModel.getRowAt(row);
+                if (r == null || r.detail || r.body == null) {
+                    continue;
+                }
+                if (r.body.getBodyId() == bodyId) {
+                    startRow = row;
+                    endRow = row;
+
+                    // Include contiguous detail rows that belong to this body.
+                    for (int rr = row + 1; rr < rowCount; rr++) {
+                        Row dr = tableModel.getRowAt(rr);
+                        if (dr == null || !dr.detail) {
+                            break;
+                        }
+                        if (dr.parentId != bodyId) {
+                            break;
+                        }
+                        endRow = rr;
+                    }
+                    break;
+                }
+            }
+
+            if (startRow < 0) {
+                return;
+            }
+
+            Rectangle r0 = getCellRect(startRow, 0, true);
+            Rectangle r1 = getCellRect(endRow, 0, true);
+
+            int inset = 2;
+            int x = inset;
+            int y = r0.y + 1;
+            int w = getWidth() - inset * 2 - 1;
+            int h = (r1.y + r1.height) - r0.y - 2;
+
+            if (h <= 0 || w <= 0) {
+                return;
+            }
+
+            // Slightly rounded "group" outline.
+            int arc = 12;
+
+            g2.setComposite(AlphaComposite.SrcOver);
+            g2.setColor(color);
+            g2.setStroke(stroke);
+            g2.drawRoundRect(x, y, w, h, arc, arc);
         }
     }
 

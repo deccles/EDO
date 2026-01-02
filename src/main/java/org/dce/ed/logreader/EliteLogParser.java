@@ -300,6 +300,12 @@ public class EliteLogParser {
         Double heading = obj.has("Heading") && !obj.get("Heading").isJsonNull()
                 ? obj.get("Heading").getAsDouble()
                 : null;
+        // Note:
+        // * In the Status.json snapshot written by the game, BodyName is present when near a body.
+        // * In the journal "Status" event, BodyName is often absent, but a nested Destination
+        //   object may be present (System/Body/Name).
+        // For UI features that want to highlight the current/near body, we use Destination.Name
+        // as a fallback if BodyName is missing.
         String bodyName = getString(obj, "BodyName");
         Double planetRadius = obj.has("PlanetRadius") && !obj.get("PlanetRadius").isJsonNull()
                 ? obj.get("PlanetRadius").getAsDouble()
@@ -324,6 +330,10 @@ public class EliteLogParser {
             if (dest.has("Name") && !dest.get("Name").isJsonNull()) {
                 destName = dest.get("Name").getAsString();
             }
+        }
+
+        if (bodyName == null || bodyName.isBlank()) {
+            bodyName = destName;
         }
 
         return new StatusEvent(
