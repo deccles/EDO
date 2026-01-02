@@ -11,6 +11,7 @@ import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
+import org.dce.ed.exobiology.NebulaGuardianClassifier;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
@@ -110,6 +111,41 @@ public class SystemEventProcessor {
         }
     }
 
+
+    // ---------------------------------------------------------------------
+    // Nebula + Guardian system flags (ported from BioScan)
+    // ---------------------------------------------------------------------
+
+    private void applySystemClassifiersToAllBodies() {
+        String nebulaTag = NebulaGuardianClassifier.determineNebulaTag(
+                state.getSystemName(),
+                state.getStarPos(),
+                "all");
+
+        boolean guardian = NebulaGuardianClassifier.isGuardianSystem(state.getStarPos());
+
+        for (BodyInfo b : state.getBodies().values()) {
+            b.setNebula(nebulaTag);
+            b.setGuardianSystem(Boolean.valueOf(guardian));
+        }
+    }
+
+    private void applySystemClassifiersToBody(BodyInfo b) {
+        if (b == null) {
+            return;
+        }
+
+        String nebulaTag = NebulaGuardianClassifier.determineNebulaTag(
+                state.getSystemName(),
+                state.getStarPos(),
+                "all");
+
+        boolean guardian = NebulaGuardianClassifier.isGuardianSystem(state.getStarPos());
+
+        b.setNebula(nebulaTag);
+        b.setGuardianSystem(Boolean.valueOf(guardian));
+    }
+
     // ---------------------------------------------------------------------
     // System transition handling
     // ---------------------------------------------------------------------
@@ -128,6 +164,8 @@ public class SystemEventProcessor {
             if (starPos != null) {
                 state.setStarPos(starPos);
             }
+            applySystemClassifiersToAllBodies();
+
             return;
         }
 
@@ -160,6 +198,8 @@ public class SystemEventProcessor {
                 ex.printStackTrace();
             }
         }
+
+        applySystemClassifiersToAllBodies();
     }
 
     // ---------------------------------------------------------------------
@@ -670,14 +710,19 @@ public class SystemEventProcessor {
     }
 
     private BodyInfo getOrCreateBody(int bodyId, String bodyName) {
+        BodyInfo info;
+
         if (bodyId >= 0) {
             // If we previously created a temp entry for this same body name, migrate it now.
             migrateTempBodyIfPresent(bodyId, bodyName);
-            return state.getOrCreateBody(bodyId);
+            info = state.getOrCreateBody(bodyId);
+        } else {
+            int key = tempBodyKey(bodyName);
+            info = state.getOrCreateBody(key);
         }
 
-        int key = tempBodyKey(bodyName);
-        return state.getOrCreateBody(key);
+        applySystemClassifiersToBody(info);
+        return info;
     }
 
     private void migrateTempBodyIfPresent(int realBodyId, String bodyName) {

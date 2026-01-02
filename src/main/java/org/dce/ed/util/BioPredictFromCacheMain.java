@@ -33,6 +33,7 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
@@ -66,89 +67,10 @@ public final class BioPredictFromCacheMain {
     private static final String PREF_SELECTED_SPECIES = "selectedSpecies";
 
     public static void main(String[] args) throws Exception {
-
-        UiSelection ui = promptForInputs();
-        if (ui == null || ui.bodyName == null || ui.bodyName.trim().isEmpty()) {
-            System.out.println("No body name entered. Exiting.");
-            return;
-        }
-
-        String bodyName = ui.bodyName.trim();
-
-        Path cachePath = defaultCachePath();
-        System.out.println("Using cache: " + cachePath.toAbsolutePath());
-
-        if (!Files.isRegularFile(cachePath)) {
-            System.out.println("Cache file not found: " + cachePath.toAbsolutePath());
-            return;
-        }
-
-        CachedBodyMatch match = findBodyInCache(cachePath, bodyName);
-        if (match == null) {
-            System.out.println("Body not found in cache: '" + bodyName + "'");
-            return;
-        }
-
-        BodyInfo info = toBodyInfo(match.system, match.body);
-
-        System.out.println();
-        System.out.println("Found body:");
-        System.out.println("  System: " + info.getStarSystem());
-        System.out.println("  Body:   " + info.getBodyName());
-        System.out.println("  BodyId: " + info.getBodyId());
-        System.out.println("  HasBio: " + info.hasBio());
-        System.out.println("  Planet: " + nullToEmpty(info.getPlanetClass()));
-        System.out.println("  Atmo:   " + nullToEmpty(info.getAtmosphere()));
-        System.out.println("  Atmo2:  " + nullToEmpty(info.getAtmoOrType()));
-        System.out.println("  TempK:  " + (info.getSurfaceTempK() == null ? "" : String.format(Locale.US, "%.3f", info.getSurfaceTempK())));
-        System.out.println("  Press:  " + (info.getSurfacePressure() == null ? "" : String.format(Locale.US, "%.6f", info.getSurfacePressure())));
-        System.out.println("  GravMS: " + (info.getGravityMS() == null ? "" : String.format(Locale.US, "%.6f", info.getGravityMS())));
-        System.out.println("  StarPos:" + (info.getStarPos() == null ? " <null>" :
-                String.format(Locale.US, " [%.3f, %.3f, %.3f]", info.getStarPos()[0], info.getStarPos()[1], info.getStarPos()[2])));
-        System.out.println();
-
-        BodyAttributes attrs = info.buildBodyAttributes();
-        if (attrs == null) {
-            System.out.println("BodyInfo.buildBodyAttributes() returned null (insufficient data).");
-            return;
-        }
-
-        List<BioCandidate> candidates;
-        try {
-            candidates = predictWithOptionalFilter(attrs, ui);
-        } catch (RuntimeException ex) {
-            ex.printStackTrace();
-            SwingUtilities.invokeLater(() -> {
-                JOptionPane.showMessageDialog(
-                        null,
-                        ex.getMessage(),
-                        "Prediction Failed",
-                        JOptionPane.ERROR_MESSAGE);
-            });
-            return;
-        }
-
-        System.out.println("Predictions: " + (candidates == null ? 0 : candidates.size()));
-        if (candidates == null || candidates.isEmpty()) {
-            System.out.println("  <none>");
-            return;
-        }
-
-        for (int i = 0; i < candidates.size(); i++) {
-            BioCandidate c = candidates.get(i);
-            System.out.println(String.format(Locale.US,
-                    "  %2d) %-12s %-16s  score=%.6f  baseValue=%d",
-                    i + 1,
-                    safe(c.genus),
-                    safe(c.species),
-                    c.getScore(),
-                    c.baseValue));
-        }
+        showDialog();
     }
 
-    private static UiSelection promptForInputs() throws Exception {
-        final UiSelection[] out = new UiSelection[1];
-
+        private static void showDialog() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             String lastBody = PREFS.get(PREF_BODY_NAME, "Sifi WK-C c27-5 C 5");
             boolean lastEnabled = PREFS.getBoolean(PREF_FILTER_ENABLED, false);
@@ -173,23 +95,30 @@ public final class BioPredictFromCacheMain {
             dlg.setTitle("Predict Exobiology From Cache");
             dlg.setModal(true);
 
-            JPanel root = new JPanel();
+            JPanel root = new JPanel(new java.awt.BorderLayout(10, 10));
             root.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-            root.setLayout(new BoxLayout(root, BoxLayout.Y_AXIS));
+
+            // ---- Top controls (do not stretch the body field) ----
+            JPanel top = new JPanel();
+            top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 
             JPanel bodyRow = new JPanel();
             bodyRow.setLayout(new BoxLayout(bodyRow, BoxLayout.X_AXIS));
             bodyRow.add(new JLabel("Body name:"));
             bodyRow.add(Box.createHorizontalStrut(8));
+
             JTextField bodyField = new JTextField(lastBody, 40);
+            bodyField.setMaximumSize(bodyField.getPreferredSize()); // keep fixed width
             bodyRow.add(bodyField);
-            root.add(bodyRow);
-            root.add(Box.createVerticalStrut(10));
+            bodyRow.add(Box.createHorizontalGlue()); // soak up extra horizontal space
+
+            top.add(bodyRow);
+            top.add(Box.createVerticalStrut(10));
 
             JCheckBox filterEnabled = new JCheckBox("Limit rules to selected Genus/Species pocket (pre-filter)");
             filterEnabled.setSelected(lastEnabled);
-            root.add(filterEnabled);
-            root.add(Box.createVerticalStrut(8));
+            top.add(filterEnabled);
+            top.add(Box.createVerticalStrut(8));
 
             JPanel pocketPanel = new JPanel();
             pocketPanel.setLayout(new BoxLayout(pocketPanel, BoxLayout.Y_AXIS));
@@ -198,24 +127,41 @@ public final class BioPredictFromCacheMain {
             JList<String> pocketList = new JList<>(index.pocketEntries.toArray(new String[0]));
             pocketList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
             selectListItems(pocketList, lastPocket);
-            pocketPanel.add(new JScrollPane(pocketList));
 
-            root.add(pocketPanel);
-            root.add(Box.createVerticalStrut(10));
+            JScrollPane pocketScroll = new JScrollPane(pocketList);
+            pocketScroll.setPreferredSize(new java.awt.Dimension(700, 160));
+            pocketPanel.add(pocketScroll);
+
+            top.add(pocketPanel);
+            top.add(Box.createVerticalStrut(8));
 
             JLabel hint = new JLabel("Pick one or more Genus and/or Species. The union becomes the rule whitelist.");
             hint.setHorizontalAlignment(SwingConstants.LEFT);
-            root.add(hint);
+            top.add(hint);
 
             if (index.pocketEntries.isEmpty()) {
                 JLabel warn = new JLabel("No genus/species list found (constraints not introspectable). Filter will be ignored.");
                 warn.setHorizontalAlignment(SwingConstants.LEFT);
-                root.add(Box.createVerticalStrut(6));
-                root.add(warn);
+                top.add(Box.createVerticalStrut(6));
+                top.add(warn);
             }
 
-            root.add(Box.createVerticalStrut(10));
+            root.add(top, java.awt.BorderLayout.NORTH);
 
+            // ---- Results (this should grow) ----
+            JTextArea resultsArea = new JTextArea(16, 80);
+            resultsArea.setEditable(false);
+            resultsArea.setLineWrap(false);
+
+            JPanel resultsPanel = new JPanel(new java.awt.BorderLayout(0, 6));
+            resultsPanel.add(new JLabel("Results"), java.awt.BorderLayout.NORTH);
+
+            JScrollPane resultsScroll = new JScrollPane(resultsArea);
+            resultsPanel.add(resultsScroll, java.awt.BorderLayout.CENTER);
+
+            root.add(resultsPanel, java.awt.BorderLayout.CENTER);
+
+            // ---- Buttons ----
             JPanel buttons = new JPanel();
             buttons.setLayout(new BoxLayout(buttons, BoxLayout.X_AXIS));
             JButton ok = new JButton("Run");
@@ -224,7 +170,8 @@ public final class BioPredictFromCacheMain {
             buttons.add(ok);
             buttons.add(Box.createHorizontalStrut(10));
             buttons.add(cancel);
-            root.add(buttons);
+
+            root.add(buttons, java.awt.BorderLayout.SOUTH);
 
             ok.addActionListener(evt -> {
                 String body = bodyField.getText() == null ? "" : bodyField.getText().trim();
@@ -244,14 +191,28 @@ public final class BioPredictFromCacheMain {
                 PREFS.put(PREF_SELECTED_GENUS, joinPipe(ui.selectedGenus));
                 PREFS.put(PREF_SELECTED_SPECIES, joinPipe(ui.selectedSpecies));
 
-                out[0] = ui;
-                dlg.dispose();
+                ok.setEnabled(false);
+                resultsArea.setText("Running...\n");
+
+                new Thread(() -> {
+                    String text;
+                    try {
+                        text = runPredictionToText(ui);
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        text = "Prediction failed: " + ex.getMessage();
+                    }
+
+                    final String outText = text;
+                    SwingUtilities.invokeLater(() -> {
+                        resultsArea.setText(outText);
+                        resultsArea.setCaretPosition(0);
+                        ok.setEnabled(true);
+                    });
+                }, "BioPredictFromCacheMain-Run").start();
             });
 
-            cancel.addActionListener(evt -> {
-                out[0] = null;
-                dlg.dispose();
-            });
+            cancel.addActionListener(evt -> dlg.dispose());
 
             Runnable applyEnabled = () -> {
                 boolean en = filterEnabled.isSelected();
@@ -266,12 +227,82 @@ public final class BioPredictFromCacheMain {
             applyEnabled.run();
 
             dlg.setContentPane(root);
+            dlg.setMinimumSize(new java.awt.Dimension(780, 640));
             dlg.pack();
             dlg.setLocationRelativeTo(null);
             dlg.setVisible(true);
         });
+    }
 
-        return out[0];
+
+    private static String runPredictionToText(UiSelection ui) throws Exception {
+        String bodyName = ui == null ? null : ui.bodyName;
+        if (bodyName == null || bodyName.trim().isEmpty()) {
+            return "No body name entered.";
+        }
+
+        bodyName = bodyName.trim();
+
+        StringBuilder sb = new StringBuilder();
+
+        Path cachePath = defaultCachePath();
+        sb.append("Using cache: ").append(cachePath.toAbsolutePath()).append('\n');
+
+        if (!Files.isRegularFile(cachePath)) {
+            sb.append("Cache file not found: ").append(cachePath.toAbsolutePath()).append('\n');
+            return sb.toString();
+        }
+
+        CachedBodyMatch match = findBodyInCache(cachePath, bodyName);
+        if (match == null) {
+            sb.append("Body not found in cache: '").append(bodyName).append("'\n");
+            return sb.toString();
+        }
+
+        BodyInfo info = toBodyInfo(match.system, match.body);
+
+        BodyAttributes attrs = info.buildBodyAttributes();
+        if (attrs == null) {
+            sb.append("BodyInfo.buildBodyAttributes() returned null (insufficient data).\n");
+            return sb.toString();
+        }
+
+        List<BioCandidate> candidates = predictWithOptionalFilter(attrs, ui);
+
+        sb.append("Predictions: ").append(candidates == null ? 0 : candidates.size()).append('\n');
+        if (candidates == null || candidates.isEmpty()) {
+            sb.append("  <none>\n");
+            return sb.toString();
+        }
+
+        for (int i = 0; i < candidates.size(); i++) {
+            BioCandidate c = candidates.get(i);
+            sb.append(String.format(Locale.US,
+                    "  %2d) %-12s %-16s  score=%.6f  baseValue=%d\n",
+                    i + 1,
+                    safe(c.genus),
+                    safe(c.species),
+                    c.getScore(),
+                    c.baseValue));
+        }
+        
+        sb.append('\n');
+        sb.append("Found body:\n");
+        sb.append("  System: ").append(info.getStarSystem()).append('\n');
+        sb.append("  Body:   ").append(info.getBodyName()).append('\n');
+        sb.append("  BodyId: ").append(info.getBodyId()).append('\n');
+        sb.append("  HasBio: ").append(info.hasBio()).append('\n');
+        sb.append("  Planet: ").append(nullToEmpty(info.getPlanetClass())).append('\n');
+        sb.append("  Atmo:   ").append(nullToEmpty(info.getAtmosphere())).append('\n');
+        sb.append("  Atmo2:  ").append(nullToEmpty(info.getAtmoOrType())).append('\n');
+        sb.append("  TempK:  ").append(info.getSurfaceTempK() == null ? "" : String.format(Locale.US, "%.3f", info.getSurfaceTempK())).append('\n');
+        sb.append("  Press:  ").append(info.getSurfacePressure() == null ? "" : String.format(Locale.US, "%.6f", info.getSurfacePressure())).append('\n');
+        sb.append("  GravMS: ").append(info.getGravityMS() == null ? "" : String.format(Locale.US, "%.6f", info.getGravityMS())).append('\n');
+        sb.append("  StarPos:").append(info.getStarPos() == null ? " <null>" :
+                String.format(Locale.US, " [%.3f, %.3f, %.3f]", info.getStarPos()[0], info.getStarPos()[1], info.getStarPos()[2])).append('\n');
+        sb.append('\n');
+
+        return sb.toString();
     }
 
     private static List<BioCandidate> predictWithOptionalFilter(BodyAttributes attrs, UiSelection ui) {

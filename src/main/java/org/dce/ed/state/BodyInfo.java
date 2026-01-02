@@ -218,7 +218,7 @@ public class BodyInfo {
 				Collections.emptyMap(),
 				orbitalPeriod,
 				distanceLs,
-				null,
+				getGuardianSystem(),
 				nebula,
 				resolvedParentStar,
 				null,

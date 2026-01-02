@@ -229,7 +229,8 @@ public final class ExobiologyData {
                 warn("BodyAttributes was null");
                 return false;
             }
-            if (name.contains("Aleoida Laminiae")) {
+            if (name.contains("Fungoida Gelata") && bodyTypes.contains(PlanetType.HIGH_METAL) && atmospheres.contains(AtmosphereType.CO2)) {
+            	
 //            		System.out.println("Found it");
             }
             
@@ -390,7 +391,7 @@ public final class ExobiologyData {
             		warn("Rule requires region constraint but body.starPos was null/short");
             		return false;
             	}
-            	int regionId = RegionResolver.findRegionId(starPos[0], starPos[1]);
+            	int regionId = RegionResolver.findRegionId(starPos[0], starPos[2]);
             	String regionName = RegionMapData.REGIONS[regionId].toLowerCase().replaceAll(" ", "-");
 
             	if (regions != null && !regions.isEmpty()) {

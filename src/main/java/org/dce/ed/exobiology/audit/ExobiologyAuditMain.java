@@ -17,7 +17,6 @@ import java.util.Set;
 
 import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.exobiology.BodyAttributes;
-import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
@@ -29,6 +28,9 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.state.BodyInfo;
+import org.dce.ed.cache.CachedBody;
+import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.cache.SystemCache;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -156,23 +158,14 @@ public class ExobiologyAuditMain {
                 }
                 bodyCount++;
 
-                BodyAttributes attrs = buildBodyAttributes(acc, b);
-                if (attrs == null) {
-                    continue;
-                }
-
-                List<BioCandidate> preds = ExobiologyData.predict(attrs);
-                if (preds == null || preds.isEmpty()) {
-                    // Could treat as fail, but for now, focus on rule misses where
-                    // the engine *did* return something.
-                    continue;
-                }
+                CachedSystem cachedSystem = SystemCache.getInstance() .get(acc.systemAddress, acc.systemName);
+                CachedBody cachedBody = findCachedBody(cachedSystem, b);
+                List<BioCandidate> preds = cachedBody == null ? null : cachedBody.predictions;
 
                 ExobiologyAuditCase caseObj = buildAuditCase(
                         acc.systemName,
                         acc.systemAddress,
                         b,
-                        attrs,
                         preds
                 );
 
@@ -195,7 +188,7 @@ public class ExobiologyAuditMain {
                 + allCases.size());
         
         for (ExobiologyAuditCase x : allCases) {
-        	System.out.println(x.systemName + " " + x.bodyName + " " +  x.missingObservedDisplayNames);
+        	System.out.println(x.bodyName + " " +  x.missingObservedDisplayNames);
         }
         System.out.println("Audit cases written to: " + out.toAbsolutePath());
     }
@@ -608,10 +601,40 @@ public class ExobiologyAuditMain {
     // Audit case structure and comparison logic
     // ------------------------------------------------------------------------
 
-    private static ExobiologyAuditCase buildAuditCase(String systemName,
+    
+    private static CachedBody findCachedBody(CachedSystem cs, BodyInfo b) {
+        if (cs == null || cs.bodies == null || cs.bodies.isEmpty() || b == null) {
+            return null;
+        }
+
+        int bodyId = b.getBodyId();
+        String bodyName = b.getBodyName();
+
+        CachedBody byId = null;
+        CachedBody byName = null;
+
+        for (CachedBody cb : cs.bodies) {
+            if (cb == null) {
+                continue;
+            }
+            if (bodyId != 0 && cb.bodyId == bodyId) {
+                byId = cb;
+                break;
+            }
+            if (byName == null && bodyName != null && cb.name != null && cb.name.equalsIgnoreCase(bodyName)) {
+                byName = cb;
+            }
+        }
+
+        if (byId != null) {
+            return byId;
+        }
+        return byName;
+    }
+
+private static ExobiologyAuditCase buildAuditCase(String systemName,
                                                       long systemAddress,
                                                       BodyInfo b,
-                                                      BodyAttributes attrs,
                                                       List<BioCandidate> predicted) {
         if (b.getObservedBioDisplayNames() == null || b.getObservedBioDisplayNames().isEmpty()) {
             return null;
@@ -632,6 +655,10 @@ public class ExobiologyAuditMain {
         // Normalize predicted species
         Set<String> predictedNorm = new LinkedHashSet<>();
         List<PredictedSpecies> predictedDetailed = new ArrayList<>();
+        if (predicted == null) {
+        	System.out.println("Predicted was null");
+        	return null;
+        }
         for (BioCandidate bc : predicted) {
             String display = bc.getDisplayName(); // "Genus Species"
             String n = normalizeSpeciesName(display);
