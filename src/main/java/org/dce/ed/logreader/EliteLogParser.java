@@ -9,6 +9,7 @@ import java.util.Map;
 import org.dce.ed.logreader.EliteLogEvent.GenericEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
+import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 import org.dce.ed.logreader.event.CommanderEvent;
 import org.dce.ed.logreader.event.FileheaderEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
@@ -91,16 +92,45 @@ public class EliteLogParser {
                 return parseStatus(ts, obj);
                 
             case CARRIER_LOCATION:
-                return parseLocation(ts, obj);
+            	return new GenericEvent(ts, type, obj);
 
             case CARRIER_JUMP:
-                return parseLocation(ts, obj);
+                return parseFsdJump(ts, obj);
+                
+            case CARRIER_JUMP_REQUEST:
+                return parseCarrierJumpRequest(ts, obj);
             default:
                 // For everything else, fall back to generic event.
                 return new GenericEvent(ts, type, obj);
         }
     }
 
+    private CarrierJumpRequestEvent parseCarrierJumpRequest(Instant ts, JsonObject obj) {
+        String carrierType = getString(obj, "CarrierType");
+        long carrierId = getLong(obj, "CarrierID");
+        String systemName = getString(obj, "SystemName");
+        String body = getString(obj, "Body");
+        long systemAddress = getLong(obj, "SystemAddress");
+        int bodyId = (int) getLong(obj, "BodyID");
+
+        Instant departureTime = null;
+        String departureTimeStr = getString(obj, "DepartureTime");
+        if (departureTimeStr != null) {
+            departureTime = Instant.parse(departureTimeStr);
+        }
+
+        return new CarrierJumpRequestEvent(ts,
+                                          obj,
+                                          carrierType,
+                                          carrierId,
+                                          systemName,
+                                          body,
+                                          systemAddress,
+                                          bodyId,
+                                          departureTime);
+    }
+
+    
     private FileheaderEvent parseFileheader(Instant ts, JsonObject obj) {
         int part = obj.has("part") ? obj.get("part").getAsInt() : 0;
         String language = obj.has("language") ? obj.get("language").getAsString() : null;
@@ -546,6 +576,27 @@ public class EliteLogParser {
                 ? obj.get(field).getAsString()
                 : null;
     }
+    
+    private long getLong(JsonObject obj, String field) {
+        return getLong(obj, field, 0L);
+    }
+
+    private long getLong(JsonObject obj, String field, long defaultValue) {
+        return obj.has(field) && !obj.get(field).isJsonNull()
+                ? obj.get(field).getAsLong()
+                : defaultValue;
+    }
+
+    private int getInt(JsonObject obj, String field) {
+        return getInt(obj, field, 0);
+    }
+
+    private int getInt(JsonObject obj, String field, int defaultValue) {
+        return obj.has(field) && !obj.get(field).isJsonNull()
+                ? obj.get(field).getAsInt()
+                : defaultValue;
+    }
+
 }
 
 

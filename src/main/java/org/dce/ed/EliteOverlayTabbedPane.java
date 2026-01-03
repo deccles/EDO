@@ -188,14 +188,19 @@ public class EliteOverlayTabbedPane extends JPanel {
     }
 
     private void handleLogEvent(EliteLogEvent event) {
-        if (event instanceof FsdJumpEvent
-                || event instanceof FssDiscoveryScanEvent) {
+        if (event instanceof FsdJumpEvent e) {
+            if (e.getDocked() == null || e.getDocked()) {
+                showSystemTabFromStatusWatcher();
+            }
+        } else if (event instanceof FssDiscoveryScanEvent) {
             showSystemTabFromStatusWatcher();
         }
+
         if (event instanceof StartJumpEvent) {
             showRouteTabFromStatusWatcher();
         }
     }
+
 
     /**
      * Attach a generic hover handler to a button; when the mouse rests over

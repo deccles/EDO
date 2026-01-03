@@ -33,10 +33,13 @@ public class TitleBarPanel extends JPanel {
     private Point dragOffset;
     private final CloseButton closeButton;
     private final SettingsButton settingsButton;
-
+    private final JLabel titleLabel;
+    
     public TitleBarPanel(OverlayFrame frame, String title) {
         this.frame = frame;
 
+        titleLabel = new JLabel(title);
+        
         setOpaque(true);
         setBackground(new Color(32, 32, 32, 230));
         setLayout(new BorderLayout());
@@ -144,6 +147,7 @@ public class TitleBarPanel extends JPanel {
         };
 
 
+        
         addMouseListener(dragListener);
         addMouseMotionListener(dragListener);
 
@@ -152,6 +156,14 @@ public class TitleBarPanel extends JPanel {
         addMouseMotionListener(dragListener);
     }
 
+    public void setTitleText(String text) {
+        if (text == null) {
+            text = "";
+        }
+
+        final String finalText = text;
+        SwingUtilities.invokeLater(() -> titleLabel.setText(finalText));
+    }
     /**
      * Hide/show the title bar controls when pass-through mode changes.
      * When pass-through is enabled, both the close and gear icons are hidden.

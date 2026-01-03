@@ -73,9 +73,11 @@ public class SystemEventProcessor {
 
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
-            
-            if (e.getDocked() != null && e.getDocked()) {
-            	enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
+
+            // Normal ship FSD jumps have docked == null => always update system.
+            // CarrierJump may include Docked=true/false => only update if Docked==true.
+            if (e.getDocked() == null || e.getDocked()) {
+                enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             }
             return;
         }

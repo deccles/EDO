@@ -19,6 +19,9 @@ import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.prefs.Preferences;
 
 import javax.swing.JComponent;
@@ -27,6 +30,10 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.LineBorder;
 
+import org.dce.ed.logreader.LiveJournalMonitor;
+import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
+
+import com.google.gson.JsonObject;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.User32;
@@ -133,8 +140,53 @@ public class OverlayFrame extends JFrame {
         ResizeHandler resizeHandler = new ResizeHandler(this, TitleBarPanel.TOP_RESIZE_STRIP);
         installResizeHandlerRecursive(getRootPane(), resizeHandler);
         installResizeHandlerRecursive(getContentPane(), resizeHandler);
+        
+        installCarrierJumpTitleUpdater();
     }
 
+    public void setTitleBarText(String text) {
+        if (titleBar != null) {
+            titleBar.setTitleText(text);
+        }
+    }
+
+
+    
+    private void installCarrierJumpTitleUpdater() {
+        try {
+            LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
+
+            monitor.addListener(event -> {
+                if (!(event instanceof CarrierJumpRequestEvent)) {
+                    return;
+                }
+
+                CarrierJumpRequestEvent e = (CarrierJumpRequestEvent) event;
+                if (e.getDepartureTime() == null) {
+                    return;
+                }
+
+                ZonedDateTime zdt = ZonedDateTime.ofInstant(e.getDepartureTime(), ZoneId.systemDefault());
+                String when = DateTimeFormatter.ofPattern("MMM d HH:mm").format(zdt);
+
+                String target = e.getSystemName();
+                if (target == null) {
+                    target = "";
+                }
+
+                String title = "Elite Dangerous Overlay  |  FC jump " + when;
+                if (!target.isEmpty()) {
+                    title += " → " + target;
+                }
+
+                setTitleBarText(title);
+            });
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    
     private static int calcBorderDragThicknessPx() {
         double scale = Toolkit.getDefaultToolkit().getScreenResolution() / 96.0;
         int px = (int) Math.round(16 * scale); // was smaller/lower
@@ -590,4 +642,25 @@ public class OverlayFrame extends JFrame {
             return false;
         }
     }
+    
+    private long getLong(JsonObject obj, String field) {
+        return getLong(obj, field, 0L);
+    }
+
+    private long getLong(JsonObject obj, String field, long defaultValue) {
+        return obj.has(field) && !obj.get(field).isJsonNull()
+                ? obj.get(field).getAsLong()
+                : defaultValue;
+    }
+
+    private int getInt(JsonObject obj, String field) {
+        return getInt(obj, field, 0);
+    }
+
+    private int getInt(JsonObject obj, String field, int defaultValue) {
+        return obj.has(field) && !obj.get(field).isJsonNull()
+                ? obj.get(field).getAsInt()
+                : defaultValue;
+    }
+
 }

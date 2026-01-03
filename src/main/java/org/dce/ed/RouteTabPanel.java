@@ -363,7 +363,6 @@ public class RouteTabPanel extends JPanel {
             pendingJumpSystemName = null;
             
             if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
-    			System.out.println("Stop jump event!");
     			jumpFlashTimer.stop();
     			jumpFlashOn = false;
     		}
@@ -380,7 +379,6 @@ public class RouteTabPanel extends JPanel {
         	boolean timerRunning = jumpFlashTimer.isRunning();
         	
         	if (hyperdriveCharging && !timerRunning) {
-        		System.out.println("Start jump event! " + se.isFsdCharging() + " " + se.isFsdHyperdriveCharging());
         		pendingJumpSystemName = se.getDestinationName();
         		jumpFlashTimer.start();
         	} 
