@@ -19,6 +19,7 @@ import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -30,6 +31,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.LineBorder;
 
+import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 
@@ -73,7 +75,11 @@ public class OverlayFrame extends JFrame {
     private final CrosshairOverlay crosshairOverlay = new CrosshairOverlay();
     private final Timer crosshairTimer;
 
-    public OverlayFrame() {
+    
+    private javax.swing.Timer carrierJumpCountdownTimer;
+    private Instant carrierJumpDepartureTime;
+    private String carrierJumpTargetSystem;
+public OverlayFrame() {
         super("Elite Dangerous Overlay");
 
         // Need transparency -> undecorated
@@ -152,39 +158,100 @@ public class OverlayFrame extends JFrame {
 
 
     
-    private void installCarrierJumpTitleUpdater() {
-        try {
-            LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
+    
+private void installCarrierJumpTitleUpdater() {
+    try {
+        LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
 
-            monitor.addListener(event -> {
-                if (!(event instanceof CarrierJumpRequestEvent)) {
-                    return;
-                }
-
+        monitor.addListener(event -> {
+            if (event instanceof CarrierJumpRequestEvent) {
                 CarrierJumpRequestEvent e = (CarrierJumpRequestEvent) event;
-                if (e.getDepartureTime() == null) {
-                    return;
+                if (e.getDepartureTime() != null) {
+                    startCarrierJumpCountdown(e.getDepartureTime(), e.getSystemName());
                 }
+                return;
+            }
 
-                ZonedDateTime zdt = ZonedDateTime.ofInstant(e.getDepartureTime(), ZoneId.systemDefault());
-                String when = DateTimeFormatter.ofPattern("MMM d HH:mm").format(zdt);
+            if (event.getType() == EliteEventType.CARRIER_JUMP_CANCELLED) {
+                clearCarrierJumpCountdown();
+                return;
+            }
 
-                String target = e.getSystemName();
-                if (target == null) {
-                    target = "";
-                }
-
-                String title = "Elite Dangerous Overlay  |  FC jump " + when;
-                if (!target.isEmpty()) {
-                    title += " → " + target;
-                }
-
-                setTitleBarText(title);
-            });
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
+            if (event.getType() == EliteEventType.CARRIER_JUMP) {
+                clearCarrierJumpCountdown();
+            }
+        });
+    } catch (Exception ex) {
+        ex.printStackTrace();
     }
+}
+
+private void startCarrierJumpCountdown(Instant departureTime, String targetSystem) {
+    carrierJumpDepartureTime = departureTime;
+    carrierJumpTargetSystem = targetSystem;
+
+    if (carrierJumpCountdownTimer != null) {
+        carrierJumpCountdownTimer.stop();
+    }
+
+    carrierJumpCountdownTimer = new javax.swing.Timer(500, e -> updateCarrierJumpCountdown());
+    carrierJumpCountdownTimer.setRepeats(true);
+    carrierJumpCountdownTimer.start();
+
+    updateCarrierJumpCountdown();
+}
+
+private void updateCarrierJumpCountdown() {
+    if (titleBar == null) {
+        return;
+    }
+
+    if (carrierJumpDepartureTime == null) {
+        titleBar.setRightStatusText("");
+        return;
+    }
+
+    long seconds = carrierJumpDepartureTime.getEpochSecond() - Instant.now().getEpochSecond();
+    if (seconds < 0) {
+        seconds = 0;
+    }
+
+    long minutes = seconds / 60;
+    long secs = seconds % 60;
+
+    String countdown;
+    if (minutes >= 60) {
+        long hours = minutes / 60;
+        minutes = minutes % 60;
+        countdown = String.format("FC jump T-%d:%02d:%02d", hours, minutes, secs);
+    } else {
+        countdown = String.format("FC jump T-%d:%02d", minutes, secs);
+    }
+
+    if (carrierJumpTargetSystem != null && !carrierJumpTargetSystem.isBlank()) {
+        countdown += " → " + carrierJumpTargetSystem;
+    }
+
+    titleBar.setRightStatusText(countdown);
+
+    if (Instant.now().isAfter(carrierJumpDepartureTime.plusSeconds(5))) {
+        clearCarrierJumpCountdown();
+    }
+}
+
+private void clearCarrierJumpCountdown() {
+    carrierJumpDepartureTime = null;
+    carrierJumpTargetSystem = null;
+
+    if (carrierJumpCountdownTimer != null) {
+        carrierJumpCountdownTimer.stop();
+        carrierJumpCountdownTimer = null;
+    }
+
+    if (titleBar != null) {
+        titleBar.setRightStatusText("");
+    }
+}
 
     
     private static int calcBorderDragThicknessPx() {

@@ -16,6 +16,7 @@ import java.awt.geom.AffineTransform;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 
@@ -34,24 +35,23 @@ public class TitleBarPanel extends JPanel {
     private final CloseButton closeButton;
     private final SettingsButton settingsButton;
     private final JLabel titleLabel;
-    
+    private final JLabel rightStatusLabel;
+
     public TitleBarPanel(OverlayFrame frame, String title) {
         this.frame = frame;
 
         titleLabel = new JLabel(title);
-        
-        setOpaque(true);
-        setBackground(new Color(32, 32, 32, 230));
-        setLayout(new BorderLayout());
-
-        JLabel titleLabel = new JLabel(title);
         titleLabel.setForeground(Color.WHITE);
         titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 13f));
         titleLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
 
         JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         leftPanel.setOpaque(false);
-        leftPanel.add(titleLabel);
+        leftPanel.add(this.titleLabel);
+
+        setOpaque(true);
+        setBackground(new Color(32, 32, 32, 230));
+        setLayout(new BorderLayout());
 
         closeButton = new CloseButton();
         closeButton.addMouseListener(new MouseAdapter() {
@@ -95,12 +95,20 @@ public class TitleBarPanel extends JPanel {
             }
         });
 
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
-        rightPanel.setOpaque(false);
-        rightPanel.add(settingsButton);
-        rightPanel.add(closeButton);
+        rightStatusLabel = new JLabel("");
+        rightStatusLabel.setForeground(Color.WHITE);
+        rightStatusLabel.setFont(rightStatusLabel.getFont().deriveFont(Font.PLAIN, 13f));
+        rightStatusLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        rightStatusLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+
+JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
+rightPanel.setOpaque(false);
+rightPanel.add(settingsButton);
+rightPanel.add(closeButton);
 
         add(leftPanel, BorderLayout.WEST);
+        // Put the status label in the center so it can expand, but keep its text right-justified.
+        add(rightStatusLabel, BorderLayout.CENTER);
         add(rightPanel, BorderLayout.EAST);
 
         // Tall enough that nothing gets clipped even with DPI scaling
@@ -303,4 +311,18 @@ public class TitleBarPanel extends JPanel {
             }
         }
     }
+
+
+public void setRightStatusText(String text) {
+    if (text == null) {
+        text = "";
+    }
+
+    final String finalText = text;
+    if (SwingUtilities.isEventDispatchThread()) {
+        rightStatusLabel.setText(finalText);
+    } else {
+        SwingUtilities.invokeLater(() -> rightStatusLabel.setText(finalText));
+    }
+}
 }

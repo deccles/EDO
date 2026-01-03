@@ -99,7 +99,10 @@ public class EliteLogParser {
                 
             case CARRIER_JUMP_REQUEST:
                 return parseCarrierJumpRequest(ts, obj);
-            default:
+            
+            case CARRIER_JUMP_CANCELLED:
+                return new GenericEvent(ts, type, obj);
+default:
                 // For everything else, fall back to generic event.
                 return new GenericEvent(ts, type, obj);
         }
