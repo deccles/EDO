@@ -83,7 +83,7 @@ final class BioTableBuilder {
             if (genusPrefixes != null) {
                 for (String gp : genusPrefixes) {
                     if (gp != null && !gp.isEmpty()) {
-                        observedGenusLower.add(gp.toLowerCase(Locale.ROOT));
+                        observedGenusLower.add(firstWord(gp).toLowerCase(Locale.ROOT));
                     }
                 }
             }
@@ -254,7 +254,7 @@ final class BioTableBuilder {
                     if (gp == null || gp.isBlank()) {
                         continue;
                     }
-                    String g = gp.trim().toLowerCase(Locale.ROOT);
+                    String g = firstWord(gp).trim().toLowerCase(Locale.ROOT);
                     if (!genusOrder.contains(g)) {
                         genusOrder.add(g);
                     }
