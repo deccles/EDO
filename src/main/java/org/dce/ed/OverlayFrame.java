@@ -20,9 +20,8 @@ import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
+import java.text.NumberFormat;
+import java.util.Locale;
 import java.util.prefs.Preferences;
 
 import javax.swing.JComponent;
@@ -34,6 +33,10 @@ import javax.swing.border.LineBorder;
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
+import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.exobiology.ExobiologyData;
+import org.dce.ed.state.BodyInfo;
+import org.dce.ed.state.SystemState;
 
 import com.google.gson.JsonObject;
 import com.sun.jna.Native;
@@ -57,6 +60,8 @@ public class OverlayFrame extends JFrame {
     private static final String PREF_KEY_WIDTH = "overlay.width";
     private static final String PREF_KEY_HEIGHT = "overlay.height";
 
+    private static final String PREF_KEY_EXO_CREDITS_TOTAL = "exo.creditsTotal";
+
     private final LineBorder overlayBorder = new LineBorder(
             new java.awt.Color(200, 200, 255, 180),
             1,
@@ -79,7 +84,10 @@ public class OverlayFrame extends JFrame {
     private javax.swing.Timer carrierJumpCountdownTimer;
     private Instant carrierJumpDepartureTime;
     private String carrierJumpTargetSystem;
-public OverlayFrame() {
+
+    private long exoCreditsTotal;
+    
+    public OverlayFrame() {
         super("Elite Dangerous Overlay");
 
         // Need transparency -> undecorated
@@ -131,6 +139,9 @@ public OverlayFrame() {
         titleBar = new TitleBarPanel(this, "Elite Dangerous Overlay");
         add(titleBar, BorderLayout.NORTH);
 
+        exoCreditsTotal = prefs.getLong(PREF_KEY_EXO_CREDITS_TOTAL, 0L);
+        updateRightStatusDefault();
+
         // Transparent content panel with tabbed pane
         contentPanel = new OverlayContentPanel(this);
         add(contentPanel, BorderLayout.CENTER);
@@ -148,6 +159,7 @@ public OverlayFrame() {
         installResizeHandlerRecursive(getContentPane(), resizeHandler);
         
         installCarrierJumpTitleUpdater();
+        installExoCreditsTracker();
     }
 
     public void setTitleBarText(String text) {
@@ -248,8 +260,94 @@ private void clearCarrierJumpCountdown() {
         carrierJumpCountdownTimer = null;
     }
 
-    if (titleBar != null) {
-        titleBar.setRightStatusText("");
+    updateRightStatusDefault();
+}
+
+private void updateRightStatusDefault() {
+    if (titleBar == null) {
+        return;
+    }
+
+    // Carrier countdown always wins.
+    if (carrierJumpDepartureTime != null) {
+        return;
+    }
+
+    titleBar.setRightStatusText(formatExoCredits(exoCreditsTotal));
+}
+
+private static String formatExoCredits(long credits) {
+    if (credits <= 0) {
+        return "Bio: 0 Cr";
+    }
+
+    double d = credits;
+    if (credits >= 1_000_000_000L) {
+        return String.format(Locale.US, "Bio: %.1fB Cr", d / 1_000_000_000d);
+    }
+    if (credits >= 1_000_000L) {
+        return String.format(Locale.US, "Bio: %.1fM Cr", d / 1_000_000d);
+    }
+    if (credits >= 1_000L) {
+        return String.format(Locale.US, "Bio: %.1fK Cr", d / 1_000d);
+    }
+
+    NumberFormat nf = NumberFormat.getIntegerInstance(Locale.US);
+    return "Bio: " + nf.format(credits) + " Cr";
+}
+
+private void installExoCreditsTracker() {
+    try {
+        LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
+
+        monitor.addListener(event -> {
+            if (event.getType() == EliteEventType.SELL_ORGANIC_DATA) {
+            	System.out.println("Sold " + exoCreditsTotal);
+                exoCreditsTotal = 0L;
+                prefs.putLong(PREF_KEY_EXO_CREDITS_TOTAL, exoCreditsTotal);
+                updateRightStatusDefault();
+                return;
+            }
+
+            if (!(event instanceof ScanOrganicEvent)) {
+                return;
+            }
+
+            ScanOrganicEvent so = (ScanOrganicEvent) event;
+
+            // In practice, the third sample completion is represented by ScanType=Analyse.
+            if (so.getScanType() == null || !"Analyse".equalsIgnoreCase(so.getScanType().trim())) {
+                return;
+            }
+
+            boolean firstBonus = true;
+            try {
+                EliteOverlayTabbedPane tabs = (contentPanel != null) ? contentPanel.getTabbedPane() : null;
+                SystemTabPanel systemTab = (tabs != null) ? tabs.getSystemTabPanel() : null;
+                SystemState st = (systemTab != null) ? systemTab.getState() : null;
+                if (st != null) {
+                    BodyInfo body = st.getBodies().get(so.getBodyId());
+                    if (body != null) {
+                        firstBonus = !Boolean.TRUE.equals(body.getWasFootfalled());
+                    }
+                }
+            } catch (Exception ignored) {
+                // best-effort; default to first bonus
+            }
+
+            Long payout = ExobiologyData.estimatePayout(so.getGenusLocalised(), so.getSpeciesLocalised(), firstBonus);
+            if (payout == null || payout.longValue() <= 0L) {
+                return;
+            }
+
+            exoCreditsTotal += payout.longValue();
+            System.out.println("Earned " + exoCreditsTotal);
+            prefs.putLong(PREF_KEY_EXO_CREDITS_TOTAL, exoCreditsTotal);
+
+            updateRightStatusDefault();
+        });
+    } catch (Exception ex) {
+        ex.printStackTrace();
     }
 }
 

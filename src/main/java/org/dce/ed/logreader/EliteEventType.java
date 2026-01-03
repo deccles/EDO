@@ -41,6 +41,7 @@ public enum EliteEventType {
     CARRIER_JUMP("CarrierJump"),
     CARRIER_JUMP_REQUEST("CarrierJumpRequest"),
     CARRIER_JUMP_CANCELLED("CarrierJumpCancelled"),
+    SELL_ORGANIC_DATA("SellOrganicData"),
     RECEIVE_TEXT("ReceiveText"),
     MUSIC("Music"),
     RESERVOIR_REPLENISHED("ReservoirReplenished"),

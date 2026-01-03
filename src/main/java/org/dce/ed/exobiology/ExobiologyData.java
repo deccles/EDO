@@ -1151,6 +1151,23 @@ public SpeciesRuleBuilder gravity(Double min, Double max) {
         return CONSTRAINTS.get(genus + " " + species);
     }
 
+    public static Long estimatePayout(String genusLocalised, String speciesLocalised, boolean firstDiscoveryBonus) {
+    	
+    	if (speciesLocalised.startsWith(genusLocalised)) {
+    		speciesLocalised = speciesLocalised.replaceFirst(genusLocalised, "").trim();
+    	}
+        SpeciesConstraint c = getConstraintFor(genusLocalised, speciesLocalised);
+        if (c == null) {
+            return null;
+        }
+
+        long base = c.getBaseValue();
+        if (firstDiscoveryBonus) {
+            return base * 5L;
+        }
+        return base;
+    }
+
     public static Map<String, SpeciesConstraint> getAllConstraints() {
         return Collections.unmodifiableMap(CONSTRAINTS);
     }

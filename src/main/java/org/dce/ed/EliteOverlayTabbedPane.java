@@ -187,6 +187,10 @@ public class EliteOverlayTabbedPane extends JPanel {
         add(cardPanel, BorderLayout.CENTER);
     }
 
+    public SystemTabPanel getSystemTabPanel() {
+        return systemTab;
+    }
+
     private void handleLogEvent(EliteLogEvent event) {
         if (event instanceof FsdJumpEvent e) {
             if (e.getDocked() == null || e.getDocked()) {

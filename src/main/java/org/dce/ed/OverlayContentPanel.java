@@ -22,6 +22,10 @@ public class OverlayContentPanel extends JPanel {
         add(tabbedPane, BorderLayout.CENTER);
     }
 
+    public EliteOverlayTabbedPane getTabbedPane() {
+        return tabbedPane;
+    }
+
     
     public void applyOverlayTransparency(boolean transparent) {
         boolean opaque = !transparent;

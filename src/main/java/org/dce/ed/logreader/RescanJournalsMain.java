@@ -6,12 +6,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.prefs.Preferences;
 
 import org.dce.ed.EliteDangerousOverlay;
+import org.dce.ed.OverlayFrame;
 import org.dce.ed.cache.SystemCache;
+import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ScanEvent;
+import org.dce.ed.logreader.event.ScanOrganicEvent;
+import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
 
@@ -25,6 +30,8 @@ import org.dce.ed.state.SystemState;
 public class RescanJournalsMain {
 
 	private static final String LAST_IMPORT_FILENAME = "edo-cache.lastRescanTimestamp";
+
+	private static final String PREF_KEY_EXO_CREDITS_TOTAL = "exo.creditsTotal";
 
 	private static Instant readLastImportInstant(Path journalDirectory) {
 		if (journalDirectory == null) {
@@ -149,6 +156,11 @@ public class RescanJournalsMain {
 		SystemState state = new SystemState();
 		SystemEventProcessor processor = new SystemEventProcessor(EliteDangerousOverlay.clientKey, state);
 
+		// Recompute exobiology expected credits total from scratch during a rescan.
+		// This avoids double-counting if the overlay has already been running.
+		Preferences prefs = Preferences.userNodeForPackage(OverlayFrame.class);
+		long exoCreditsTotal = 0L;
+
 		Instant newestEventTimestamp = lastImport;
 
 		for (EliteLogEvent event : events) {
@@ -170,11 +182,41 @@ public class RescanJournalsMain {
 			}
 
 			processor.handleEvent(event);
+
+			// Exobiology running total (Analyse == 3rd scan completion)
+			if (event.getType() == EliteEventType.SELL_ORGANIC_DATA) {
+				System.out.println("Sold " + exoCreditsTotal);
+				exoCreditsTotal = 0L;
+			}
+
+			if (event instanceof ScanOrganicEvent) {
+				ScanOrganicEvent so = (ScanOrganicEvent) event;
+				if (so.getScanType() != null && "Analyse".equalsIgnoreCase(so.getScanType().trim())) {
+					boolean firstBonus = true;
+					BodyInfo body = state.getBodies().get(so.getBodyId());
+					if (body != null) {
+						firstBonus = !Boolean.TRUE.equals(body.getWasFootfalled());
+					}
+
+					Long payout = ExobiologyData.estimatePayout(
+							so.getGenusLocalised(),
+							so.getSpeciesLocalised(),
+							firstBonus);
+					if (payout != null && payout.longValue() > 0L) {
+						exoCreditsTotal += payout.longValue();
+						System.out.println("Earned total: " + exoCreditsTotal);
+					}
+				}
+			}
 			//            persistIfStarScan(cache, state, event);
 		}
 
 		// Persist the final system (if valid)
 		cache.storeSystem(state);
+
+		// Persist recomputed exobiology expected credits total.
+		prefs.putLong(PREF_KEY_EXO_CREDITS_TOTAL, exoCreditsTotal);
+		System.out.println("Recomputed exobiology expected credits total (unsold): " + exoCreditsTotal + " Cr");
 
 		if (journalDirectory != null && newestEventTimestamp != null) {
 			writeLastImportInstant(journalDirectory, newestEventTimestamp);
@@ -182,6 +224,9 @@ public class RescanJournalsMain {
 		}
 
 		System.out.println("Rescan complete.");
+
+		prefs.putLong(PREF_KEY_EXO_CREDITS_TOTAL, exoCreditsTotal);
+		System.out.println("Recomputed exobiology expected credits total: " + exoCreditsTotal);
 	}
 
 	private static void persistIfSystemIsChanging(SystemCache cache, SystemState state, String nextName, long nextAddr) {
