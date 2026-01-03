@@ -1,31 +1,32 @@
 package org.dce.ed;
 
-import java.awt.BorderLayout;
-import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
+import java.awt.geom.QuadCurve2D;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.swing.JButton;
-import javax.swing.JComponent;
+import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
@@ -35,8 +36,6 @@ import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
-import javax.swing.plaf.basic.BasicScrollBarUI;
-import javax.swing.plaf.basic.BasicScrollPaneUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
@@ -57,6 +56,7 @@ import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import org.dce.ed.ui.EdoUi;
 import org.dce.ed.util.EdsmClient;
 
 /**
@@ -71,7 +71,9 @@ public class SystemTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
-    private static final Color ED_ORANGE = new Color(255, 140, 0);
+    // Bio column icons (painted, no external resources)
+    private static final Icon BIO_LEAF_ICON = new LeafIcon(14, 14);
+    private static final Icon BIO_DOLLAR_ICON = new DollarIcon(14, 14);
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
     private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
     // NEW: shared ED font (similar to Route tab)
@@ -86,9 +88,10 @@ public class SystemTabPanel extends JPanel {
 
     private final EdsmClient edsmClient = new EdsmClient();
 
-    // UI highlight state (independent of JTable selection)
+    // When we receive Status.json indicating we're near/on a body, we highlight that body and its bio rows.
+    // Stored as bodyId so it remains stable even if the display name changes slightly.
     private volatile Integer nearBodyId;
-    private volatile Integer targetedBodyId;
+    private volatile String nearBodyName;
 
 	private JLabel headerSummaryLabel;
     
@@ -122,14 +125,14 @@ public class SystemTabPanel extends JPanel {
                 }
             }
         });
-        headerLabel.setForeground(ED_ORANGE);
+        headerLabel.setForeground(EdoUi.ED_ORANGE);
 //        headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setOpaque(false);
         headerLabel.setBorder(null);
         headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 
         headerSummaryLabel = new JLabel();
-        headerSummaryLabel.setForeground(ED_ORANGE);
+        headerSummaryLabel.setForeground(EdoUi.ED_ORANGE);
         headerSummaryLabel.setFont(uiFont.deriveFont(Font.BOLD));
 //        headerSummaryLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerSummaryLabel.setOpaque(false);
@@ -155,7 +158,7 @@ public class SystemTabPanel extends JPanel {
 
         JTableHeader header = table.getTableHeader();
         header.setOpaque(false);
-        header.setForeground(ED_ORANGE);
+        header.setForeground(EdoUi.ED_ORANGE);
         header.setBackground(Color.BLACK);
         header.setFont(uiFont.deriveFont(Font.BOLD));
         header.setBorder(null);
@@ -173,7 +176,7 @@ public class SystemTabPanel extends JPanel {
 
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
-                label.setForeground(ED_ORANGE);
+                label.setForeground(EdoUi.ED_ORANGE_TRANS);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
 //                label.setBorder(new EmptyBorder(0, 4, 0, 4));
@@ -185,7 +188,7 @@ public class SystemTabPanel extends JPanel {
         DefaultTableCellRenderer cellRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
-                setForeground(ED_ORANGE);
+                setForeground(EdoUi.ED_ORANGE);
             }
 
             @Override
@@ -215,7 +218,7 @@ public class SystemTabPanel extends JPanel {
                         c.setForeground(new Color(180, 180, 180)); // gray for biologicals
                     }
                 } else {
-                    c.setForeground(ED_ORANGE);
+                    c.setForeground(EdoUi.ED_ORANGE);
                 }
 
                 return c;
@@ -228,7 +231,7 @@ public class SystemTabPanel extends JPanel {
         DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
-                setForeground(ED_ORANGE);
+                setForeground(EdoUi.ED_ORANGE);
             }
 
             @Override
@@ -256,7 +259,7 @@ public class SystemTabPanel extends JPanel {
                 } else if (isBioRow) {
                     c.setForeground(new Color(180, 180, 180));
                 } else {
-                    c.setForeground(ED_ORANGE);
+                    c.setForeground(EdoUi.ED_ORANGE);
                 }
 
                 return c;
@@ -264,6 +267,8 @@ public class SystemTabPanel extends JPanel {
         };
 
         // Column index 4 is "Value"
+        table.getColumnModel().getColumn(3).setCellRenderer(new BioCellRenderer());
+
         table.getColumnModel().getColumn(4).setCellRenderer(valueRightRenderer);
 
         JScrollPane scrollPane = new JScrollPane(table);
@@ -333,23 +338,11 @@ public class SystemTabPanel extends JPanel {
         // 1) Mutate domain state (can be on background thread)
         processor.handleEvent(event);
 
-        // Status events can arrive very frequently; avoid rebuilding/persisting the whole table.
+        // StatusEvent is very high frequency; avoid table rebuilds.
+        // We only use it to track which body the player is currently near.
         if (event instanceof StatusEvent) {
             StatusEvent e = (StatusEvent) event;
-
-            Integer newNear = resolveBodyIdByName(e.getBodyName());
-            Integer newTarget = resolveBodyIdByName(e.getDestinationName());
-
-            boolean changed =
-                    !Objects.equals(nearBodyId, newNear)
-                    || !Objects.equals(targetedBodyId, newTarget);
-
-            nearBodyId = newNear;
-            targetedBodyId = newTarget;
-
-            if (changed) {
-                SwingUtilities.invokeLater(() -> table.repaint());
-            }
+            updateNearBodyFromStatus(e);
             return;
         }
 
@@ -442,6 +435,61 @@ public class SystemTabPanel extends JPanel {
         }
     }
 
+    private void updateNearBodyFromStatus(StatusEvent e) {
+        // Called from handleLogEvent; may be on a background thread.
+        final String newBodyName = (e != null) ? e.getBodyName() : null;
+
+        SwingUtilities.invokeLater(() -> {
+            String trimmed = (newBodyName != null) ? newBodyName.trim() : null;
+            if (trimmed != null && trimmed.isEmpty()) {
+                trimmed = null;
+            }
+
+            // No change
+            if (trimmed == null && nearBodyName == null) {
+                return;
+            }
+            if (trimmed != null && trimmed.equalsIgnoreCase(nearBodyName)) {
+                return;
+            }
+
+            nearBodyName = trimmed;
+            nearBodyId = findBodyIdByName(trimmed);
+
+            // Just repaint; no need to rebuild the model.
+            table.repaint();
+        });
+    }
+
+    private Integer findBodyIdByName(String bodyName) {
+        if (bodyName == null || bodyName.isBlank()) {
+            return null;
+        }
+
+        // 1) Prefer exact match on BodyName
+        for (BodyInfo b : state.getBodies().values()) {
+            if (b == null || b.getBodyName() == null) {
+                continue;
+            }
+            if (bodyName.equalsIgnoreCase(b.getBodyName())) {
+                return b.getBodyId();
+            }
+        }
+
+        // 2) Fallback: match on "short name" (e.g., system + body index)
+        for (BodyInfo b : state.getBodies().values()) {
+            if (b == null) {
+                continue;
+            }
+            String shortName = b.getShortName();
+            if (shortName != null && bodyName.equalsIgnoreCase(shortName)) {
+                return b.getBodyId();
+            }
+        }
+
+        return null;
+    }
+
     private void loadSystem(String systemName, long systemAddress) {
         SystemCache cache = SystemCache.getInstance();
         CachedSystem cs = cache.get(systemAddress, systemName);
@@ -475,34 +523,6 @@ public class SystemTabPanel extends JPanel {
         rebuildTable();
         persistIfPossible();
     }
-
-    private Integer resolveBodyIdByName(String bodyName) {
-        if (bodyName == null || bodyName.isBlank()) {
-            return null;
-        }
-        // Prefer exact match on full body name (Status.json uses the full name).
-        for (BodyInfo b : state.getBodies().values()) {
-            if (b == null) {
-                continue;
-            }
-            String n = b.getBodyName();
-            if (bodyName.equals(n)) {
-                return b.getBodyId();
-            }
-        }
-        // Fallback: match shortName (table display) for edge cases.
-        for (BodyInfo b : state.getBodies().values()) {
-            if (b == null) {
-                continue;
-            }
-            String sn = b.getShortName();
-            if (bodyName.equals(sn)) {
-                return b.getBodyId();
-            }
-        }
-        return null;
-    }
-
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
 
     // ---------------------------------------------------------------------
@@ -616,7 +636,315 @@ public class SystemTabPanel extends JPanel {
     // Table model
     // ---------------------------------------------------------------------
 
-    public static class Row {
+    private final class BioCellRenderer extends DefaultTableCellRenderer {
+        BioCellRenderer() {
+            setOpaque(false);
+            setHorizontalAlignment(SwingConstants.LEFT);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table,
+                                                       Object value,
+                                                       boolean isSelected,
+                                                       boolean hasFocus,
+                                                       int row,
+                                                       int column) {
+
+            JLabel c = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+
+            Row r = tableModel.getRowAt(row);
+            boolean isDetailRow = (r != null && r.detail);
+
+            // Preserve the existing coloring semantics used by the default renderer.
+            if (isSelected) {
+                c.setForeground(Color.BLACK);
+            } else if (isDetailRow) {
+                int samples = r.getBioSampleCount();
+                if (samples >= 3) {
+                    c.setForeground(Color.GREEN);
+                } else if (samples > 0) {
+                    c.setForeground(Color.YELLOW);
+                } else {
+                    c.setForeground(new Color(180, 180, 180));
+                }
+            } else {
+                c.setForeground(EdoUi.ED_ORANGE);
+            }
+
+            if (r == null) {
+                return c;
+            }
+
+            // Only override the main (non-detail) body rows. Detail rows keep their text.
+            if (r.detail) {
+                c.setIcon(null);
+                c.setText(value != null ? String.valueOf(value) : "");
+                c.setHorizontalAlignment(SwingConstants.LEFT);
+                return c;
+            }
+
+            BodyInfo b = r.body;
+            if (b == null) {
+                c.setIcon(null);
+                c.setText("");
+                return c;
+            }
+
+            boolean hasBio = b.hasBio();
+            boolean hasGeo = b.hasGeo();
+            boolean isHighValue = b.isHighValue();
+
+            // Icon stack: leaf, then optional dollar.
+            HorizontalIconStack stack = null;
+            if (hasBio) {
+                stack = new HorizontalIconStack(4);
+                stack.add(BIO_LEAF_ICON);
+                if (isHighValue) {
+                    stack.add(BIO_DOLLAR_ICON);
+                }
+            }
+
+            c.setIcon(stack);
+            c.setHorizontalAlignment(SwingConstants.LEFT);
+
+            // Geo label is only shown when geo exists. Keep it minimal.
+            if (hasGeo) {
+                c.setText("Geo");
+                c.setHorizontalTextPosition(SwingConstants.RIGHT);
+                c.setIconTextGap(6);
+            } else {
+                c.setText("");
+            }
+
+            return c;
+        }
+    }
+
+    private static final class HorizontalIconStack implements Icon {
+        private final java.util.List<Icon> icons = new java.util.ArrayList<>();
+        private final int gap;
+
+        HorizontalIconStack(int gap) {
+            this.gap = gap;
+        }
+
+        void add(Icon icon) {
+            if (icon != null) {
+                icons.add(icon);
+            }
+        }
+
+        @Override
+        public int getIconWidth() {
+            if (icons.isEmpty()) {
+                return 0;
+            }
+            int w = 0;
+            for (int i = 0; i < icons.size(); i++) {
+                w += icons.get(i).getIconWidth();
+                if (i < icons.size() - 1) {
+                    w += gap;
+                }
+            }
+            return w;
+        }
+
+        @Override
+        public int getIconHeight() {
+            int h = 0;
+            for (Icon ic : icons) {
+                h = Math.max(h, ic.getIconHeight());
+            }
+            return h;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            int xx = x;
+            int h = getIconHeight();
+            for (int i = 0; i < icons.size(); i++) {
+                Icon ic = icons.get(i);
+                int yy = y + Math.max(0, (h - ic.getIconHeight()) / 2);
+                ic.paintIcon(c, g, xx, yy);
+                xx += ic.getIconWidth();
+                if (i < icons.size() - 1) {
+                    xx += gap;
+                }
+            }
+        }
+    }
+
+    private static final class LeafIcon implements Icon {
+        private final int w;
+        private final int h;
+
+        LeafIcon(int w, int h) {
+            this.w = w;
+            this.h = h;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return w;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return h;
+        }
+        Color fillColor = Color.green;
+        Color outlineColor = Color.black;
+        Color veinColor = Color.black;
+        
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                int w = getIconWidth();
+                int h = getIconHeight();
+
+                // Slight tilt makes it read much more like a leaf than a teardrop
+                g2.rotate(Math.toRadians(-12), x + w / 2.0, y + h / 2.0);
+
+                // Small inset so strokes don't clip, but let it fill most of the box
+                double ix = x + 0.5;
+                double iy = y + 0.5;
+                double iw = w - 1.0;
+                double ih = h - 1.0;
+
+                // Leaf outline (pointed tip + slight asymmetry)
+                Path2D leaf = new Path2D.Double();
+                leaf.moveTo(ix + iw * 0.50, iy + ih * 0.04); // tip
+
+                // Right side (slightly "fatter")
+                leaf.curveTo(
+                    ix + iw * 0.80, iy + ih * 0.14,  // asymmetry here (was 0.82, 0.12)
+                    ix + iw * 0.98, iy + ih * 0.42,
+                    ix + iw * 0.64, iy + ih * 0.81
+                );
+
+                // Bottom
+                leaf.curveTo(
+                    ix + iw * 0.56, iy + ih * 0.93,
+                    ix + iw * 0.43, iy + ih * 0.95,
+                    ix + iw * 0.36, iy + ih * 0.88
+                );
+
+                // Left side (kept a bit tighter)
+                leaf.curveTo(
+                    ix + iw * 0.03, iy + ih * 0.57,
+                    ix + iw * 0.16, iy + ih * 0.18,
+                    ix + iw * 0.50, iy + ih * 0.04
+                );
+
+                leaf.closePath();
+
+                // Fill
+                g2.setColor(fillColor);
+                g2.fill(leaf);
+
+                // Outline
+                g2.setStroke(new BasicStroke(1.35f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setColor(outlineColor);
+                g2.draw(leaf);
+
+                // Stem (tiny, subtle)
+                g2.setStroke(new BasicStroke(1.05f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setColor(outlineColor);
+                g2.draw(new Line2D.Double(
+                    ix + iw * 0.42, iy + ih * 0.88,
+                    ix + iw * 0.30, iy + ih * 1.02
+                ));
+
+                // Midrib (main vein)
+                g2.setColor(veinColor);
+                g2.setStroke(new BasicStroke(1.05f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.50, iy + ih * 0.10,
+                    ix + iw * 0.60, iy + ih * 0.46,
+                    ix + iw * 0.44, iy + ih * 0.84
+                ));
+
+                // Side veins (a touch offset to match tilt/asymmetry)
+                g2.setStroke(new BasicStroke(0.95f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.52, iy + ih * 0.30,
+                    ix + iw * 0.73, iy + ih * 0.35,
+                    ix + iw * 0.83, iy + ih * 0.45
+                ));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.50, iy + ih * 0.47,
+                    ix + iw * 0.30, iy + ih * 0.55,
+                    ix + iw * 0.18, iy + ih * 0.65
+                ));
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        
+        
+    }
+
+    private static final class DollarIcon implements Icon {
+        private final int w;
+        private final int h;
+
+        DollarIcon(int w, int h) {
+            this.w = w;
+            this.h = h;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return w;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return h;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                int pad = 1;
+                int cx = x + pad;
+                int cy = y + pad;
+                int cw = w - pad * 2;
+                int ch = h - pad * 2;
+
+                Color gold = new Color(212, 175, 55);
+                Color goldDark = new Color(140, 110, 25);
+
+                g2.setColor(new Color(gold.getRed(), gold.getGreen(), gold.getBlue(), 220));
+                g2.fillOval(cx, cy, cw, ch);
+
+                g2.setColor(goldDark);
+                g2.setStroke(new BasicStroke(1.0f));
+                g2.drawOval(cx, cy, cw, ch);
+
+                // Dollar sign
+                g2.setColor(new Color(50, 35, 10));
+                Font f = c != null ? c.getFont() : new Font("Dialog", Font.BOLD, 12);
+                g2.setFont(f.deriveFont(Font.BOLD, 11f));
+                FontMetrics fm = g2.getFontMetrics();
+                String s = "$";
+                int tx = x + (w - fm.stringWidth(s)) / 2;
+                int ty = y + (h - fm.getHeight()) / 2 + fm.getAscent() - 1;
+                g2.drawString(s, tx, ty);
+            } finally {
+                g2.dispose();
+            }
+        }
+    }
+
+static class Row {
         final BodyInfo body;
         final boolean detail;
         final int parentId;
@@ -693,7 +1021,6 @@ public class SystemTabPanel extends JPanel {
 
             Graphics2D g2 = (Graphics2D) g.create();
             try {
-                // 1) System separators (existing behavior)
                 g2.setColor(ED_ORANGE_TRANS);
 
                 int rowCount = tableModel.getRowCount();
@@ -713,88 +1040,83 @@ public class SystemTabPanel extends JPanel {
                     }
                 }
 
-                // 2) Targeted-body faint outline (Destination)
-                // 3) Near-body stronger outline (BodyName)
-                // If both point at the same body, only draw the stronger outline.
-                Integer target = targetedBodyId;
-                Integer near = nearBodyId;
-
-                if (target != null && Objects.equals(target, near)) {
-                    target = null;
-                }
-
-                if (target != null) {
-                    drawBodyBlockOutline(g2, target,
-                            new Color(ED_ORANGE.getRed(), ED_ORANGE.getGreen(), ED_ORANGE.getBlue(), 110),
-                            new BasicStroke(2.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10.0f,
-                                    new float[] { 8.0f, 8.0f }, 0.0f));
-                }
-
-                if (near != null) {
-                    drawBodyBlockOutline(g2, near,
-                            new Color(ED_ORANGE.getRed(), ED_ORANGE.getGreen(), ED_ORANGE.getBlue(), 220),
-                            new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                }
-
+                paintNearBodyOutline(g2);
             } finally {
                 g2.dispose();
             }
         }
 
-        private void drawBodyBlockOutline(Graphics2D g2, int bodyId, Color color, BasicStroke stroke) {
-            int rowCount = tableModel.getRowCount();
+        private void paintNearBodyOutline(Graphics2D g2) {
+            Integer targetBodyId = SystemTabPanel.this.nearBodyId;
+            if (targetBodyId == null) {
+                return;
+            }
 
-            int startRow = -1;
-            int endRow = -1;
+            int rowCount = tableModel.getRowCount();
+            int first = -1;
+            int last = -1;
 
             for (int row = 0; row < rowCount; row++) {
                 Row r = tableModel.getRowAt(row);
-                if (r == null || r.detail || r.body == null) {
+                if (r == null) {
                     continue;
                 }
-                if (r.body.getBodyId() == bodyId) {
-                    startRow = row;
-                    endRow = row;
 
-                    // Include contiguous detail rows that belong to this body.
-                    for (int rr = row + 1; rr < rowCount; rr++) {
-                        Row dr = tableModel.getRowAt(rr);
-                        if (dr == null || !dr.detail) {
-                            break;
-                        }
-                        if (dr.parentId != bodyId) {
-                            break;
-                        }
-                        endRow = rr;
+                boolean match = false;
+                if (!r.detail) {
+                    if (r.body != null && r.body.getBodyId() == targetBodyId.intValue()) {
+                        match = true;
                     }
+                } else {
+                    if (r.parentId == targetBodyId.intValue()) {
+                        match = true;
+                    }
+                }
+
+                if (match) {
+                    if (first < 0) {
+                        first = row;
+                    }
+                    last = row;
+                } else if (first >= 0) {
+                    // Rows for a body are contiguous; once we leave the block we can stop.
                     break;
                 }
             }
 
-            if (startRow < 0) {
+            if (first < 0 || last < 0) {
                 return;
             }
 
-            Rectangle r0 = getCellRect(startRow, 0, true);
-            Rectangle r1 = getCellRect(endRow, 0, true);
+            Rectangle top = getCellRect(first, 0, true);
+            Rectangle bottom = getCellRect(last, getColumnCount() - 1, true);
+
+            int y = top.y;
+            int h = (bottom.y + bottom.height) - y;
+
+            Rectangle block = new Rectangle(0, y, getWidth(), h);
+            Rectangle clip = g2.getClipBounds();
+            if (clip != null && !clip.intersects(block)) {
+                return;
+            }
+
+            Object oldAA = g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            Color outline = new Color(255, 140, 0, 200);
+            g2.setColor(outline);
+            g2.setStroke(new BasicStroke(2.0f));
 
             int inset = 2;
-            int x = inset;
-            int y = r0.y + 1;
-            int w = getWidth() - inset * 2 - 1;
-            int h = (r1.y + r1.height) - r0.y - 2;
-
-            if (h <= 0 || w <= 0) {
-                return;
-            }
-
-            // Slightly rounded "group" outline.
             int arc = 12;
+            g2.drawRoundRect(inset,
+                    y + inset,
+                    getWidth() - (inset * 2) - 1,
+                    h - (inset * 2) - 1,
+                    arc,
+                    arc);
 
-            g2.setComposite(AlphaComposite.SrcOver);
-            g2.setColor(color);
-            g2.setStroke(stroke);
-            g2.drawRoundRect(x, y, w, h, arc, arc);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, oldAA);
         }
     }
 
@@ -868,7 +1190,7 @@ public class SystemTabPanel extends JPanel {
                     double g = b.getGravityMS() / 9.80665;
                     return String.format(Locale.US, "%.2f g", g);
                 case 2:
-                    String atmo = b.getAtmosphere() != null ? b.getAtmosphere() : "";
+                    String atmo = b.getAtmoOrType() != null ? b.getAtmoOrType() : "";
                     atmo = atmo.replaceAll("content body",  "body");
                     atmo = atmo.replaceAll("No atmosphere",  "");
                     atmo = atmo.replaceAll("atmosphere",  "");
