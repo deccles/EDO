@@ -30,6 +30,10 @@ public final class OverlayPreferences {
     private static final String KEY_SPEECH_CACHE_DIR = "speech.cacheDir";
     private static final String KEY_SPEECH_SAMPLE_RATE = "speech.sampleRate"; // PCM sample rate in Hz (as string)
 
+    // --- Mining / Prospector ---
+    private static final String KEY_MINING_PROSPECTOR_MATERIALS = "mining.prospector.materials"; // comma-separated
+    private static final String KEY_MINING_PROSPECTOR_MIN_PROP = "mining.prospector.minProportion"; // percent
+
     // Reuse the same prefs node as OverlayFrame so everything is in one place.
     private static final Preferences PREFS = Preferences.userNodeForPackage(OverlayFrame.class);
 
@@ -179,6 +183,54 @@ public final class OverlayPreferences {
             sampleRateHz = 8000;
         }
         PREFS.put(KEY_SPEECH_SAMPLE_RATE, Integer.toString(sampleRateHz));
+    }
+
+    // ----------------------------
+    // Mining / Prospector
+    // ----------------------------
+
+    /**
+     * Comma-separated list of materials to announce for ProspectedAsteroid events.
+     * Leave blank to announce any material meeting the threshold.
+     */
+    public static String getProspectorMaterialsCsv() {
+        return PREFS.get(KEY_MINING_PROSPECTOR_MATERIALS, "").trim();
+    }
+
+    public static void setProspectorMaterialsCsv(String csv) {
+        if (csv == null) {
+            csv = "";
+        }
+        PREFS.put(KEY_MINING_PROSPECTOR_MATERIALS, csv.trim());
+    }
+
+    /**
+     * Minimum material proportion (percent) required to trigger an announcement.
+     */
+    public static double getProspectorMinProportionPercent() {
+        String s = PREFS.get(KEY_MINING_PROSPECTOR_MIN_PROP, "20");
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (v < 0.0) {
+                v = 0.0;
+            }
+            if (v > 100.0) {
+                v = 100.0;
+            }
+            return v;
+        } catch (Exception e) {
+            return 20.0;
+        }
+    }
+
+    public static void setProspectorMinProportionPercent(double percent) {
+        if (percent < 0.0) {
+            percent = 0.0;
+        }
+        if (percent > 100.0) {
+            percent = 100.0;
+        }
+        PREFS.put(KEY_MINING_PROSPECTOR_MIN_PROP, Double.toString(percent));
     }
 
     // --- UI Font (System / Route / Biology) ---

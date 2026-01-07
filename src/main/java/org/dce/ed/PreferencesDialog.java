@@ -49,6 +49,10 @@ public class PreferencesDialog extends JDialog {
     private JComboBox<String> uiFontNameCombo;
     private JSpinner uiFontSizeSpinner;
 
+    // Mining-tab fields
+    private JTextField prospectorMaterialsField;
+    private JSpinner prospectorMinPropSpinner;
+
     private boolean okPressed;
     private final Font originalUiFont;
     private final boolean originalOverlayTransparent;
@@ -79,6 +83,7 @@ public class PreferencesDialog extends JDialog {
         tabs.addTab("Logging", createLoggingPanel());
         tabs.addTab("Speech", createSpeechPanel());
         tabs.addTab("Fonts", createFontsPanel());
+        tabs.addTab("Mining", createMiningPanel());
 
         add(tabs, BorderLayout.CENTER);
         add(createButtonPanel(), BorderLayout.SOUTH);
@@ -256,6 +261,49 @@ public class PreferencesDialog extends JDialog {
 
         uiFontNameCombo.addActionListener(e -> updatePreviewLabelFont());
         uiFontSizeSpinner.addChangeListener(e -> updatePreviewLabelFont());
+
+        panel.add(content, BorderLayout.NORTH);
+        return panel;
+    }
+
+    private JPanel createMiningPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        panel.setOpaque(false);
+
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setOpaque(false);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(6, 6, 6, 6);
+
+        JLabel materialsLabel = new JLabel("Prospector materials (comma separated):");
+        content.add(materialsLabel, gbc);
+
+        gbc.gridx = 1;
+        prospectorMaterialsField = new JTextField(32);
+        prospectorMaterialsField.setText(OverlayPreferences.getProspectorMaterialsCsv());
+        content.add(prospectorMaterialsField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        JLabel minPropLabel = new JLabel("Minimum proportion (%):");
+        content.add(minPropLabel, gbc);
+
+        gbc.gridx = 1;
+        double current = OverlayPreferences.getProspectorMinProportionPercent();
+        prospectorMinPropSpinner = new JSpinner(new SpinnerNumberModel(current, 0.0, 100.0, 1.0));
+        ((JSpinner.DefaultEditor) prospectorMinPropSpinner.getEditor()).getTextField().setColumns(6);
+        content.add(prospectorMinPropSpinner, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+        JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the threshold.");
+        content.add(hint, gbc);
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
@@ -537,6 +585,19 @@ private JPanel createSpeechPanel() {
             try {
                 int sz = ((Number) uiFontSizeSpinner.getValue()).intValue();
                 OverlayPreferences.setUiFontSize(sz);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+        // Mining
+        if (prospectorMaterialsField != null) {
+            OverlayPreferences.setProspectorMaterialsCsv(prospectorMaterialsField.getText());
+        }
+        if (prospectorMinPropSpinner != null) {
+            try {
+                double p = ((Number) prospectorMinPropSpinner.getValue()).doubleValue();
+                OverlayPreferences.setProspectorMinProportionPercent(p);
             } catch (Exception e) {
                 // ignore
             }

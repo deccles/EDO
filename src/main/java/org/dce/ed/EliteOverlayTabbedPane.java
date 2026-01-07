@@ -20,9 +20,11 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map.Entry;
+import java.util.Set;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -34,8 +36,11 @@ import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -68,6 +73,8 @@ public class EliteOverlayTabbedPane extends JPanel {
     private final RouteTabPanel routeTab;
     private final SystemTabPanel systemTab;
     private final BiologyTabPanel biologyTab;
+
+    private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 
     private JButton routeButton;
     private JButton systemButton;
@@ -161,6 +168,10 @@ public class EliteOverlayTabbedPane extends JPanel {
 
                 this.handleLogEvent(event);
 
+                if (event instanceof ProspectedAsteroidEvent) {
+                    handleProspectedAsteroid((ProspectedAsteroidEvent) event);
+                }
+
                 if (event instanceof StatusEvent) {
                     StatusEvent flagEvent = (StatusEvent) event;
 
@@ -203,6 +214,103 @@ public class EliteOverlayTabbedPane extends JPanel {
         if (event instanceof StartJumpEvent) {
             showRouteTabFromStatusWatcher();
         }
+    }
+
+    private void handleProspectedAsteroid(ProspectedAsteroidEvent event) {
+        if (event == null) {
+            return;
+        }
+        if (!OverlayPreferences.isSpeechEnabled()) {
+            return;
+        }
+
+        Set<String> wanted = parseMaterialList(OverlayPreferences.getProspectorMaterialsCsv());
+        double minPct = OverlayPreferences.getProspectorMinProportionPercent();
+
+        ProspectedAsteroidEvent.MaterialProportion best = null;
+        for (ProspectedAsteroidEvent.MaterialProportion m : event.getMaterials()) {
+            if (m == null) {
+                continue;
+            }
+            if (m.getProportion() < minPct) {
+                continue;
+            }
+
+            String norm = normalizeMaterialName(m.getName());
+            if (!wanted.isEmpty() && !wanted.contains(norm)) {
+                continue;
+            }
+
+            if (best == null || m.getProportion() > best.getProportion()) {
+                best = m;
+            }
+        }
+
+        if (best == null) {
+            return;
+        }
+
+        String spokenName = toSpokenMaterialName(best.getName());
+        long pctRounded = Math.round(best.getProportion());
+        tts.speakf("Prospected. " + spokenName + " " + pctRounded + " percent");
+    }
+
+    private static Set<String> parseMaterialList(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return Set.of();
+        }
+        Set<String> out = new HashSet<>();
+        Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .map(EliteOverlayTabbedPane::normalizeMaterialName)
+                .forEach(out::add);
+        return out;
+    }
+
+    /**
+     * Normalize material names so user input like "Low Temperature Diamonds" can
+     * match journal material keys like "$LowTemperatureDiamonds_Name;".
+     */
+    private static String normalizeMaterialName(String s) {
+        if (s == null) {
+            return "";
+        }
+
+        String t = s.trim();
+        if (t.startsWith("$")) {
+            t = t.substring(1);
+        }
+        t = t.replace("_name", "");
+        t = t.replace("_Name", "");
+        t = t.replace(";", "");
+
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                out.append(Character.toLowerCase(c));
+            }
+        }
+        return out.toString();
+    }
+
+    private static String toSpokenMaterialName(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "material";
+        }
+
+        String t = raw.trim();
+        if (t.startsWith("$")) {
+            t = t.substring(1);
+        }
+        t = t.replace("_Name", "").replace("_name", "").replace(";", "");
+
+        // LowTemperatureDiamonds -> Low Temperature Diamonds
+        t = t.replaceAll("(?<=[a-z])(?=[A-Z])", " ");
+        t = t.replace('_', ' ');
+        t = t.replaceAll("\\s+", " ").trim();
+        return t;
     }
 
 

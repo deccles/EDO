@@ -19,6 +19,7 @@ import org.dce.ed.logreader.event.FssBodySignalsEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.LoadGameEvent;
 import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ReceiveTextEvent;
 import org.dce.ed.logreader.event.SaasignalsFoundEvent;
 import org.dce.ed.logreader.event.ScanEvent;
@@ -102,10 +103,35 @@ public class EliteLogParser {
             
             case CARRIER_JUMP_CANCELLED:
                 return new GenericEvent(ts, type, obj);
+
+            case PROSPECTED_ASTEROID:
+                return parseProspectedAsteroid(ts, obj);
 default:
                 // For everything else, fall back to generic event.
                 return new GenericEvent(ts, type, obj);
         }
+    }
+
+    private ProspectedAsteroidEvent parseProspectedAsteroid(Instant ts, JsonObject obj) {
+        String motherlode = getString(obj, "MotherlodeMaterial");
+
+        List<ProspectedAsteroidEvent.MaterialProportion> materials = new ArrayList<>();
+        if (obj.has("Materials") && obj.get("Materials").isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray("Materials");
+            for (JsonElement el : arr) {
+                if (el == null || !el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject m = el.getAsJsonObject();
+                String name = getString(m, "Name");
+                double proportion = m.has("Proportion") ? m.get("Proportion").getAsDouble() : 0.0;
+                if (name != null && !name.isBlank()) {
+                    materials.add(new ProspectedAsteroidEvent.MaterialProportion(name, proportion));
+                }
+            }
+        }
+
+        return new ProspectedAsteroidEvent(ts, obj, materials, motherlode);
     }
 
     private CarrierJumpRequestEvent parseCarrierJumpRequest(Instant ts, JsonObject obj) {

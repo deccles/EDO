@@ -45,6 +45,7 @@ public enum EliteEventType {
     RECEIVE_TEXT("ReceiveText"),
     MUSIC("Music"),
     RESERVOIR_REPLENISHED("ReservoirReplenished"),
+    PROSPECTED_ASTEROID("ProspectedAsteroid"),
     STATUS("Status"), // from Status.json or live journal
     // Catch-all for events we don't model explicitly yet:
     SCAN_ORGANIC("ScanOrganic"),
