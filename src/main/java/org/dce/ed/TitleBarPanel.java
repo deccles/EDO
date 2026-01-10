@@ -2,6 +2,8 @@ package org.dce.ed;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -29,7 +31,7 @@ import javax.swing.border.EmptyBorder;
  */
 public class TitleBarPanel extends JPanel {
     public static final int TOP_RESIZE_STRIP = 9;
-    
+
     private final OverlayFrame frame;
     private Point dragOffset;
     private final CloseButton closeButton;
@@ -101,10 +103,10 @@ public class TitleBarPanel extends JPanel {
         rightStatusLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         rightStatusLabel.setHorizontalAlignment(SwingConstants.RIGHT);
 
-JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
-rightPanel.setOpaque(false);
-rightPanel.add(settingsButton);
-rightPanel.add(closeButton);
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
+        rightPanel.setOpaque(false);
+        rightPanel.add(settingsButton);
+        rightPanel.add(closeButton);
 
         add(leftPanel, BorderLayout.WEST);
         // Put the status label in the center so it can expand, but keep its text right-justified.
@@ -115,16 +117,35 @@ rightPanel.add(closeButton);
         setPreferredSize(new Dimension(100, 32));
 
         // Drag-to-move behavior
-        // How many pixels from the very top we reserve for "resize", not "drag"
         MouseAdapter dragListener = new MouseAdapter() {
+
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                Point p = toTitleBarPoint(e);
+                if (p.y <= TOP_RESIZE_STRIP) {
+                    setCursor(Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR));
+                } else {
+                    setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                }
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                setCursor(Cursor.getDefaultCursor());
+            }
+
             @Override
             public void mousePressed(MouseEvent e) {
                 if (!SwingUtilities.isLeftMouseButton(e)) {
                     return;
                 }
 
+                // IMPORTANT: event coordinates are relative to the event source (which might be a child).
+                // Convert to TitleBarPanel coordinates so our resize-strip test matches what the user sees.
+                Point p = toTitleBarPoint(e);
+
                 // If we’re in the very top strip, this is a “resize zone” – let ResizeHandler handle it.
-                if (e.getY() <= TOP_RESIZE_STRIP) {
+                if (p.y <= TOP_RESIZE_STRIP) {
                     dragOffset = null;
                     setCursor(Cursor.getDefaultCursor());
                     return;
@@ -152,16 +173,30 @@ rightPanel.add(closeButton);
                 int newY = e.getYOnScreen() - dragOffset.y;
                 frame.setLocation(newX, newY);
             }
+
+            private Point toTitleBarPoint(MouseEvent e) {
+                Component src = (Component) e.getSource();
+                return SwingUtilities.convertPoint(src, e.getPoint(), TitleBarPanel.this);
+            }
         };
 
+        // NOTE: Swing mouse events do NOT bubble to parents. Most of the title bar is covered by child
+        // components (labels/panels), so attach to those children as well. Do NOT attach to the buttons.
+        installDragListener(this, dragListener);
+    }
 
-        
-        addMouseListener(dragListener);
-        addMouseMotionListener(dragListener);
+    private void installDragListener(Component c, MouseAdapter dragListener) {
+        c.addMouseListener(dragListener);
+        c.addMouseMotionListener(dragListener);
 
-
-        addMouseListener(dragListener);
-        addMouseMotionListener(dragListener);
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                if (child instanceof CloseButton || child instanceof SettingsButton) {
+                    continue;
+                }
+                installDragListener(child, dragListener);
+            }
+        }
     }
 
     public void setTitleText(String text) {
@@ -172,6 +207,7 @@ rightPanel.add(closeButton);
         final String finalText = text;
         SwingUtilities.invokeLater(() -> titleLabel.setText(finalText));
     }
+
     /**
      * Hide/show the title bar controls when pass-through mode changes.
      * When pass-through is enabled, both the close and gear icons are hidden.
@@ -218,14 +254,13 @@ rightPanel.add(closeButton);
                 g2.setColor(hover ? hoverColor : base);
                 g2.fillRoundRect(0, 0, w - 1, h - 1, 6, 6);
 
-                g2.setColor(new Color(255, 255, 255, 180));
-                g2.drawRoundRect(0, 0, w - 1, h - 1, 6, 6);
-
-                g2.setStroke(new java.awt.BasicStroke(2f));
                 g2.setColor(Color.WHITE);
-                int pad = 6;
-                g2.drawLine(pad, pad, w - pad - 1, h - pad - 1);
-                g2.drawLine(w - pad - 1, pad, pad, h - pad - 1);
+                g2.setStroke(new java.awt.BasicStroke(2f));
+
+                int pad = 7;
+                g2.drawLine(pad, pad, w - pad, h - pad);
+                g2.drawLine(w - pad, pad, pad, h - pad);
+
             } finally {
                 g2.dispose();
             }
@@ -233,8 +268,8 @@ rightPanel.add(closeButton);
     }
 
     /**
-     * Custom gear icon button (vector-drawn, SVG-style).
-     * Clicking opens the Preferences dialog.
+     * Simple custom settings button: dark box with a gear-ish shape.
+     * Drawn with vector shapes.
      */
     private static class SettingsButton extends JPanel {
 
@@ -262,67 +297,48 @@ rightPanel.add(closeButton);
                 int w = getWidth();
                 int h = getHeight();
 
-                Color base = new Color(80, 80, 80, 230);
-                Color hoverColor = new Color(110, 110, 140, 230);
+                Color base = new Color(60, 60, 60, 230);
+                Color hoverColor = new Color(90, 90, 90, 230);
                 g2.setColor(hover ? hoverColor : base);
                 g2.fillRoundRect(0, 0, w - 1, h - 1, 6, 6);
 
-                g2.setColor(new Color(220, 220, 255, 180));
-                g2.drawRoundRect(0, 0, w - 1, h - 1, 6, 6);
-
-                // Draw gear body
                 g2.setColor(Color.WHITE);
-                g2.setStroke(new java.awt.BasicStroke(1.7f));
 
                 int cx = w / 2;
                 int cy = h / 2;
-                int size = Math.min(w, h) - 8; // leave padding inside the button
-                int rOuter = size / 2;
-                int rInner = rOuter - 3;
 
-                // Translate to center for simpler math
-                g2.translate(cx, cy);
+                // Draw a simple gear: small circle + 6 spokes
+                int rOuter = 7;
+                int rInner = 3;
 
-                // Outer gear circle
-                g2.drawOval(-rOuter, -rOuter, 2 * rOuter, 2 * rOuter);
-
-                // Inner hub
-                g2.fillOval(-rInner, -rInner, 2 * rInner, 2 * rInner);
-
-                // Teeth: 8 small rectangles around the rim
-                int teeth = 8;
-                double angleStep = 2.0 * Math.PI / teeth;
-                int toothWidth = 4;
-                int toothHeight = 3;
-
-                for (int i = 0; i < teeth; i++) {
-                    double angle = i * angleStep;
-                    AffineTransform old = g2.getTransform();
-                    g2.rotate(angle);
-
-                    // Draw one tooth centered horizontally above the outer circle
-                    int yTop = -rOuter - toothHeight + 1;
-                    g2.fillRoundRect(-toothWidth / 2, yTop, toothWidth, toothHeight, 2, 2);
-
-                    g2.setTransform(old);
+                for (int i = 0; i < 6; i++) {
+                    double ang = i * (Math.PI / 3.0);
+                    int x1 = cx + (int) (Math.cos(ang) * (rInner + 1));
+                    int y1 = cy + (int) (Math.sin(ang) * (rInner + 1));
+                    int x2 = cx + (int) (Math.cos(ang) * (rOuter));
+                    int y2 = cy + (int) (Math.sin(ang) * (rOuter));
+                    g2.setStroke(new java.awt.BasicStroke(2f));
+                    g2.drawLine(x1, y1, x2, y2);
                 }
+
+                g2.fillOval(cx - rInner, cy - rInner, rInner * 2, rInner * 2);
+
             } finally {
                 g2.dispose();
             }
         }
     }
 
+    public void setRightStatusText(String text) {
+        if (text == null) {
+            text = "";
+        }
 
-public void setRightStatusText(String text) {
-    if (text == null) {
-        text = "";
+        final String finalText = text;
+        if (SwingUtilities.isEventDispatchThread()) {
+            rightStatusLabel.setText(finalText);
+        } else {
+            SwingUtilities.invokeLater(() -> rightStatusLabel.setText(finalText));
+        }
     }
-
-    final String finalText = text;
-    if (SwingUtilities.isEventDispatchThread()) {
-        rightStatusLabel.setText(finalText);
-    } else {
-        SwingUtilities.invokeLater(() -> rightStatusLabel.setText(finalText));
-    }
-}
 }
