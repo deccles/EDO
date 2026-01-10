@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import javax.swing.ButtonGroup;
@@ -44,6 +45,12 @@ import org.dce.ed.tts.TtsSprintf;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import java.util.Locale;
+import org.dce.ed.logreader.EliteEventType;
+import org.dce.ed.logreader.EliteLogFileLocator;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 
 /**
  * Custom transparent "tabbed pane" for the overlay.
@@ -75,6 +82,8 @@ public class EliteOverlayTabbedPane extends JPanel {
     private final BiologyTabPanel biologyTab;
 
     private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
+
+    private long lastLimpetReminderMs;
 
     private JButton routeButton;
     private JButton systemButton;
@@ -213,6 +222,10 @@ public class EliteOverlayTabbedPane extends JPanel {
 
         if (event instanceof StartJumpEvent) {
             showRouteTabFromStatusWatcher();
+        }
+
+        if (event.getType() == EliteEventType.UNDOCKED || event instanceof StartJumpEvent) {
+            maybeRemindAboutLimpets();
         }
     }
 
@@ -621,6 +634,151 @@ public class EliteOverlayTabbedPane extends JPanel {
         revalidate();
         repaint();
     }
+    private void maybeRemindAboutLimpets() {
+        // Avoid spamming if multiple events fire close together.
+        long now = System.currentTimeMillis();
+        if (now - lastLimpetReminderMs < 60_000L) {
+            return;
+        }
+
+        Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+        Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
+        Path modulesFile = EliteLogFileLocator.findModulesInfoFile(journalDir);
+        if (cargoFile == null || modulesFile == null) {
+            return;
+        }
+
+        JsonObject cargo = readJsonObject(cargoFile);
+        JsonObject modules = readJsonObject(modulesFile);
+        if (cargo == null || modules == null) {
+            return;
+        }
+
+        if (!hasMiningEquipment(modules)) {
+            return;
+        }
+        if (!isCargoEmpty(cargo)) {
+            return;
+        }
+
+        lastLimpetReminderMs = now;
+        tts.speakf("Did you forget your limpets again commander?");
+    }
+
+    private static JsonObject readJsonObject(Path file) {
+        if (file == null) {
+            return null;
+        }
+        try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            JsonElement el = JsonParser.parseReader(r);
+            if (el != null && el.isJsonObject()) {
+                return el.getAsJsonObject();
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static boolean isCargoEmpty(JsonObject cargo) {
+        if (cargo == null) {
+            return true;
+        }
+
+        // Typical format: { "Inventory": [ { "Name": "drones", "Count": 32, ... }, ... ] }
+        JsonArray inv = null;
+        if (cargo.has("Inventory") && cargo.get("Inventory").isJsonArray()) {
+            inv = cargo.getAsJsonArray("Inventory");
+        } else if (cargo.has("inventory") && cargo.get("inventory").isJsonArray()) {
+            inv = cargo.getAsJsonArray("inventory");
+        }
+        if (inv == null) {
+            return true;
+        }
+
+        long total = 0;
+        for (JsonElement e : inv) {
+            if (e == null || !e.isJsonObject()) {
+                continue;
+            }
+            JsonObject o = e.getAsJsonObject();
+            if (o.has("Count") && !o.get("Count").isJsonNull()) {
+                try {
+                    total += o.get("Count").getAsLong();
+                } catch (Exception ignored) {
+                }
+            } else if (o.has("count") && !o.get("count").isJsonNull()) {
+                try {
+                    total += o.get("count").getAsLong();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return total <= 0;
+    }
+
+    private static boolean hasMiningEquipment(JsonObject modulesInfo) {
+        if (modulesInfo == null) {
+            return false;
+        }
+
+        JsonArray mods = null;
+        if (modulesInfo.has("Modules") && modulesInfo.get("Modules").isJsonArray()) {
+            mods = modulesInfo.getAsJsonArray("Modules");
+        } else if (modulesInfo.has("modules") && modulesInfo.get("modules").isJsonArray()) {
+            mods = modulesInfo.getAsJsonArray("modules");
+        }
+        if (mods == null) {
+            return false;
+        }
+
+        // Conservative keyword match on module item names.
+        String[] miningKeywords = new String[] {
+                "prospector",
+                "collector",
+                "refinery",
+                "mining",
+                "mininglaser",
+                "abrasion",
+                "seismic",
+                "subsurf",
+                "pulsewave",
+                "displacement",
+        };
+
+        for (JsonElement e : mods) {
+            if (e == null || !e.isJsonObject()) {
+                continue;
+            }
+            JsonObject m = e.getAsJsonObject();
+
+            String item = null;
+            if (m.has("Item") && !m.get("Item").isJsonNull()) {
+                try {
+                    item = m.get("Item").getAsString();
+                } catch (Exception ignored) {
+                }
+            } else if (m.has("item") && !m.get("item").isJsonNull()) {
+                try {
+                    item = m.get("item").getAsString();
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (item == null || item.isBlank()) {
+                continue;
+            }
+
+            String norm = item.toLowerCase(Locale.US);
+            for (String kw : miningKeywords) {
+                if (norm.contains(kw)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
 
 public void applyUiFontPreferences() {
         systemTab.applyUiFontPreferences();

@@ -18,6 +18,7 @@ public enum EliteEventType {
     LOAD_GAME("LoadGame"),
     LOCATION("Location"),
     START_JUMP("StartJump"),
+    UNDOCKED("Undocked"),
     SUPERCRUISE_ENTRY("SupercruiseEntry"),
     SUPERCRUISE_EXIT("SupercruiseExit"),
     FSD_JUMP("FSDJump"),

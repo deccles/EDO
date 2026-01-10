@@ -72,6 +72,29 @@ public final class EliteLogFileLocator {
         return Files.isRegularFile(status) ? status : null;
     }
 
+
+    /**
+     * Convenience helper for Cargo.json in the same folder as the journals.
+     */
+    public static Path findCargoFile(Path journalDirectory) {
+        if (journalDirectory == null) {
+            return null;
+        }
+        Path cargo = journalDirectory.resolve("Cargo.json");
+        return Files.isRegularFile(cargo) ? cargo : null;
+    }
+
+    /**
+     * Convenience helper for ModulesInfo.json in the same folder as the journals.
+     */
+    public static Path findModulesInfoFile(Path journalDirectory) {
+        if (journalDirectory == null) {
+            return null;
+        }
+        Path modules = journalDirectory.resolve("ModulesInfo.json");
+        return Files.isRegularFile(modules) ? modules : null;
+    }
+
     /**
      * Quick check for whether the given directory looks like a journal folder.
      */

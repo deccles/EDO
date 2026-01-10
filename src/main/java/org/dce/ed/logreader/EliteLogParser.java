@@ -58,6 +58,8 @@ public class EliteLogParser {
                 return parseLocation(ts, obj);
             case START_JUMP:
                 return parseStartJump(ts, obj);
+            case UNDOCKED:
+                return new EliteLogEvent.GenericEvent(ts, type, obj);
             case FSD_JUMP:
                 return parseFsdJump(ts, obj);
             case FSD_TARGET:
