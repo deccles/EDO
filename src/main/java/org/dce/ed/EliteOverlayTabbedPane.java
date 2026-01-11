@@ -224,7 +224,7 @@ public class EliteOverlayTabbedPane extends JPanel {
             showRouteTabFromStatusWatcher();
         }
 
-        if (event.getType() == EliteEventType.UNDOCKED || event instanceof StartJumpEvent) {
+        if (event.getType() == EliteEventType.UNDOCKED) {
             maybeRemindAboutLimpets();
         }
     }
