@@ -67,6 +67,7 @@ public final class StatusFileMonitor implements Closeable {
         private final Long destinationSystem;
         private final Integer destinationBody;
         private final String destinationName;
+        private final String destinationNameLocalised;
 
         public StatusSnapshot(Instant timestamp,
                               int flags,
@@ -74,7 +75,8 @@ public final class StatusFileMonitor implements Closeable {
                               DecodedFlags decoded,
                               Long destinationSystem,
                               Integer destinationBody,
-                              String destinationName) {
+                              String destinationName,
+                              String destinationNameLocalised) {
             this.timestamp = timestamp;
             this.flags = flags;
             this.flags2 = flags2;
@@ -82,6 +84,7 @@ public final class StatusFileMonitor implements Closeable {
             this.destinationSystem = destinationSystem;
             this.destinationBody = destinationBody;
             this.destinationName = destinationName;
+            this.destinationNameLocalised = destinationNameLocalised;
         }
 
         public Instant getTimestamp() {
@@ -112,7 +115,70 @@ public final class StatusFileMonitor implements Closeable {
             return destinationName;
         }
 
-        @Override
+        
+
+        public String getDestinationNameLocalised() {
+            return destinationNameLocalised;
+        }
+
+        public String getDestinationDisplayName() {
+            return toDisplayName(destinationName, destinationNameLocalised);
+        }
+
+        private static String toDisplayName(String rawName, String localisedName) {
+            if (localisedName != null && !localisedName.isBlank()) {
+                return localisedName;
+            }
+            if (rawName == null || rawName.isBlank()) {
+                return null;
+            }
+
+            if (rawName.startsWith("$")) {
+                String extracted = extractNameFromKey(rawName);
+                if (extracted != null) {
+                    return extracted;
+                }
+                return deKey(rawName);
+            }
+            return rawName;
+        }
+
+        private static String extractNameFromKey(String key) {
+            int idx = key.indexOf("#name=");
+            if (idx < 0) {
+                return null;
+            }
+            int start = idx + "#name=".length();
+            int end = key.indexOf(';', start);
+            if (end < 0) {
+                end = key.length();
+            }
+            String v = key.substring(start, end);
+            if (v.isBlank()) {
+                return null;
+            }
+            return v;
+        }
+
+        private static String deKey(String key) {
+            String s = key;
+            if (s.startsWith("$")) {
+                s = s.substring(1);
+            }
+            if (s.endsWith(";")) {
+                s = s.substring(0, s.length() - 1);
+            }
+            int colon = s.indexOf(':');
+            if (colon >= 0) {
+                s = s.substring(0, colon);
+            }
+            s = s.replace('_', ' ').trim();
+            if (s.isBlank()) {
+                return null;
+            }
+            return s;
+        }
+@Override
         public String toString() {
             return "StatusSnapshot{" +
                     "timestamp=" + timestamp +
@@ -389,6 +455,7 @@ public final class StatusFileMonitor implements Closeable {
             Long destSystem = null;
             Integer destBody = null;
             String destName = null;
+            String destNameLocalised = null;
 
             JsonElement destEl = root.get("Destination");
             if (destEl != null && destEl.isJsonObject()) {
@@ -408,17 +475,15 @@ public final class StatusFileMonitor implements Closeable {
                 if (dest.has("Name") && !dest.get("Name").isJsonNull()) {
                     destName = dest.get("Name").getAsString();
                 }
+                if (dest.has("Name_Localised") && !dest.get("Name_Localised").isJsonNull()) {
+                    try {
+                        destNameLocalised = dest.get("Name_Localised").getAsString();
+                    } catch (Exception ignored) {
+                    }
+                }
             }
 
-            StatusSnapshot snapshot = new StatusSnapshot(
-                    ts,
-                    flags,
-                    flags2,
-                    decoded,
-                    destSystem,
-                    destBody,
-                    destName
-            );
+            StatusSnapshot snapshot = new StatusSnapshot(ts, flags, flags2, decoded, destSystem, destBody, destName, destNameLocalised);
 
             boolean hyperjumpChargingNow =
                     decoded.fsdCharging &&

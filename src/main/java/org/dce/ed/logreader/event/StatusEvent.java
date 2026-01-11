@@ -32,6 +32,12 @@ public class StatusEvent extends EliteLogEvent {
     private final Integer destinationBody;
     private final String destinationName;
 
+    /**
+     * Human-readable destination name (when provided by Elite).
+     * In Status.json this appears as Destination.Name_Localised.
+     */
+    private final String destinationNameLocalised;
+
     private final DecodedFlags decodedFlags;
 
     public StatusEvent(Instant timestamp,
@@ -54,7 +60,8 @@ public class StatusEvent extends EliteLogEvent {
                        Double planetRadius,
                        Long destinationSystem,
                        Integer destinationBody,
-                       String destinationName) {
+                       String destinationName,
+                       String destinationNameLocalised) {
 
         super(timestamp, EliteEventType.STATUS, rawJson);
         this.flags = flags;
@@ -78,6 +85,7 @@ public class StatusEvent extends EliteLogEvent {
         this.destinationSystem = destinationSystem;
         this.destinationBody = destinationBody;
         this.destinationName = destinationName;
+        this.destinationNameLocalised = destinationNameLocalised;
 
         this.decodedFlags = new DecodedFlags(flags, flags2);
     }
@@ -158,6 +166,79 @@ public class StatusEvent extends EliteLogEvent {
 
     public String getDestinationName() {
         return destinationName;
+    }
+
+    public String getDestinationNameLocalised() {
+        return destinationNameLocalised;
+    }
+
+    /**
+     * Preferred display name for the destination.
+     *
+     * Elite sometimes reports Destination.Name as an internal localisation key (often starting with '$').
+     * When Name_Localised exists, it is the best player-facing text.
+     */
+    public String getDestinationDisplayName() {
+        return toDisplayName(destinationName, destinationNameLocalised);
+    }
+
+    private static String toDisplayName(String rawName, String localisedName) {
+        if (localisedName != null && !localisedName.isBlank()) {
+            return localisedName;
+        }
+        if (rawName == null || rawName.isBlank()) {
+            return null;
+        }
+
+        // Many non-body targets come through as localisation keys like "$SOME_KEY;".
+        // Some include parameters like ":#name=Foo;"; extract that if present.
+        if (rawName.startsWith("$")) {
+            String extracted = extractNameFromKey(rawName);
+            if (extracted != null) {
+                return extracted;
+            }
+            return deKey(rawName);
+        }
+
+        return rawName;
+    }
+
+    private static String extractNameFromKey(String key) {
+        // Example: "$COMMS_entered:#name=Sol;" -> "Sol"
+        int idx = key.indexOf("#name=");
+        if (idx < 0) {
+            return null;
+        }
+        int start = idx + "#name=".length();
+        int end = key.indexOf(';', start);
+        if (end < 0) {
+            end = key.length();
+        }
+        String v = key.substring(start, end);
+        if (v.isBlank()) {
+            return null;
+        }
+        return v;
+    }
+
+    private static String deKey(String key) {
+        String s = key;
+        if (s.startsWith("$")) {
+            s = s.substring(1);
+        }
+        if (s.endsWith(";")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        // Drop any ":..." suffix which is usually parameters.
+        int colon = s.indexOf(':');
+        if (colon >= 0) {
+            s = s.substring(0, colon);
+        }
+        s = s.replace('_', ' ').trim();
+        if (s.isBlank()) {
+            return null;
+        }
+        return s;
     }
 
     // ---- Convenience accessors for flags ----

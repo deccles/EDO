@@ -408,7 +408,7 @@ public class RouteTabPanel extends JPanel {
 	        // Remember destination fields (they may refer to either a target system or a body).
 	        destinationSystemAddress = se.getDestinationSystem();
 	        destinationBodyId = se.getDestinationBody();
-	        destinationName = se.getDestinationName();
+	        destinationName = se.getDestinationDisplayName();
 
 	        // Some journal setups rely on Status.json "Destination" fields without emitting FsdTarget.
 	        if (destinationBodyId == null && destinationName != null && !destinationName.isBlank()) {
@@ -419,7 +419,7 @@ public class RouteTabPanel extends JPanel {
 	        }
         	
         	if (hyperdriveCharging && !timerRunning) {
-        		pendingJumpSystemName = se.getDestinationName();
+	        		pendingJumpSystemName = se.getDestinationDisplayName();
         		jumpFlashTimer.start();
         	} 
         	if (!hyperdriveCharging && timerRunning ){

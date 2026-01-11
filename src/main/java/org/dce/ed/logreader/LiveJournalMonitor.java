@@ -414,6 +414,7 @@ public final class LiveJournalMonitor {
             Long destSystem = null;
             Integer destBody = null;
             String destName = null;
+            String destNameLocalised = null;
 
             JsonElement destEl = root.get("Destination");
             if (destEl != null && destEl.isJsonObject()) {
@@ -442,6 +443,14 @@ public final class LiveJournalMonitor {
                     } catch (Exception ignored) {
                     }
                 }
+
+                JsonElement nameLocEl = dest.get("Name_Localised");
+                if (nameLocEl != null && !nameLocEl.isJsonNull()) {
+                    try {
+                        destNameLocalised = nameLocEl.getAsString();
+                    } catch (Exception ignored) {
+                    }
+                }
             }
 
             // Build the StatusEvent using the extended constructor
@@ -467,7 +476,8 @@ public final class LiveJournalMonitor {
                             planetRadius,
                             destSystem,
                             destBody,
-                            destName
+                            destName,
+                            destNameLocalised
                     );
 
             // Emit Status updates promptly (not just Flags changes).

@@ -376,6 +376,7 @@ default:
         Long destSystem = null;
         Integer destBody = null;
         String destName = null;
+        String destNameLocalised = null;
         if (obj.has("Destination") && obj.get("Destination").isJsonObject()) {
             JsonObject dest = obj.getAsJsonObject("Destination");
             if (dest.has("System") && !dest.get("System").isJsonNull()) {
@@ -391,10 +392,20 @@ default:
             if (dest.has("Name") && !dest.get("Name").isJsonNull()) {
                 destName = dest.get("Name").getAsString();
             }
+            if (dest.has("Name_Localised") && !dest.get("Name_Localised").isJsonNull()) {
+                try {
+                    destNameLocalised = dest.get("Name_Localised").getAsString();
+                } catch (Exception ignored) {
+                }
+            }
         }
 
         if (bodyName == null || bodyName.isBlank()) {
-            bodyName = destName;
+            if (destNameLocalised != null && !destNameLocalised.isBlank()) {
+                bodyName = destNameLocalised;
+            } else {
+                bodyName = destName;
+            }
         }
 
         return new StatusEvent(
@@ -418,7 +429,8 @@ default:
                 planetRadius,
                 destSystem,
                 destBody,
-                destName
+                destName,
+                destNameLocalised
         );
     }
     private ScanOrganicEvent parseScanOrganic(Instant ts, JsonObject json) {
