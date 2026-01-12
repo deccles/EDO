@@ -1,7 +1,12 @@
 package org.dce.ed.util;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -25,8 +30,6 @@ import org.dce.ed.edsm.SphereSystemsResponse;
 import org.dce.ed.edsm.SystemResponse;
 import org.dce.ed.edsm.SystemStationsResponse;
 import org.dce.ed.edsm.TrafficResponse;
-import org.dce.ed.edsm.BodiesResponse.Body;
-import org.dce.ed.edsm.BodiesResponse.ParentRef;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 
@@ -35,6 +38,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
 public class EdsmClient {
@@ -69,26 +73,76 @@ public class EdsmClient {
     	System.out.println(showBodies);
     }
 
-    private <T> T get(String url, Class<T> clazz) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "EDO-Tool")
-                .GET()
-                .build();
+    public <T> T get(String urlString, Class<T> clazz) throws IOException {
+        HttpURLConnection conn = null;
+        String body = "";
 
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        String body = resp.body();
+        try {
+            URL url = new URL(urlString);
+            conn = (HttpURLConnection) url.openConnection();
 
-        // Remember the *raw* JSON so the query tool can display it verbatim
-        lastRawJson = body;
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(20_000);
+            conn.setRequestProperty("Accept", "application/json");
 
-        if (body == null || body.isEmpty()) {
-            return null;
+            int code = conn.getResponseCode();
+
+            InputStream in;
+            if (code >= 200 && code < 300) {
+                in = conn.getInputStream();
+            } else {
+                in = conn.getErrorStream();
+                if (in == null) {
+                    throw new IOException("EDSM HTTP " + code + " with empty error body: " + urlString);
+                }
+            }
+
+            body = readAll(in).trim();
+
+            if (body.isEmpty()) {
+                throw new IOException("EDSM returned empty response (HTTP " + code + "): " + urlString);
+            }
+
+            JsonElement el;
+            try {
+                el = gson.fromJson(body, JsonElement.class);
+            } catch (JsonParseException ex) {
+                throw new IOException("EDSM returned invalid JSON (HTTP " + code + "): " + summarize(body), ex);
+            }
+
+            // Your current failure mode: top-level JSON string, e.g. "API call limit exceeded"
+            if (el != null && el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
+                String msg = el.getAsString();
+                throw new IOException("EDSM returned JSON string instead of object (HTTP " + code + "): " + msg);
+            }
+
+            return gson.fromJson(el, clazz);
+
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
-
-        return gson.fromJson(body, clazz);
+    }
+    private static String readAll(InputStream in) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line);
+            }
+        }
+        return sb.toString();
     }
 
+    private static String summarize(String s) {
+        s = s.replace('\n', ' ').replace('\r', ' ').trim();
+        if (s.length() > 240) {
+            return s.substring(0, 240) + "...";
+        }
+        return s;
+    }
     private String encode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
