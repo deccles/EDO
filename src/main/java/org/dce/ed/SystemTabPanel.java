@@ -156,6 +156,11 @@ public class SystemTabPanel extends JPanel {
         table.setFont(uiFont);
         table.setRowHeight(24);
 
+        table.setFocusable(false);
+        table.setRowSelectionAllowed(false);
+        table.setColumnSelectionAllowed(false);
+        table.setCellSelectionEnabled(false);
+        
         JTableHeader header = table.getTableHeader();
         header.setOpaque(false);
         header.setForeground(EdoUi.ED_ORANGE);
@@ -997,7 +1002,10 @@ static class Row {
 
     // NEW: custom JTable to draw separators only between systems
     private class SystemBodiesTable extends JTable {
-
+        @Override
+        public boolean isCellEditable(int r, int c) {
+            return false;
+        }
         SystemBodiesTable(SystemBodiesTableModel model) {
             super(model);
         }

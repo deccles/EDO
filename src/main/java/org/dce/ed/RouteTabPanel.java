@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EventObject;
 import java.util.List;
 
 import javax.swing.Icon;
@@ -146,6 +147,14 @@ public class RouteTabPanel extends JPanel {
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
+
+            @Override
+            public boolean editCellAt(int row, int column, EventObject e) {
+                // Hard-disable editing. Some LAF / editor paths can still try to start an editor,
+                // and with a non-opaque table that can look like rows "disappear".
+                return false;
+            }
+
             @Override
             protected void configureEnclosingScrollPane() {
                 super.configureEnclosingScrollPane();
@@ -160,6 +169,19 @@ public class RouteTabPanel extends JPanel {
                 }
             }
         };
+
+        // Belt-and-suspenders: remove editors so nothing can ever enter edit mode.
+        table.setDefaultEditor(Object.class, null);
+        table.setDefaultEditor(String.class, null);
+
+        // Prevent focus/selection/edit initiation entirely (keeps look identical but stops click weirdness)
+        table.setFocusable(false);
+        table.setRowSelectionAllowed(false);
+        table.setColumnSelectionAllowed(false);
+        table.setCellSelectionEnabled(false);
+        table.setSurrendersFocusOnKeystroke(false);
+        table.putClientProperty("JTable.autoStartsEdit", Boolean.FALSE);
+
         table.setOpaque(false);
         table.setBorder(null);
         table.setFillsViewportHeight(true);
@@ -647,20 +669,30 @@ public class RouteTabPanel extends JPanel {
         int insertAt = bestInsertionIndexByCoords(entries, coords);
         entries.add(insertAt, synthetic);
 
-        if (coords == null && targetSystemName != null && edsmCoordsFetchInProgress.add(targetSystemName)) {
-            new Thread(() -> {
-                Double[] fetched = resolveSystemCoordsFromEdsm(targetSystemName);
-                if (fetched == null) {
-                    edsmCoordsFetchInProgress.remove(targetSystemName);
-                    return;
-                }
-                SwingUtilities.invokeLater(() -> {
-                    // Rebuild again now that we have coordinates; this will relocate the row to a better position.
-                    // (Also avoids mutating the table model list in-place from a background thread.)
-                    rebuildDisplayedEntries();
-                });
-                edsmCoordsFetchInProgress.remove(targetSystemName);
-            }, "RouteTargetCoords-" + targetSystemName).start();
+        if (coords == null && targetSystemName != null) {
+            final String targetName = targetSystemName;
+
+            if (edsmCoordsFetchInProgress.add(targetName)) {
+                Thread t = new Thread(() -> {
+                    try {
+                        Double[] fetched = resolveSystemCoordsFromEdsm(targetName);
+                        if (fetched == null) {
+                            return;
+                        }
+
+                        SwingUtilities.invokeLater(() -> {
+                            // Rebuild again now that we have coordinates; this will relocate the row to a better position.
+                            // (Also avoids mutating the table model list in-place from a background thread.)
+                            rebuildDisplayedEntries();
+                        });
+                    } finally {
+                        edsmCoordsFetchInProgress.remove(targetName);
+                    }
+                }, "RouteTargetCoords-" + targetName);
+
+                t.setDaemon(true);
+                t.start();
+            }
         }
     }
 
