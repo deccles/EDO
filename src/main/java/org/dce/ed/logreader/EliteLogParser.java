@@ -116,6 +116,7 @@ default:
 
     private ProspectedAsteroidEvent parseProspectedAsteroid(Instant ts, JsonObject obj) {
         String motherlode = getString(obj, "MotherlodeMaterial");
+        String content = getString(obj, "Content");
 
         List<ProspectedAsteroidEvent.MaterialProportion> materials = new ArrayList<>();
         if (obj.has("Materials") && obj.get("Materials").isJsonArray()) {
@@ -133,7 +134,7 @@ default:
             }
         }
 
-        return new ProspectedAsteroidEvent(ts, obj, materials, motherlode);
+        return new ProspectedAsteroidEvent(ts, obj, materials, motherlode, content);
     }
 
     private CarrierJumpRequestEvent parseCarrierJumpRequest(Instant ts, JsonObject obj) {

@@ -52,6 +52,7 @@ public class PreferencesDialog extends JDialog {
     // Mining-tab fields
     private JTextField prospectorMaterialsField;
     private JSpinner prospectorMinPropSpinner;
+    private JSpinner prospectorMinAvgValueSpinner;
 
     private boolean okPressed;
     private final Font originalUiFont;
@@ -301,8 +302,19 @@ public class PreferencesDialog extends JDialog {
 
         gbc.gridx = 0;
         gbc.gridy++;
+        JLabel minAvgValueLabel = new JLabel("Minimum galactic average value (Cr/t):");
+        content.add(minAvgValueLabel, gbc);
+
+        gbc.gridx = 1;
+        int currentAvg = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
+        prospectorMinAvgValueSpinner = new JSpinner(new SpinnerNumberModel(currentAvg, 0, 10_000_000, 1000));
+        ((JSpinner.DefaultEditor) prospectorMinAvgValueSpinner.getEditor()).getTextField().setColumns(8);
+        content.add(prospectorMinAvgValueSpinner, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
         gbc.gridwidth = 2;
-        JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the threshold.");
+        JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the thresholds.");
         content.add(hint, gbc);
 
         panel.add(content, BorderLayout.NORTH);
@@ -598,6 +610,15 @@ private JPanel createSpeechPanel() {
             try {
                 double p = ((Number) prospectorMinPropSpinner.getValue()).doubleValue();
                 OverlayPreferences.setProspectorMinProportionPercent(p);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+        if (prospectorMinAvgValueSpinner != null) {
+            try {
+                int v = ((Number) prospectorMinAvgValueSpinner.getValue()).intValue();
+                OverlayPreferences.setProspectorMinAvgValueCrPerTon(v);
             } catch (Exception e) {
                 // ignore
             }

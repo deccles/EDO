@@ -38,14 +38,17 @@ public class ProspectedAsteroidEvent extends EliteLogEvent {
 
     private final List<MaterialProportion> materials;
     private final String motherlodeMaterial;
+    private final String content;
 
     public ProspectedAsteroidEvent(Instant timestamp,
                                   JsonObject rawJson,
                                   List<MaterialProportion> materials,
-                                  String motherlodeMaterial) {
+                                  String motherlodeMaterial,
+                                  String content) {
         super(timestamp, EliteEventType.PROSPECTED_ASTEROID, rawJson);
         this.materials = (materials == null) ? List.of() : List.copyOf(materials);
         this.motherlodeMaterial = motherlodeMaterial;
+        this.content = content;
     }
 
     public List<MaterialProportion> getMaterials() {
@@ -54,5 +57,12 @@ public class ProspectedAsteroidEvent extends EliteLogEvent {
 
     public String getMotherlodeMaterial() {
         return motherlodeMaterial;
+    }
+
+    /**
+     * Journal field: "Content". Typically "Low", "Medium", or "High".
+     */
+    public String getContent() {
+        return content;
     }
 }

@@ -23,8 +23,10 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.OptionalInt;
 import java.util.Set;
 
 import javax.swing.ButtonGroup;
@@ -38,6 +40,8 @@ import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
+import org.dce.ed.mining.GalacticAveragePrices;
+import org.dce.ed.mining.GalacticAveragePrices;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.tts.PollyTtsCached;
@@ -82,6 +86,8 @@ public class EliteOverlayTabbedPane extends JPanel {
     private final BiologyTabPanel biologyTab;
 
     private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
+
+    private final GalacticAveragePrices galacticAvgPrices = GalacticAveragePrices.loadDefault();
 
     private long lastLimpetReminderMs;
 
@@ -237,6 +243,12 @@ public class EliteOverlayTabbedPane extends JPanel {
             return;
         }
 
+        int minAvgValue = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
+        if (minAvgValue > 0) {
+            announceValuableProspectByAvgValue(event, minAvgValue);
+            return;
+        }
+
         Set<String> wanted = parseMaterialList(OverlayPreferences.getProspectorMaterialsCsv());
         double minPct = OverlayPreferences.getProspectorMinProportionPercent();
 
@@ -266,6 +278,85 @@ public class EliteOverlayTabbedPane extends JPanel {
         String spokenName = toSpokenMaterialName(best.getName());
         long pctRounded = Math.round(best.getProportion());
         tts.speakf("Prospected. " + spokenName + " " + pctRounded + " percent");
+    }
+
+    private void announceValuableProspectByAvgValue(ProspectedAsteroidEvent event, int minAvgValueCrPerTon) {
+        Set<String> wanted = parseMaterialList(OverlayPreferences.getProspectorMaterialsCsv());
+
+        LinkedHashMap<String, String> qualifying = new LinkedHashMap<>();
+        for (ProspectedAsteroidEvent.MaterialProportion m : event.getMaterials()) {
+            if (m == null) {
+                continue;
+            }
+            String rawName = m.getName();
+            String norm = normalizeMaterialName(rawName);
+            if (!wanted.isEmpty() && !wanted.contains(norm)) {
+                continue;
+            }
+
+            OptionalInt avg = galacticAvgPrices.getAvgSellCrPerTon(rawName);
+            if (avg.isEmpty()) {
+                continue;
+            }
+            if (avg.getAsInt() < minAvgValueCrPerTon) {
+                continue;
+            }
+
+            qualifying.putIfAbsent(norm, rawName);
+        }
+
+        if (qualifying.isEmpty()) {
+            return;
+        }
+
+        String motherlodeRaw = event.getMotherlodeMaterial();
+        String motherlodeNorm = normalizeMaterialName(motherlodeRaw);
+        boolean motherlodeQualifies = !motherlodeNorm.isBlank() && qualifying.containsKey(motherlodeNorm);
+
+        int count = qualifying.size();
+        boolean isHigh = event.getContent() != null && event.getContent().equalsIgnoreCase("High");
+        String coreWord = isHigh ? "motherlode" : "core";
+
+        String msg;
+        if (count == 1) {
+            String only = toSpokenMaterialName(qualifying.values().iterator().next());
+            if (motherlodeQualifies) {
+                msg = "Detected " + only + " " + coreWord;
+            } else {
+                msg = "Detected " + only;
+            }
+        } else if (count == 2) {
+            if (motherlodeQualifies) {
+                String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
+                String other = null;
+                for (Entry<String, String> e : qualifying.entrySet()) {
+                    if (!e.getKey().equals(motherlodeNorm)) {
+                        other = toSpokenMaterialName(e.getValue());
+                        break;
+                    }
+                }
+                if (other == null) {
+                    other = "material";
+                }
+                msg = "Detected " + mother + " " + coreWord + " and " + other;
+            } else {
+                List<String> names = new ArrayList<>();
+                for (String raw : qualifying.values()) {
+                    names.add(toSpokenMaterialName(raw));
+                }
+                msg = "Detected " + names.get(0) + " and " + names.get(1);
+            }
+        } else {
+            if (motherlodeQualifies) {
+                String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
+                int otherCount = count - 1;
+                msg = "Detected " + mother + " " + coreWord + " and " + otherCount + " valuable " + (otherCount == 1 ? "material" : "materials");
+            } else {
+                msg = "Detected " + count + " valuable materials";
+            }
+        }
+
+        tts.speakf(msg);
     }
 
     private static Set<String> parseMaterialList(String csv) {

@@ -33,6 +33,7 @@ public final class OverlayPreferences {
     // --- Mining / Prospector ---
     private static final String KEY_MINING_PROSPECTOR_MATERIALS = "mining.prospector.materials"; // comma-separated
     private static final String KEY_MINING_PROSPECTOR_MIN_PROP = "mining.prospector.minProportion"; // percent
+    private static final String KEY_MINING_PROSPECTOR_MIN_AVG_VALUE = "mining.prospector.minAvgValueCrPerTon"; // credits/ton
 
     // Reuse the same prefs node as OverlayFrame so everything is in one place.
     private static final Preferences PREFS = Preferences.userNodeForPackage(OverlayFrame.class);
@@ -231,6 +232,31 @@ public final class OverlayPreferences {
             percent = 100.0;
         }
         PREFS.put(KEY_MINING_PROSPECTOR_MIN_PROP, Double.toString(percent));
+    }
+
+    /**
+     * Minimum "galactic average" value (credits/ton) required for a material to count as "valuable".
+     *
+     * This is used for ProspectedAsteroid announcements when enabled.
+     */
+    public static int getProspectorMinAvgValueCrPerTon() {
+        String s = PREFS.get(KEY_MINING_PROSPECTOR_MIN_AVG_VALUE, "28000");
+        try {
+            int v = Integer.parseInt(s.trim());
+            if (v < 0) {
+                v = 0;
+            }
+            return v;
+        } catch (Exception e) {
+            return 28000;
+        }
+    }
+
+    public static void setProspectorMinAvgValueCrPerTon(int creditsPerTon) {
+        if (creditsPerTon < 0) {
+            creditsPerTon = 0;
+        }
+        PREFS.put(KEY_MINING_PROSPECTOR_MIN_AVG_VALUE, Integer.toString(creditsPerTon));
     }
 
     // --- UI Font (System / Route / Biology) ---
