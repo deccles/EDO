@@ -2,7 +2,7 @@
 import ast
 from pathlib import Path
 
-RULESETS_DIR = Path("rulesets")
+RULESETS_DIR = Path("../../git/EDMC-BioScan/src/bio_scan/bio_data/rulesets")
 
 
 def load_catalog(text: str):

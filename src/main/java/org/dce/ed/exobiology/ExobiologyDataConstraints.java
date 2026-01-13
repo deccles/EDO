@@ -1,14 +1,12 @@
 package org.dce.ed.exobiology;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
+import java.util.*;
 
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 import org.dce.ed.exobiology.ExobiologyData.SpeciesConstraint;
 import org.dce.ed.exobiology.ExobiologyData.SpeciesRule.SpeciesRuleBuilder;
+import org.dce.ed.exobiology.ExobiologyData.VolcanismRequirement;
 
 public final class ExobiologyDataConstraints {
 
@@ -186,7 +184,7 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.4, 0.5)
-                .temperature(240.0, 320.0)
+                .temperature(190.0, 330.0)
                 .atmospheres(AtmosphereType.WATER_RICH)
                 .planetTypes(PlanetType.ROCKY_ICE)
                 .volcanism("None")
@@ -289,7 +287,7 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.38, 0.45)
-                .temperature(190.0, 320.0)
+                .temperature(190.0, 330.0)
                 .pressure(0.07, null)
                 .atmospheres(AtmosphereType.WATER_RICH)
                 .planetTypes(PlanetType.ICY)
@@ -361,7 +359,7 @@ public final class ExobiologyDataConstraints {
         sc.getRules().addAll(Arrays.asList(
             SpeciesRuleBuilder.create()
                 .gravity(0.045, 0.45)
-                .temperature(50.0, 200.0)
+                .temperature(50.0, null)
                 .atmospheres(AtmosphereType.ARGON)
                 .planetTypes(PlanetType.ICY, PlanetType.ROCKY_ICE, PlanetType.HIGH_METAL)
                 .volcanism("Any")
@@ -382,14 +380,14 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.45, 0.61)
-                .temperature(300.0, 500.0)
+                .temperature(300.0, null)
                 .pressure(0.006, null)
                 .atmospheres(AtmosphereType.CO2)
                 .volcanism("None")
                 .build(),
             SpeciesRuleBuilder.create()
-                .gravity(0.26, 0.57)
-                .temperature(167.0, 300.0)
+                .gravity(0.025, 0.61)
+                .temperature(167.0, null)
                 .pressure(0.006, null)
                 .atmospheres(AtmosphereType.CO2, AtmosphereType.CO2_RICH)
                 .volcanism("Any")
@@ -466,7 +464,7 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.315, 0.44)
-                .temperature(220.0, 330.0)
+                .temperature(190.0, 330.0)
                 .pressure(0.01, null)
                 .atmospheres(AtmosphereType.WATER_RICH)
                 .planetTypes(PlanetType.ICY, PlanetType.ROCKY_ICE)
@@ -700,7 +698,7 @@ public final class ExobiologyDataConstraints {
         sc.getRules().addAll(Arrays.asList(
             SpeciesRuleBuilder.create()
                 .gravity(0.04, 0.276)
-                .temperature(190.0, 197.0)
+                .temperature(190.0, null)
                 .pressure(0.054, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY)
@@ -817,7 +815,7 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.04, 0.276)
-                .temperature(180.0, 197.0)
+                .temperature(180.0, null)
                 .pressure(0.025, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
@@ -1266,6 +1264,13 @@ public final class ExobiologyDataConstraints {
                 .atmospheres(AtmosphereType.SULPHUR_DIOXIDE)
                 .planetTypes(PlanetType.ROCKY, PlanetType.ROCKY_ICE)
                 .volcanismAnyOf("silicate", "metallic", "rocky")
+                .build(),
+            SpeciesRuleBuilder.create()
+                .gravity(0.05, 0.276)
+                .temperature(500.0, null)
+                .atmospheres(AtmosphereType.CO2)
+                .planetTypes(PlanetType.HIGH_METAL)
+                .volcanismAnyOf("silicate", "metallic", "rocky")
                 .build()
         ));
         CONSTRAINTS.put(sc.key(), sc);
@@ -1367,7 +1372,7 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.041, 0.276)
-                .temperature(180.0, 200.0)
+                .temperature(180.0, null)
                 .pressure(0.025, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
@@ -1445,7 +1450,7 @@ public final class ExobiologyDataConstraints {
                 .build(),
             SpeciesRuleBuilder.create()
                 .gravity(0.0405, 0.27)
-                .temperature(180.0, 197.0)
+                .temperature(180.0, null)
                 .pressure(0.025, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
@@ -1541,7 +1546,7 @@ public final class ExobiologyDataConstraints {
         sc.getRules().addAll(Arrays.asList(
             SpeciesRuleBuilder.create()
                 .gravity(0.0405, 0.276)
-                .temperature(180.0, 197.0)
+                .temperature(180.0, null)
                 .pressure(0.025, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
@@ -1569,6 +1574,13 @@ public final class ExobiologyDataConstraints {
                 .volcanism("Any")
                 .build(),
             SpeciesRuleBuilder.create()
+                .gravity(0.026, 0.276)
+                .temperature(500.0, null)
+                .atmospheres(AtmosphereType.CO2)
+                .planetTypes(PlanetType.HIGH_METAL)
+                .volcanism("Any")
+                .build(),
+            SpeciesRuleBuilder.create()
                 .gravity(0.04, 0.127)
                 .temperature(80.0, 110.0)
                 .pressure(0.012, null)
@@ -1588,7 +1600,7 @@ public final class ExobiologyDataConstraints {
         sc.getRules().addAll(Arrays.asList(
             SpeciesRuleBuilder.create()
                 .gravity(0.04, 0.276)
-                .temperature(180.0, 190.0)
+                .temperature(180.0, null)
                 .pressure(0.025, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
@@ -1602,7 +1614,7 @@ public final class ExobiologyDataConstraints {
         sc.getRules().addAll(Arrays.asList(
             SpeciesRuleBuilder.create()
                 .gravity(0.0405, 0.276)
-                .temperature(191.0, 197.0)
+                .temperature(191.0, null)
                 .pressure(0.057, null)
                 .atmospheres(AtmosphereType.CO2)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
