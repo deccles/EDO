@@ -1,0 +1,418 @@
+package org.dce.ed;
+
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.text.NumberFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.JViewport;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.border.EmptyBorder;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
+
+import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
+import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
+import org.dce.ed.mining.GalacticAveragePrices;
+import org.dce.ed.ui.EdoUi;
+
+/**
+ * Overlay tab: Mining
+ *
+ * Shows the most recent ProspectedAsteroid materials sorted by galactic average value.
+ *
+ * Note: The journal only provides proportions. This tab uses user-configurable
+ * heuristics (estimated total tons for Low/Medium/High and Core) to estimate
+ * expected tons and resale value.
+ */
+public class MiningTabPanel extends JPanel {
+
+    private final GalacticAveragePrices prices;
+
+    private final JLabel headerLabel;
+    private final JTable table;
+    private final MiningTableModel model;
+
+    private Font uiFont;
+
+    public MiningTabPanel(GalacticAveragePrices prices) {
+        super(new BorderLayout());
+        this.prices = prices;
+
+        // Match Route/System tabs: always render with transparent backgrounds so
+        // mouse-passthrough mode looks correct (no white borders/headers).
+        setOpaque(false);
+        setBackground(new Color(0, 0, 0, 0));
+
+        headerLabel = new JLabel("Mining (latest prospector)");
+        headerLabel.setForeground(EdoUi.ED_ORANGE);
+        headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        headerLabel.setOpaque(false);
+
+        model = new MiningTableModel();
+
+        table = new JTable(model) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+
+            @Override
+            public boolean editCellAt(int row, int column, java.util.EventObject e) {
+                return false;
+            }
+
+            @Override
+            protected void configureEnclosingScrollPane() {
+                super.configureEnclosingScrollPane();
+
+                // Some LAFs install outlines/shadows for JTable-in-scrollpane.
+                Container p = SwingUtilities.getAncestorOfClass(JScrollPane.class, this);
+                if (p instanceof JScrollPane) {
+                    JScrollPane sp = (JScrollPane)p;
+                    sp.setBorder(null);
+                    sp.setViewportBorder(null);
+                }
+            }
+        };
+
+        // Hard-disable editing and selection to keep click-through visuals consistent.
+        table.setDefaultEditor(Object.class, null);
+        table.setDefaultEditor(String.class, null);
+        table.setFocusable(false);
+        table.setRowSelectionAllowed(false);
+        table.setColumnSelectionAllowed(false);
+        table.setCellSelectionEnabled(false);
+        table.setSurrendersFocusOnKeystroke(false);
+        table.putClientProperty("JTable.autoStartsEdit", Boolean.FALSE);
+
+        table.setOpaque(false);
+        table.setBorder(null);
+        table.setFillsViewportHeight(true);
+        table.setShowGrid(false);
+        table.setShowHorizontalLines(false);
+        table.setShowVerticalLines(false);
+        table.setIntercellSpacing(new java.awt.Dimension(0, 0));
+        table.setGridColor(new Color(0, 0, 0, 0));
+        table.setForeground(EdoUi.ED_ORANGE);
+        table.setBackground(new Color(0, 0, 0, 0));
+        table.setRowHeight(22);
+
+        // Header styling (no white background/borders in passthrough mode)
+        JTableHeader th = table.getTableHeader();
+        if (th != null) {
+            th.setOpaque(false);
+            th.setForeground(EdoUi.ED_ORANGE);
+            th.setBackground(new Color(0, 0, 0, 0));
+            th.setBorder(null);
+            th.setReorderingAllowed(false);
+            th.setDefaultRenderer(new HeaderRenderer());
+        }
+
+        // Default renderer: orange text, padding, and an orange separator line per row.
+        DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer() {
+            private static final long serialVersionUID = 1L;
+            {
+                setOpaque(false);
+                setForeground(EdoUi.ED_ORANGE);
+            }
+
+            @Override
+            public Component getTableCellRendererComponent(JTable tbl,
+                                                           Object value,
+                                                           boolean isSelected,
+                                                           boolean hasFocus,
+                                                           int row,
+                                                           int column) {
+                Component c = super.getTableCellRendererComponent(tbl,
+                                                                  value,
+                                                                  false,
+                                                                  false,
+                                                                  row,
+                                                                  column);
+
+                if (c instanceof JLabel) {
+                    JLabel l = (JLabel)c;
+                    l.setForeground(EdoUi.ED_ORANGE);
+                    l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
+                    l.setBorder(new EmptyBorder(3, 4, 3, 4));
+                }
+
+                return c;
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D)g.create();
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                                    RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                    RenderingHints.VALUE_ANTIALIAS_ON);
+
+                super.paintComponent(g2);
+
+                g2.setColor(EdoUi.ED_ORANGE_TRANS);
+                int y = getHeight() - 1;
+                g2.drawLine(0, y, getWidth(), y);
+
+                g2.dispose();
+            }
+        };
+        table.setDefaultRenderer(Object.class, defaultRenderer);
+
+        JScrollPane scroller = new JScrollPane(table);
+        scroller.setOpaque(false);
+        scroller.getViewport().setOpaque(false);
+        scroller.setBorder(null);
+        scroller.setViewportBorder(null);
+
+        JViewport headerViewport = scroller.getColumnHeader();
+        if (headerViewport != null) {
+            headerViewport.setOpaque(false);
+            headerViewport.setBackground(new Color(0, 0, 0, 0));
+        }
+
+        add(headerLabel, BorderLayout.NORTH);
+        add(scroller, BorderLayout.CENTER);
+
+        applyUiFontPreferences();
+    }
+
+    public void applyUiFontPreferences() {
+        applyUiFont(OverlayPreferences.getUiFont());
+    }
+
+    public void applyUiFont(Font font) {
+        if (font == null) {
+            return;
+        }
+
+        uiFont = font;
+
+        headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
+
+        table.setFont(uiFont);
+        if (table.getTableHeader() != null) {
+            table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
+        }
+
+        // Keep row height readable as font size changes
+        int rowH = Math.max(18, uiFont.getSize() + 6);
+        table.setRowHeight(rowH);
+
+        revalidate();
+        repaint();
+    }
+
+    public void applyOverlayTransparency(boolean transparent) {
+        // Keep visuals consistent across tabs: Mining tab stays non-opaque.
+        setOpaque(false);
+        setBackground(new Color(0, 0, 0, 0));
+        table.setOpaque(false);
+        repaint();
+    }
+
+    public void updateFromProspector(ProspectedAsteroidEvent event) {
+        if (event == null) {
+            model.setRows(List.of());
+            headerLabel.setText("Mining (latest prospector)");
+            return;
+        }
+
+        String motherlode = event.getMotherlodeMaterial();
+        String content = event.getContent();
+
+        List<Row> rows = new ArrayList<>();
+
+        double totalTons = estimateTotalTons(content);
+        for (MaterialProportion mp : event.getMaterials()) {
+            if (mp == null || mp.getName() == null) {
+                continue;
+            }
+            String name = mp.getName();
+            int avg = prices.getAvgSellCrPerTon(name).orElse(0);
+            double tons = (mp.getProportion() / 100.0) * totalTons;
+            double value = tons * avg;
+            rows.add(new Row(name, avg, tons, value));
+        }
+
+        // If we have a motherlode material, add a "Core" line at the top.
+        if (motherlode != null && !motherlode.isBlank()) {
+            int avg = prices.getAvgSellCrPerTon(motherlode).orElse(0);
+            double tons = OverlayPreferences.getMiningEstimateTonsCore();
+            double value = tons * avg;
+            rows.add(new Row(motherlode + " (Core)", avg, tons, value, true));
+        }
+
+        rows.sort(Comparator
+                .comparingInt(Row::getAvgSell).reversed()
+                .thenComparing(Row::getName, String.CASE_INSENSITIVE_ORDER));
+
+        model.setRows(rows);
+
+        String hdr = "Mining (" + (content == null ? "" : content) + ")";
+        if (motherlode != null && !motherlode.isBlank()) {
+            hdr += " - Motherlode: " + motherlode;
+        }
+        headerLabel.setText(hdr);
+    }
+
+    private static double estimateTotalTons(String content) {
+        if (content == null) {
+            return OverlayPreferences.getMiningEstimateTonsMedium();
+        }
+        String c = content.trim().toLowerCase(Locale.US);
+        if (c.equals("high")) {
+            return OverlayPreferences.getMiningEstimateTonsHigh();
+        }
+        if (c.equals("low")) {
+            return OverlayPreferences.getMiningEstimateTonsLow();
+        }
+        return OverlayPreferences.getMiningEstimateTonsMedium();
+    }
+
+    private static final class Row {
+        private final String name;
+        private final int avgSell;
+        private final double expectedTons;
+        private final double estimatedValue;
+        private final boolean isCore;
+
+        Row(String name, int avgSell, double expectedTons, double estimatedValue) {
+            this(name, avgSell, expectedTons, estimatedValue, false);
+        }
+
+        Row(String name, int avgSell, double expectedTons, double estimatedValue, boolean isCore) {
+            this.name = name;
+            this.avgSell = avgSell;
+            this.expectedTons = expectedTons;
+            this.estimatedValue = estimatedValue;
+            this.isCore = isCore;
+        }
+
+        String getName() {
+            return name;
+        }
+
+        int getAvgSell() {
+            return avgSell;
+        }
+
+        double getExpectedTons() {
+            return expectedTons;
+        }
+
+        double getEstimatedValue() {
+            return estimatedValue;
+        }
+
+        boolean isCore() {
+            return isCore;
+        }
+    }
+
+    private static final class MiningTableModel extends AbstractTableModel {
+
+        private static final String[] COLS = new String[] {
+                "Material",
+                "Avg Cr/t",
+                "Est. Tons",
+                "Est. Value"
+        };
+
+        private final NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
+        private final NumberFormat tonsFmt = NumberFormat.getNumberInstance(Locale.US);
+
+        private List<Row> rows = List.of();
+
+        MiningTableModel() {
+            tonsFmt.setMaximumFractionDigits(1);
+            tonsFmt.setMinimumFractionDigits(0);
+        }
+
+        void setRows(List<Row> newRows) {
+            rows = (newRows == null) ? List.of() : List.copyOf(newRows);
+            fireTableDataChanged();
+        }
+
+        @Override
+        public int getRowCount() {
+            return rows.size();
+        }
+
+        @Override
+        public int getColumnCount() {
+            return COLS.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return COLS[column];
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            Row r = rows.get(rowIndex);
+            switch (columnIndex) {
+            case 0:
+                return r.getName();
+            case 1:
+                return r.getAvgSell() <= 0 ? "" : intFmt.format(r.getAvgSell());
+            case 2:
+                return tonsFmt.format(r.getExpectedTons());
+            case 3:
+                return r.getAvgSell() <= 0 ? "" : intFmt.format(Math.round(r.getEstimatedValue()));
+            default:
+                return "";
+            }
+        }
+
+        @Override
+        public Class<?> getColumnClass(int columnIndex) {
+            return String.class;
+        }
+    }
+
+    private static final class HeaderRenderer extends DefaultTableCellRenderer {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table,
+                                                       Object value,
+                                                       boolean isSelected,
+                                                       boolean hasFocus,
+                                                       int row,
+                                                       int column) {
+            JLabel label = (JLabel)super.getTableCellRendererComponent(table,
+                                                                       value,
+                                                                       false,
+                                                                       false,
+                                                                       row,
+                                                                       column);
+            // Paint an ED-style header: black bg, semi-transparent orange text.
+            label.setOpaque(true);
+            label.setBackground(Color.BLACK);
+            label.setForeground(EdoUi.ED_ORANGE_TRANS);
+            label.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
+            label.setBorder(new EmptyBorder(0, 4, 0, 4));
+            return label;
+        }
+    }
+}

@@ -41,7 +41,6 @@ import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.mining.GalacticAveragePrices;
-import org.dce.ed.mining.GalacticAveragePrices;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.tts.PollyTtsCached;
@@ -67,6 +66,7 @@ public class EliteOverlayTabbedPane extends JPanel {
     private static final String CARD_ROUTE = "ROUTE";
     private static final String CARD_SYSTEM = "SYSTEM";
     private static final String CARD_BIOLOGY = "BIOLOGY";
+    private static final String CARD_MINING = "MINING";
     private static final String CARD_LOG = "LOG";
 
     private static final int TAB_HOVER_DELAY_MS = 500;
@@ -84,6 +84,7 @@ public class EliteOverlayTabbedPane extends JPanel {
     private final RouteTabPanel routeTab;
     private final SystemTabPanel systemTab;
     private final BiologyTabPanel biologyTab;
+    private final MiningTabPanel miningTab;
 
     private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 
@@ -94,6 +95,7 @@ public class EliteOverlayTabbedPane extends JPanel {
     private JButton routeButton;
     private JButton systemButton;
     private JButton biologyButton;
+    private JButton miningButton;
 
     public EliteOverlayTabbedPane() {
         super(new BorderLayout());
@@ -111,14 +113,18 @@ public class EliteOverlayTabbedPane extends JPanel {
         routeButton = createTabButton("Route");
         systemButton = createTabButton("System");
         biologyButton = createTabButton("Biology");
+        miningButton = createTabButton("Mining");
 
         group.add(routeButton);
         group.add(systemButton);
         group.add(biologyButton);
+        group.add(miningButton);
 
         tabBar.add(routeButton);
         tabBar.add(systemButton);
         tabBar.add(biologyButton);
+        tabBar.add(miningButton);
+        tabBar.add(miningButton);
 
         // ----- Card area with the actual tab contents -----
         cardLayout = new CardLayout();
@@ -132,15 +138,19 @@ public class EliteOverlayTabbedPane extends JPanel {
         this.systemTab = new SystemTabPanel();
         this.biologyTab = new BiologyTabPanel();
         this.biologyTab.setSystemTabPanel(systemTab);
+        this.miningTab = new MiningTabPanel(galacticAvgPrices);
 
         cardPanel.add(routeTab, CARD_ROUTE);
         cardPanel.add(systemTab, CARD_SYSTEM);
         cardPanel.add(biologyTab, CARD_BIOLOGY);
+        cardPanel.add(miningTab, CARD_MINING);
+        cardPanel.add(miningTab, CARD_MINING);
 
         systemButton.setSelected(true);
         applyTabButtonStyle(routeButton);
         applyTabButtonStyle(systemButton);
         applyTabButtonStyle(biologyButton);
+        applyTabButtonStyle(miningButton);
         systemTab.refreshFromCache();
 
         // Wire up buttons to show cards
@@ -165,10 +175,18 @@ public class EliteOverlayTabbedPane extends JPanel {
             }
         });
 
+        miningButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                selectTab(CARD_MINING, miningButton);
+            }
+        });
+
         // Hover-to-switch: resting over a tab for a short time activates it
         installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick());
         installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick());
         installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick());
+        installHoverSwitch(miningButton, TAB_HOVER_DELAY_MS, () -> miningButton.doClick());
 
         // Select Route tab by default
         systemButton.doClick();
@@ -236,6 +254,13 @@ public class EliteOverlayTabbedPane extends JPanel {
     }
 
     private void handleProspectedAsteroid(ProspectedAsteroidEvent event) {
+        // Update Mining tab UI (always), regardless of whether announcements are enabled.
+        try {
+            miningTab.updateFromProspector(event);
+        } catch (Exception e) {
+            // UI update errors shouldn't break log processing
+        }
+
         if (event == null) {
             return;
         }
@@ -875,6 +900,7 @@ public void applyUiFontPreferences() {
         systemTab.applyUiFontPreferences();
         routeTab.applyUiFontPreferences();
         biologyTab.applyUiFontPreferences();
+        miningTab.applyUiFontPreferences();
         revalidate();
         repaint();
     }
@@ -883,6 +909,7 @@ public void applyUiFontPreferences() {
         systemTab.applyUiFont(font);
         routeTab.applyUiFont(font);
         biologyTab.applyUiFont(font);
+        miningTab.applyUiFont(font);
         revalidate();
         repaint();
     }

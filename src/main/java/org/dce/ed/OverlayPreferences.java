@@ -35,6 +35,12 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_PROSPECTOR_MIN_PROP = "mining.prospector.minProportion"; // percent
     private static final String KEY_MINING_PROSPECTOR_MIN_AVG_VALUE = "mining.prospector.minAvgValueCrPerTon"; // credits/ton
 
+    // Mining value estimation (Mining tab)
+    private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
+    private static final String KEY_MINING_EST_TONS_MED = "mining.estimate.tons.medium";
+    private static final String KEY_MINING_EST_TONS_HIGH = "mining.estimate.tons.high";
+    private static final String KEY_MINING_EST_TONS_CORE = "mining.estimate.tons.core";
+
     // Reuse the same prefs node as OverlayFrame so everything is in one place.
     private static final Preferences PREFS = Preferences.userNodeForPackage(OverlayFrame.class);
 
@@ -313,6 +319,80 @@ public final class OverlayPreferences {
         String name = getUiFontName();
         int size = getUiFontSize();
         return new java.awt.Font(name, java.awt.Font.PLAIN, size);
+    }
+
+    // ----------------------------
+    // Mining value estimation (Mining tab)
+    // ----------------------------
+
+    /**
+     * Estimated total collectible tons for a prospected asteroid with Content=Low.
+     */
+    public static double getMiningEstimateTonsLow() {
+        return getDoubleClamped(KEY_MINING_EST_TONS_LOW, 8.0, 0.0, 200.0);
+    }
+
+    public static void setMiningEstimateTonsLow(double tons) {
+        putDoubleClamped(KEY_MINING_EST_TONS_LOW, tons, 0.0, 200.0);
+    }
+
+    /**
+     * Estimated total collectible tons for a prospected asteroid with Content=Medium.
+     */
+    public static double getMiningEstimateTonsMedium() {
+        return getDoubleClamped(KEY_MINING_EST_TONS_MED, 16.0, 0.0, 200.0);
+    }
+
+    public static void setMiningEstimateTonsMedium(double tons) {
+        putDoubleClamped(KEY_MINING_EST_TONS_MED, tons, 0.0, 200.0);
+    }
+
+    /**
+     * Estimated total collectible tons for a prospected asteroid with Content=High.
+     */
+    public static double getMiningEstimateTonsHigh() {
+        return getDoubleClamped(KEY_MINING_EST_TONS_HIGH, 25.0, 0.0, 200.0);
+    }
+
+    public static void setMiningEstimateTonsHigh(double tons) {
+        putDoubleClamped(KEY_MINING_EST_TONS_HIGH, tons, 0.0, 200.0);
+    }
+
+    /**
+     * Estimated tons yielded by a core (MotherlodeMaterial) asteroid.
+     */
+    public static double getMiningEstimateTonsCore() {
+        return getDoubleClamped(KEY_MINING_EST_TONS_CORE, 12.0, 0.0, 200.0);
+    }
+
+    public static void setMiningEstimateTonsCore(double tons) {
+        putDoubleClamped(KEY_MINING_EST_TONS_CORE, tons, 0.0, 200.0);
+    }
+
+    private static double getDoubleClamped(String key, double def, double min, double max) {
+        String s = PREFS.get(key, Double.toString(def));
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (v < min) {
+                v = min;
+            }
+            if (v > max) {
+                v = max;
+            }
+            return v;
+        } catch (Exception e) {
+            return def;
+        }
+    }
+
+    private static void putDoubleClamped(String key, double v, double min, double max) {
+        if (v < min) {
+            v = min;
+        }
+        if (v > max) {
+            v = max;
+        }
+        PREFS.put(key, Double.toString(v));
     }
 
 }

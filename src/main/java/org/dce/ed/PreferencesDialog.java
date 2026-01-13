@@ -54,6 +54,12 @@ public class PreferencesDialog extends JDialog {
     private JSpinner prospectorMinPropSpinner;
     private JSpinner prospectorMinAvgValueSpinner;
 
+    // Mining tab: value estimation (used by Mining tab only)
+    private JSpinner miningTonsLowSpinner;
+    private JSpinner miningTonsMediumSpinner;
+    private JSpinner miningTonsHighSpinner;
+    private JSpinner miningTonsCoreSpinner;
+
     private boolean okPressed;
     private final Font originalUiFont;
     private final boolean originalOverlayTransparent;
@@ -316,6 +322,53 @@ public class PreferencesDialog extends JDialog {
         gbc.gridwidth = 2;
         JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the thresholds.");
         content.add(hint, gbc);
+
+        // --- Estimation settings used by the Mining tab ---
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+        JLabel estHeader = new JLabel("Mining tab value estimation (tons):");
+        content.add(estHeader, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.gridy++;
+        gbc.gridx = 0;
+        JLabel lowTonsLabel = new JLabel("Content=Low total tons:");
+        content.add(lowTonsLabel, gbc);
+
+        gbc.gridx = 1;
+        miningTonsLowSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsLow(), 0.0, 200.0, 1.0));
+        ((JSpinner.DefaultEditor) miningTonsLowSpinner.getEditor()).getTextField().setColumns(6);
+        content.add(miningTonsLowSpinner, gbc);
+
+        gbc.gridy++;
+        gbc.gridx = 0;
+        JLabel medTonsLabel = new JLabel("Content=Medium total tons:");
+        content.add(medTonsLabel, gbc);
+
+        gbc.gridx = 1;
+        miningTonsMediumSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsMedium(), 0.0, 200.0, 1.0));
+        ((JSpinner.DefaultEditor) miningTonsMediumSpinner.getEditor()).getTextField().setColumns(6);
+        content.add(miningTonsMediumSpinner, gbc);
+
+        gbc.gridy++;
+        gbc.gridx = 0;
+        JLabel highTonsLabel = new JLabel("Content=High total tons:");
+        content.add(highTonsLabel, gbc);
+
+        gbc.gridx = 1;
+        miningTonsHighSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsHigh(), 0.0, 200.0, 1.0));
+        ((JSpinner.DefaultEditor) miningTonsHighSpinner.getEditor()).getTextField().setColumns(6);
+        content.add(miningTonsHighSpinner, gbc);
+
+        gbc.gridy++;
+        gbc.gridx = 0;
+        JLabel coreTonsLabel = new JLabel("Core total tons:");
+        content.add(coreTonsLabel, gbc);
+
+        gbc.gridx = 1;
+        miningTonsCoreSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsCore(), 0.0, 200.0, 1.0));
+        ((JSpinner.DefaultEditor) miningTonsCoreSpinner.getEditor()).getTextField().setColumns(6);
+        content.add(miningTonsCoreSpinner, gbc);
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
@@ -619,6 +672,39 @@ private JPanel createSpeechPanel() {
             try {
                 int v = ((Number) prospectorMinAvgValueSpinner.getValue()).intValue();
                 OverlayPreferences.setProspectorMinAvgValueCrPerTon(v);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
+        if (miningTonsLowSpinner != null) {
+            try {
+                double v = ((Number) miningTonsLowSpinner.getValue()).doubleValue();
+                OverlayPreferences.setMiningEstimateTonsLow(v);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        if (miningTonsMediumSpinner != null) {
+            try {
+                double v = ((Number) miningTonsMediumSpinner.getValue()).doubleValue();
+                OverlayPreferences.setMiningEstimateTonsMedium(v);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        if (miningTonsHighSpinner != null) {
+            try {
+                double v = ((Number) miningTonsHighSpinner.getValue()).doubleValue();
+                OverlayPreferences.setMiningEstimateTonsHigh(v);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        if (miningTonsCoreSpinner != null) {
+            try {
+                double v = ((Number) miningTonsCoreSpinner.getValue()).doubleValue();
+                OverlayPreferences.setMiningEstimateTonsCore(v);
             } catch (Exception e) {
                 // ignore
             }
