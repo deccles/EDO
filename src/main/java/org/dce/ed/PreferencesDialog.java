@@ -3,13 +3,11 @@ package org.dce.ed;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import javax.swing.SpinnerNumberModel;
-import javax.swing.JSpinner;
-import java.awt.GraphicsEnvironment;
-import java.awt.Font;
 import java.io.File;
 
 import javax.swing.JButton;
@@ -18,10 +16,16 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
+
+import org.dce.ed.util.EdsmQueryTool;
 
 /**
  * Preferences dialog for the overlay.
@@ -91,7 +95,8 @@ public class PreferencesDialog extends JDialog {
         tabs.addTab("Speech", createSpeechPanel());
         tabs.addTab("Fonts", createFontsPanel());
         tabs.addTab("Mining", createMiningPanel());
-
+        tabs.addTab("Tools", createToolsPanel());
+        
         add(tabs, BorderLayout.CENTER);
         add(createButtonPanel(), BorderLayout.SOUTH);
 
@@ -373,6 +378,76 @@ public class PreferencesDialog extends JDialog {
         panel.add(content, BorderLayout.NORTH);
         return panel;
     }
+    
+    private JPanel createToolsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        panel.setOpaque(false);
+
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setOpaque(false);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.insets = new Insets(6, 6, 6, 6);
+
+        JButton launchLogMonitorButton = new JButton("Launch Standalone Log Monitor");
+        launchLogMonitorButton.addActionListener(e -> launchStandaloneLogMonitor());
+
+        JButton launchEdsmQueryToolsButton = new JButton("Run EDSM Query Tools");
+        launchEdsmQueryToolsButton.addActionListener(e -> launchEdsmQueryTools());
+
+        content.add(launchLogMonitorButton, gbc);
+
+        gbc.gridy++;
+        content.add(launchEdsmQueryToolsButton, gbc);
+
+        gbc.gridy++;
+        gbc.weighty = 1.0;
+        content.add(new JLabel(""), gbc);
+
+        panel.add(content, BorderLayout.NORTH);
+        return panel;
+    }
+
+    private void launchStandaloneLogMonitor() {
+        // Prefer StandaloneLogMonitor if you have it; fall back to StandaloneLogViewer (which exists in this project).
+        SwingUtilities.invokeLater(() -> {
+            try {
+                Class<?> clazz = Class.forName("org.dce.ed.StandaloneLogMonitor");
+                clazz.getMethod("main", String[].class).invoke(null, (Object) new String[0]);
+                return;
+            } catch (Exception ignore) {
+                // fall through
+            }
+
+            try {
+                StandaloneLogViewer.main(new String[0]);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Unable to launch the standalone log monitor:\n" + ex.getMessage(),
+                        "Launch Error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+    }
+
+    private void launchEdsmQueryTools() {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                new EdsmQueryTool().setVisible(true);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Unable to launch EDSM Query Tools:\n" + ex.getMessage(),
+                        "Launch Error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+    }
+
+    
 
     private void updatePreviewLabelFont() {
         Font f = buildSelectedUiFont();
