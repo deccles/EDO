@@ -858,7 +858,7 @@ public class EliteOverlayTabbedPane extends JPanel {
                 "abrasion",
                 "seismic",
                 "subsurf",
-                "pulsewave",
+//                "pulsewave",
                 "displacement",
         };
 
