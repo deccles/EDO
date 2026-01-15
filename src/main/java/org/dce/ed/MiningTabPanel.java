@@ -105,6 +105,7 @@ public class MiningTabPanel extends JPanel {
 		inventoryLabel.setForeground(EdoUi.ED_ORANGE);
 		inventoryLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		inventoryLabel.setOpaque(false);
+		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		model = new MiningTableModel("Est. Tons");
 
@@ -349,7 +350,7 @@ public class MiningTabPanel extends JPanel {
 		applyUiFontPreferences();
 	}
 
-
+	private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
 	private Color resolveRowForeground(JTable tbl, int viewRow) {
 		if (tbl == null || viewRow < 0) {
 			return EdoUi.ED_ORANGE;
@@ -360,11 +361,18 @@ public class MiningTabPanel extends JPanel {
 			if (tbl.getRowSorter() != null) {
 				modelRow = tbl.convertRowIndexToModel(viewRow);
 			}
+
 			Row r = model.getRow(modelRow);
-			if (r != null && r.isCore()) {
-				return CORE_BLUE;
+			if (r != null) {
+				if (r.isCore()) {
+					return CORE_BLUE;
+				}
+				if (r.getEstimatedValue() > GREEN_THRESHOLD_AVG_CR_PER_TON) {
+					return NON_CORE_GREEN;
+				}
 			}
-			return NON_CORE_GREEN;
+
+			return EdoUi.ED_ORANGE;
 		}
 
 		return EdoUi.ED_ORANGE;
@@ -641,8 +649,9 @@ public class MiningTabPanel extends JPanel {
 
 		rows.sort(Comparator
 				.comparing(Row::isCore).reversed()
-				.thenComparingDouble(Row::getEstimatedValue).reversed()
+				.thenComparing(Comparator.comparingDouble(Row::getEstimatedValue).reversed())
 				.thenComparing(Row::getName, String.CASE_INSENSITIVE_ORDER));
+
 
 		model.setRows(rows);
 
