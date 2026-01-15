@@ -40,6 +40,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
 
 public class EdsmClient {
 
@@ -99,6 +100,8 @@ public class EdsmClient {
             }
 
             body = readAll(in).trim();
+            // Save raw JSON for debugging / query tool
+            lastRawJson = body;
 
             if (body.isEmpty()) {
                 throw new IOException("EDSM returned empty response (HTTP " + code + "): " + urlString);
@@ -115,6 +118,24 @@ public class EdsmClient {
             if (el != null && el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
                 String msg = el.getAsString();
                 throw new IOException("EDSM returned JSON string instead of object (HTTP " + code + "): " + msg);
+            }
+
+            // Another failure mode: some endpoints sometimes return a top-level array.
+            // Most of our DTOs expect a JSON object, so adapt where we can.
+            if (el != null && el.isJsonArray() && !clazz.isArray()) {
+                if (clazz == BodiesResponse.class) {
+                    BodiesResponse br = new BodiesResponse();
+                    br.bodies = gson.fromJson(el, new TypeToken<List<BodiesResponse.Body>>() {}.getType());
+                    if (br.bodies != null) {
+                        br.bodyCount = br.bodies.size();
+                    }
+                    @SuppressWarnings("unchecked")
+                    T t = (T) br;
+                    return t;
+                }
+
+                throw new IOException("EDSM returned JSON array where an object was expected (HTTP " + code
+                        + "): " + clazz.getSimpleName() + " from " + urlString + " => " + summarize(body));
             }
 
             return gson.fromJson(el, clazz);
