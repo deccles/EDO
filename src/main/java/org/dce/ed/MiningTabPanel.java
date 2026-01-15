@@ -14,42 +14,42 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.BorderFactory;
-import javax.swing.Timer;
-
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-
-import org.dce.ed.logreader.EliteLogFileLocator;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
+import org.dce.ed.logreader.EliteLogFileLocator;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
 import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.ui.EdoUi;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /**
  * Overlay tab: Mining
@@ -234,7 +234,15 @@ public class MiningTabPanel extends JPanel {
 					l.setFont(tbl.getFont());
 					l.setForeground(resolveRowForeground(tbl, row));
 					if (isSummaryRow(tbl, row)) {
-						l.setFont(l.getFont().deriveFont(Font.BOLD));
+						Font f = c.getFont();
+						c.setFont(f.deriveFont(Font.BOLD, f.getSize2D() + 2f));
+						c.setForeground(Color.green.darker());
+//						c.setForeground(new Color(255, 200, 80));
+
+						if (c instanceof JComponent jc) {
+							jc.setOpaque(true);
+							jc.setBackground(new Color(0, 0, 0, 140));
+						}
 					}
 					l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
 					l.setBorder(new EmptyBorder(3, 4, 3, 4));
@@ -1027,4 +1035,5 @@ public class MiningTabPanel extends JPanel {
 			 g2.dispose();
 		 }
 	 }
+	 
 }
