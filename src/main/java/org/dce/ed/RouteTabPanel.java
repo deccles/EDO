@@ -1714,7 +1714,7 @@ default:
                 icon = new TriangleIcon(EdoUi.ED_ORANGE, 10, 10);
             } else if (kind == MarkerKind.PENDING_JUMP) {
                 if (jumpFlashOn) {
-                    icon = new TriangleIcon(EdoUi.ED_ORANGE, 10, 10);
+                    icon = new OutlineTriangleIcon(EdoUi.ED_ORANGE_LESS_TRANS, 10, 10, 2f);
                 } else {
                     icon = null;
                 }
