@@ -591,6 +591,7 @@ public class SystemEventProcessor {
 
         BodyAttributes attrs = info.buildBodyAttributes(state);
         if (attrs == null) {
+            // This is the normal case when FSSBodySignals arrives before the Detailed Scan.
             return;
         }
 
@@ -629,22 +630,36 @@ public class SystemEventProcessor {
             }
 
             if (!filtered.isEmpty()) {
+                // Publish first (so UI can render immediately), then return.
                 info.setPredictions(filtered);
+
+                BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
+                        Instant.now(),
+                        null,
+                        info.getBodyName(),
+                        info.getBodyId(),
+                        info.getStarSystem(),
+                        info.getWasFootfalled(),
+                        filtered);
+
+                LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
                 return;
             }
         }
-        BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
-        		Instant.now(),
-        		null,
-        		info.getBodyName(),
-        		info.getBodyId(),
-        		info.getStarSystem(),
-        		info.getWasFootfalled(),
-        		candidates);
-        		
-        LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
-        
+
+        // *** FIX: publish to BodyInfo BEFORE dispatching the event ***
         info.setPredictions(candidates);
+
+        BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
+                Instant.now(),
+                null,
+                info.getBodyName(),
+                info.getBodyId(),
+                info.getStarSystem(),
+                info.getWasFootfalled(),
+                candidates);
+
+        LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
     }
 
     private static String normalizeGenus(String s) {
