@@ -413,7 +413,7 @@ public class SystemEventProcessor {
 
                 if (type.contains("biological") || loc.contains("biological")) {
                     info.setHasBio(true);
-                    info.setNumberOfBioSignals(s.getCount());
+                    applyBioSignalCount(info,  s.getCount());
                     
                 } else if (type.contains("geological") || loc.contains("geological")) {
                     info.setHasGeo(true);
@@ -820,6 +820,23 @@ public class SystemEventProcessor {
         }
 
         state.getBodies().remove(tmpKey);
+    }
+    private void applyBioSignalCount(BodyInfo info, int count) {
+        if (info == null) {
+            return;
+        }
+        if (count <= 0) {
+            return;
+        }
+
+        int existing = info.getNumberOfBioSignals();
+        if (existing <= 0) {
+            info.setNumberOfBioSignals(count);
+            return;
+        }
+
+        // Keep the best/most complete value we’ve seen.
+        info.setNumberOfBioSignals(Math.max(existing, count));
     }
 
 }
