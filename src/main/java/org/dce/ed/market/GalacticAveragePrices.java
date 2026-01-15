@@ -1,4 +1,4 @@
-package org.dce.ed.mining;
+package org.dce.ed.market;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -8,6 +8,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
+import java.util.Set;
+import java.util.HashSet;
 
 /**
  * Loads INARA commodity "avg sell" values from a bundled CSV (no network calls).
@@ -132,6 +134,14 @@ public final class GalacticAveragePrices {
         }
         String key = normalizeMaterialKey(journalMaterialName);
         return displayNameByKey.get(key);
+    }
+
+    /**
+     * Returns all normalized commodity keys available in the loaded CSV.
+     * These keys are already normalized (lowercase alphanumerics).
+     */
+    public Set<String> getAllNormalizedKeys() {
+        return new HashSet<>(avgSellByKey.keySet());
     }
 
     /**

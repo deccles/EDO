@@ -40,9 +40,9 @@ import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
-import org.dce.ed.mining.GalacticAveragePrices;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 
@@ -911,4 +911,6 @@ public void applyUiFontPreferences() {
         revalidate();
         repaint();
     }
+    
+    
 }

@@ -1,4 +1,4 @@
-package org.dce.ed.mining;
+package org.dce.ed.market;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
