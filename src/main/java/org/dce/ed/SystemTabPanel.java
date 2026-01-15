@@ -44,6 +44,7 @@ import javax.swing.table.TableColumnModel;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
@@ -74,6 +75,8 @@ public class SystemTabPanel extends JPanel {
     // Bio column icons (painted, no external resources)
     private static final Icon BIO_LEAF_ICON = new LeafIcon(14, 14);
     private static final Icon BIO_DOLLAR_ICON = new DollarIcon(14, 14);
+
+    private static final long BIO_DOLLAR_THRESHOLD = 20_000_000L;
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
     private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
     // NEW: shared ED font (similar to Route tab)
@@ -697,14 +700,16 @@ public class SystemTabPanel extends JPanel {
 
             boolean hasBio = b.hasBio();
             boolean hasGeo = b.hasGeo();
-            boolean isHighValue = b.isHighValue();
 
-            // Icon stack: leaf, then optional dollar.
+            long maxPredictedBioValue = getMaxPredictedBioValue(b);
+            boolean showDollar = maxPredictedBioValue >= BIO_DOLLAR_THRESHOLD;
+
+// Icon stack: leaf, then optional dollar.
             HorizontalIconStack stack = null;
             if (hasBio) {
                 stack = new HorizontalIconStack(4);
                 stack.add(BIO_LEAF_ICON);
-                if (isHighValue) {
+                if (showDollar) {
                     stack.add(BIO_DOLLAR_ICON);
                 }
             }
@@ -713,17 +718,50 @@ public class SystemTabPanel extends JPanel {
             c.setHorizontalAlignment(SwingConstants.LEFT);
 
             // Geo label is only shown when geo exists. Keep it minimal.
-            if (hasGeo) {
-                c.setText("Geo");
-                c.setHorizontalTextPosition(SwingConstants.RIGHT);
-                c.setIconTextGap(6);
-            } else {
-                c.setText("");
+            String text = hasGeo ? "Geo" : "";
+
+            // If we are showing the $ indicator, also show the bio signal count as "(n)" after the icons.
+            // This is populated from FSSBodySignals / SAASignalsFound.
+            Integer bioSignals = b.getNumberOfBioSignals();
+            if (showDollar && bioSignals != null && bioSignals.intValue() > 0) {
+                if (text.isEmpty()) {
+                    text = "(" + bioSignals + ")";
+                } else {
+                    text = text + " (" + bioSignals + ")";
+                }
             }
 
-            return c;
+            c.setText(text);
+            c.setHorizontalTextPosition(SwingConstants.RIGHT);
+            c.setIconTextGap(6);
+return c;
         }
     }
+    private static long getMaxPredictedBioValue(BodyInfo b) {
+        if (b == null) {
+            return Long.MIN_VALUE;
+        }
+        List<ExobiologyData.BioCandidate> preds = b.getPredictions();
+        if (preds == null || preds.isEmpty()) {
+            return Long.MIN_VALUE;
+        }
+
+        boolean firstBonus = !Boolean.TRUE.equals(b.getWasFootfalled());
+
+        long max = Long.MIN_VALUE;
+        for (ExobiologyData.BioCandidate c : preds) {
+            if (c == null) {
+                continue;
+            }
+            long v = c.getEstimatedPayout(firstBonus);
+            if (v > max) {
+                max = v;
+            }
+        }
+        return max;
+    }
+
+
 
     private static final class HorizontalIconStack implements Icon {
         private final java.util.List<Icon> icons = new java.util.ArrayList<>();
