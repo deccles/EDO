@@ -60,6 +60,7 @@ public class MiningTabPanel extends JPanel {
     private final GalacticAveragePrices prices;
 
     private final JLabel headerLabel;
+    private final JLabel inventoryLabel;
     private final JTable table;
     private final MiningTableModel model;
 
@@ -78,6 +79,11 @@ public class MiningTabPanel extends JPanel {
 
     private static final int VISIBLE_ROWS = 10;
 
+    // Row colors for mining tables.
+    private static final Color CORE_BLUE = new Color(0, 140, 190);
+    private static final Color NON_CORE_GREEN = new Color(0, 200, 0);
+
+
     public MiningTabPanel(GalacticAveragePrices prices) {
         super(new BorderLayout());
         this.prices = prices;
@@ -90,6 +96,11 @@ public class MiningTabPanel extends JPanel {
         headerLabel.setForeground(EdoUi.ED_ORANGE);
         headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
         headerLabel.setOpaque(false);
+
+        inventoryLabel = new JLabel("Inventory");
+        inventoryLabel.setForeground(EdoUi.ED_ORANGE);
+        inventoryLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        inventoryLabel.setOpaque(false);
 
         model = new MiningTableModel("Est. Tons");
 
@@ -201,7 +212,11 @@ public class MiningTabPanel extends JPanel {
 
                 if (c instanceof JLabel) {
                     JLabel l = (JLabel)c;
-                    l.setForeground(EdoUi.ED_ORANGE);
+                    l.setFont(tbl.getFont());
+                    l.setForeground(resolveRowForeground(tbl, row));
+                    if (isSummaryRow(tbl, row)) {
+                        l.setFont(l.getFont().deriveFont(Font.BOLD));
+                    }
                     l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
                     l.setBorder(new EmptyBorder(3, 4, 3, 4));
                     l.setOpaque(false);
@@ -315,6 +330,8 @@ public class MiningTabPanel extends JPanel {
         centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
         centerPanel.add(materialsScroller);
         centerPanel.add(Box.createVerticalStrut(8));
+        centerPanel.add(inventoryLabel);
+        centerPanel.add(Box.createVerticalStrut(2));
         centerPanel.add(cargoScroller);
 
         add(centerPanel, BorderLayout.CENTER);
@@ -328,7 +345,43 @@ public class MiningTabPanel extends JPanel {
         applyUiFontPreferences();
     }
 
-    public void applyUiFontPreferences() {
+    
+    private Color resolveRowForeground(JTable tbl, int viewRow) {
+        if (tbl == null || viewRow < 0) {
+            return EdoUi.ED_ORANGE;
+        }
+
+        if (tbl == table) {
+            int modelRow = viewRow;
+            if (tbl.getRowSorter() != null) {
+                modelRow = tbl.convertRowIndexToModel(viewRow);
+            }
+            Row r = model.getRow(modelRow);
+            if (r != null && r.isCore()) {
+                return CORE_BLUE;
+            }
+            return NON_CORE_GREEN;
+        }
+
+        return EdoUi.ED_ORANGE;
+    }
+
+    private boolean isSummaryRow(JTable tbl, int viewRow) {
+        if (tbl == null || viewRow < 0) {
+            return false;
+        }
+        if (tbl == cargoTable) {
+            int modelRow = viewRow;
+            if (tbl.getRowSorter() != null) {
+                modelRow = tbl.convertRowIndexToModel(viewRow);
+            }
+            Row r = cargoModel.getRow(modelRow);
+            return r != null && r.isSummary();
+        }
+        return false;
+    }
+
+public void applyUiFontPreferences() {
         applyUiFont(OverlayPreferences.getUiFont());
     }
 
@@ -399,6 +452,27 @@ public class MiningTabPanel extends JPanel {
         scroller.revalidate();
     }
 
+    private List<Row> withTotalRow(List<Row> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+
+        double totalTons = 0.0;
+        double totalValue = 0.0;
+        List<Row> out = new ArrayList<>();
+        for (Row r : rows) {
+            if (r == null || r.isSummary()) {
+                continue;
+            }
+            out.add(r);
+            totalTons += r.getExpectedTons();
+            totalValue += r.getEstimatedValue();
+        }
+
+        out.add(new Row("Total", 0, totalTons, totalValue, false, true));
+        return out;
+    }
+
     private void pollCargo() {
         try {
             Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
@@ -422,7 +496,7 @@ public class MiningTabPanel extends JPanel {
 
             JsonObject cargoObj = readJsonObject(cargoFile);
             List<Row> rows = buildRowsFromCargo(cargoObj);
-            cargoModel.setRows(rows);
+            cargoModel.setRows(withTotalRow(rows));
         } catch (Exception ignored) {
         }
     }
@@ -564,7 +638,8 @@ public void applyOverlayTransparency(boolean transparent) {
         }
 
         rows.sort(Comparator
-                .comparingInt(Row::getAvgSell).reversed()
+                .comparing(Row::isCore).reversed()
+                .thenComparingDouble(Row::getEstimatedValue).reversed()
                 .thenComparing(Row::getName, String.CASE_INSENSITIVE_ORDER));
 
         model.setRows(rows);
@@ -605,6 +680,7 @@ public void applyOverlayTransparency(boolean transparent) {
         t = t.replace("_Name", "");
         t = t.replace(";", "");
         t = t.replace('_', ' ').trim();
+        t = splitCamelCase(t);
 
         if (t.isEmpty()) {
             return "";
@@ -616,7 +692,18 @@ public void applyOverlayTransparency(boolean transparent) {
      * Price lookup should use the journal name (because GalacticAveragePrices normalizes keys already),
      * with one alias to cover the "opal" token.
      */
-    private int lookupAvgSell(String journalName, String uiName) {
+    
+    private static String splitCamelCase(String s) {
+        if (s == null || s.isBlank()) {
+            return "";
+        }
+        // Insert spaces for tokens like "LowTemperatureDiamonds".
+        String out = s.replaceAll("(?<=[a-z])(?=[A-Z])", " ");
+        out = out.replaceAll("(?<=[A-Z])(?=[A-Z][a-z])", " ");
+        return out.trim();
+    }
+
+private int lookupAvgSell(String journalName, String uiName) {
         if (journalName == null || journalName.isBlank()) {
             return 0;
         }
@@ -674,17 +761,23 @@ int v = prices.getAvgSellCrPerTon(journalName).orElse(0);
         private final double expectedTons;
         private final double estimatedValue;
         private final boolean isCore;
+        private final boolean isSummary;
 
         Row(String name, int avgSell, double expectedTons, double estimatedValue) {
             this(name, avgSell, expectedTons, estimatedValue, false);
         }
 
         Row(String name, int avgSell, double expectedTons, double estimatedValue, boolean isCore) {
+            this(name, avgSell, expectedTons, estimatedValue, isCore, false);
+        }
+
+        Row(String name, int avgSell, double expectedTons, double estimatedValue, boolean isCore, boolean isSummary) {
             this.name = name;
             this.avgSell = avgSell;
             this.expectedTons = expectedTons;
             this.estimatedValue = estimatedValue;
             this.isCore = isCore;
+            this.isSummary = isSummary;
         }
 
         String getName() {
@@ -705,6 +798,10 @@ int v = prices.getAvgSellCrPerTon(journalName).orElse(0);
 
         boolean isCore() {
             return isCore;
+        }
+
+        boolean isSummary() {
+            return isSummary;
         }
     }
 
@@ -737,6 +834,13 @@ int v = prices.getAvgSellCrPerTon(journalName).orElse(0);
             fireTableDataChanged();
         }
 
+        Row getRow(int modelRow) {
+            if (modelRow < 0 || modelRow >= rows.size()) {
+                return null;
+            }
+            return rows.get(modelRow);
+        }
+
         @Override
         public int getRowCount() {
             return rows.size();
@@ -755,6 +859,21 @@ int v = prices.getAvgSellCrPerTon(journalName).orElse(0);
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             Row r = rows.get(rowIndex);
+            if (r.isSummary()) {
+                switch (columnIndex) {
+                case 0:
+                    return r.getName();
+                case 1:
+                    return "";
+                case 2:
+                    return tonsFmt.format(r.getExpectedTons());
+                case 3:
+                    return intFmt.format(Math.round(r.getEstimatedValue()));
+                default:
+                    return "";
+                }
+            }
+
             switch (columnIndex) {
             case 0:
                 return r.getName();
