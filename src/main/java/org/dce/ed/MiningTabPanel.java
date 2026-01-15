@@ -101,12 +101,27 @@ public class MiningTabPanel extends JPanel {
 		headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		headerLabel.setOpaque(false);
 
-		inventoryLabel = new JLabel("Inventory");
-		inventoryLabel.setForeground(EdoUi.ED_ORANGE);
+		JLabel prospectorLabel = new JLabel("Prospector Limpet");
+		prospectorLabel.setForeground(EdoUi.STATUS_BLUE);
+		prospectorLabel.setHorizontalAlignment(SwingConstants.LEFT);
+		prospectorLabel.setOpaque(false);
+		prospectorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		Font base = prospectorLabel.getFont();
+		prospectorLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
+
+		// Let it span the width so BoxLayout doesn't center it
+		Dimension pref = prospectorLabel.getPreferredSize();
+		prospectorLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
+
+		
+		inventoryLabel = new JLabel("Ship Inventory");
+		inventoryLabel.setForeground(EdoUi.STATUS_BLUE);
 		inventoryLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		inventoryLabel.setOpaque(false);
 		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
+		inventoryLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
+		
 		model = new MiningTableModel("Est. Tons");
 
 		table = new JTable(model) {
@@ -190,7 +205,6 @@ public class MiningTabPanel extends JPanel {
 			th.putClientProperty("JTableHeader.cellBorder", null);
 			th.setDefaultRenderer(new HeaderRenderer());
 
-			Dimension pref = th.getPreferredSize();
 			th.setPreferredSize(new Dimension(pref.width, table.getRowHeight()));
 		}
 
@@ -265,6 +279,7 @@ public class MiningTabPanel extends JPanel {
 		}
 
 		configureOverlayScroller(materialsScroller);
+		materialsScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		// ----- Cargo table -----
 		cargoModel = new MiningTableModel("Tons");
@@ -301,8 +316,8 @@ public class MiningTabPanel extends JPanel {
 			cargoHeader.putClientProperty("JTableHeader.cellBorder", null);
 			cargoHeader.setDefaultRenderer(new HeaderRenderer());
 
-			Dimension pref = cargoHeader.getPreferredSize();
-			cargoHeader.setPreferredSize(new Dimension(pref.width, cargoTable.getRowHeight()));
+			Dimension pref2 = cargoHeader.getPreferredSize();
+			cargoHeader.setPreferredSize(new Dimension(pref2.width, cargoTable.getRowHeight()));
 		}
 
 		for (int c = 0; c < cargoTable.getColumnModel().getColumnCount(); c++) {
@@ -325,6 +340,10 @@ public class MiningTabPanel extends JPanel {
 		}
 
 		configureOverlayScroller(cargoScroller);
+		cargoScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
+		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		Dimension invPref = inventoryLabel.getPreferredSize();
+		inventoryLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, invPref.height));
 
 		// Leave about 10 rows for each table.
 		updateScrollerHeights();
@@ -333,6 +352,9 @@ public class MiningTabPanel extends JPanel {
 		centerPanel.setOpaque(false);
 		centerPanel.setBackground(new Color(0, 0, 0, 0));
 		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+		
+		centerPanel.add(prospectorLabel);
+		centerPanel.add(Box.createVerticalStrut(4)); // small gap, optional
 		centerPanel.add(materialsScroller);
 		centerPanel.add(Box.createVerticalStrut(8));
 		centerPanel.add(inventoryLabel);
