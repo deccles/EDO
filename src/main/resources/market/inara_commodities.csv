@@ -1,253 +1,253 @@
 name,key,avg_sell,avg_buy,avg_profit,max_sell,min_buy,max_profit
-Advanced Catalysers,advancedcatalysers,3078,2500,578,3756,218,3538
-Advanced Medicines,advancedmedicines,1675,1216,459,4805,89,4716
-Agri-Medicines,agrimedicines,1199,901,298,1771,79,1692
-Agronomic Treatment,agronomictreatment,3611,2744,867,35554,242,35312
-AI Relics,airelics,183417,0,183417,0,0,0
-Alexandrite,alexandrite,229722,0,229722,857103,0,857103
-Algae,algae,498,79,419,2286,6,2280
-Aluminium,aluminium,2824,2225,599,3758,200,3558
-Ancient Artefact,ancientartefact,9611,0,9611,0,0,0
-Ancient Key,ancientkey,29357,0,29357,29357,0,29357
-Animal Meat,animalmeat,1821,1282,539,4186,91,4095
-Animal Monitors,animalmonitors,581,313,268,4673,40,4633
-Anomaly Particles,anomalyparticles,0,0,0,0,0,0
-Antimatter Containment Unit,antimattercontainmentunit,73555,0,73555,0,0,0
-Antique Jewellery,antiquejewellery,143778,0,143778,0,0,0
-Antiquities,antiquities,151302,0,151302,0,0,0
-Aquaponic Systems,aquaponicsystems,797,441,356,2745,19,2726
-Articulation Motors,articulationmotors,7574,0,7574,7851,0,7851
-Assault Plans,assaultplans,812,0,812,0,0,0
-Atmospheric Processors,atmosphericprocessors,495,346,149,1851,29,1822
-Auto-Fabricators,autofabricators,3948,3307,641,5286,333,4953
-Basic Medicines,basicmedicines,528,309,219,5258,15,5243
-Battle Weapons,battleweapons,6121,5960,161,8081,531,7550
-Bauxite,bauxite,2151,1625,526,36192,566,35626
-Beer,beer,632,227,405,181691,12,181679
-Benitoite,benitoite,166720,0,166720,769770,0,769770
-Bertrandite,bertrandite,18503,16471,2032,21649,1462,20187
-Beryllium,beryllium,41076,38956,2120,44385,3830,40555
-Bioreducing Lichen,bioreducinglichen,1290,884,406,1703,84,1619
-Biowaste,biowaste,84,83,1,1039,2,1037
-Bismuth,bismuth,2882,2055,827,3557,207,3350
-Black Box,blackbox,31072,0,31072,31953,0,31953
-Bone Fragments,bonefragments,0,0,0,0,0,0
-Bootleg Liquor,bootlegliquor,679,0,679,5798,0,5798
-Bromellite,bromellite,33721,33656,65,305000,33656,271344
-Building Fabricators,buildingfabricators,2094,1973,121,3408,177,3231
-Caustic Tissue Sample,caustictissuesample,270720,0,270720,0,0,0
-Ceramic Composites,ceramiccomposites,984,342,642,10859,70,10789
-Chemical Waste,chemicalwaste,670,0,670,5280,0,5280
-Clothing,clothing,693,381,312,2850,23,2827
-CMM Composite,cmmcomposite,6639,5310,1329,20292,4394,15898
-Cobalt,cobalt,4772,3659,1113,20108,669,19439
-Coffee,coffee,1760,1199,561,2847,90,2757
-Coltan,coltan,6164,5120,1044,7849,460,7389
-Combat Stabilisers,combatstabilisers,3150,2474,676,4069,225,3844
-Commercial Samples,commercialsamples,316,0,316,0,0,0
-Computer Components,computercomponents,780,545,235,1824,252,1572
-Conductive Fabrics,conductivefabrics,971,562,409,5161,39,5122
-Consumer Technology,consumertechnology,7160,6053,1107,7851,534,7317
-Copper,copper,774,460,314,1931,30,1901
-Coral Sap,coralsap,130817,0,130817,0,0,0
-Crop Harvesters,cropharvesters,2134,1904,230,3756,173,3583
-Cryolite,cryolite,15228,11290,3938,29940,1094,28846
-Cyst Specimen,cystspecimen,0,0,0,0,0,0
-Damaged Escape Pod,damagedescapepod,17208,0,17208,68178,0,68178
-Data Core,datacore,6892,0,6892,0,0,0
-Diplomatic Bag,diplomaticbag,491,0,491,0,0,0
-Domestic Appliances,domesticappliances,881,559,322,1216,42,1174
-Earth Relics,earthrelics,21867,0,21867,0,0,0
-Emergency Power Cells,emergencypowercells,2791,1888,903,6717,1317,5400
-Encrypted Correspondence,encryptedcorrespondence,339,0,339,0,0,0
-Encrypted Data Storage,encrypteddatastorage,691,0,691,0,0,0
-Energy Grid Assembly,energygridassembly,3229,2174,1055,6932,2036,4896
-Evacuation Shelter,evacuationshelter,396,284,112,4190,18,4172
-Exhaust Manifold,exhaustmanifold,2359,1504,855,2511,1378,1133
-Experimental Chemicals,experimentalchemicals,15873,0,15873,15873,0,15873
-Explosives,explosives,626,371,255,2101,20,2081
-Fish,fish,879,475,404,3411,28,3383
-Food Cartridges,foodcartridges,315,66,249,3467,5,3462
-Fossil Remnants,fossilremnants,11199,0,11199,0,0,0
-Fruit and Vegetables,fruitandvegetables,718,311,407,3852,26,3826
-Gallite,gallite,12229,10545,1684,13829,914,12915
-Gallium,gallium,25820,24170,1650,27641,2378,25263
-Gene Bank,genebank,12703,0,12703,0,0,0
-Geological Equipment,geologicalequipment,1711,1614,97,2840,143,2697
-Geological Samples,geologicalsamples,382,0,382,0,0,0
-Gold,gold,47886,44932,2954,67826,4029,63797
-Goslarite,goslarite,7835,5065,2770,16048,405,15643
-Grain,grain,628,218,410,3466,10,3456
-Grandidierite,grandidierite,213833,0,213833,702798,0,702798
-Guardian Casket,guardiancasket,16010,0,16010,16010,0,16010
-Guardian Orb,guardianorb,17110,0,17110,17110,0,17110
-Guardian Relic,guardianrelic,24534,0,24534,24534,0,24534
-Guardian Tablet,guardiantablet,17110,0,17110,17110,0,17110
-Guardian Totem,guardiantotem,20090,0,20090,20090,0,20090
-Guardian Urn,guardianurn,14599,0,14599,14599,0,14599
-H.E. Suits,hesuits,744,378,366,2270,98,2172
-Haematite,haematite,2898,2213,685,19556,1105,18451
-Hafnium 178,hafnium178,76277,0,76277,76410,0,76410
-Hardware Diagnostic Sensor,hardwarediagnosticsensor,7612,6041,1571,8087,5836,2251
-Heatsink Interlink,heatsinkinterlink,2607,1736,871,2764,1596,1168
-HN Shock Mount,hnshockmount,1865,1532,333,2634,143,2491
-Hostages,hostages,34584,0,34584,36178,0,36178
-Hydrogen Peroxide,hydrogenperoxide,3120,0,3120,3301,0,3301
-Impure Spire Mineral,impurespiremineral,159930,0,159930,0,0,0
-Indite,indite,11281,9859,1422,13470,905,12565
-Indium,indium,23927,22161,1766,25919,2139,23780
-Insulating Membrane,insulatingmembrane,11380,10101,1279,20675,8623,12052
-Ion Distributor,iondistributor,2853,1951,902,3053,1776,1277
-Jadeite,jadeite,42793,0,42793,215362,0,215362
-Land Enrichment Systems,landenrichmentsystems,4853,4299,554,8569,414,8155
-Landmines,landmines,4253,3622,631,5223,347,4876
-Lanthanum,lanthanum,9451,8075,1376,10196,813,9383
-Large Survey Data Cache,largesurveydatacache,154752,0,154752,0,0,0
-Leather,leather,557,178,379,2397,13,2384
-Lepidolite,lepidolite,1782,1297,485,6450,42,6408
-Liquid oxygen,liquidoxygen,1631,817,814,4276,62,4214
-Liquor,liquor,967,718,249,134089,50,134039
-Lithium,lithium,2090,1592,498,2892,130,2762
-Lithium Hydroxide,lithiumhydroxide,5658,0,5658,7729,0,7729
-Low Temperature Diamonds,lowtemperaturediamonds,132915,0,132915,690464,0,690464
-Magnetic Emitter Coil,magneticemittercoil,1791,995,796,1922,906,1016
-Marine Equipment,marineequipment,3937,3681,256,5511,356,5155
-Medical Diagnostic Equipment,medicaldiagnosticequipment,3011,2557,454,7512,282,7230
-Methane Clathrate,methaneclathrate,1602,0,1602,1740,0,1740
-Methanol Monohydrate Crystals,methanolmonohydratecrystals,2527,0,2527,3794,0,3794
-Micro Controllers,microcontrollers,5894,5009,885,6840,4252,2588
-Micro-weave Cooling Hoses,microweavecoolinghoses,1895,1118,777,6276,869,5407
-Microbial Furnaces,microbialfurnaces,457,165,292,2010,5,2005
-Military Grade Fabrics,militarygradefabrics,1173,898,275,14530,58,14472
-Military Intelligence,militaryintelligence,62610,0,62610,62610,0,62610
-Military Plans,militaryplans,15873,0,15873,15873,0,15873
-Mineral Extractors,mineralextractors,802,568,234,2647,45,2602
-Mineral Oil,mineraloil,594,259,335,1483,10,1473
-Modular Terminals,modularterminals,2482,0,2482,2634,0,2634
-Moissanite,moissanite,27480,0,27480,207018,0,207018
-Mollusc Brain Tissue,molluscbraintissue,47106,0,47106,0,0,0
-Mollusc Fluid,molluscfluid,7926,0,7926,0,0,0
-Mollusc Membrane,molluscmembrane,25727,0,25727,0,0,0
-Mollusc Mycelium,molluscmycelium,46449,0,46449,0,0,0
-Mollusc Soft Tissue,molluscsofttissue,20760,0,20760,0,0,0
-Mollusc Spores,molluscspores,8199,0,8199,0,0,0
-Monazite,monazite,274209,0,274209,865908,0,865908
-Muon Imager,muonimager,6275,5723,552,7398,524,6874
-Musgravite,musgravite,223866,0,223866,925686,0,925686
-Mysterious Idol,mysteriousidol,14282,0,14282,0,0,0
-Nanobreakers,nanobreakers,2377,0,2377,2511,0,2511
-Narcotics,narcotics,9091,8288,803,11395,806,10589
-Natural Fabrics,naturalfabrics,889,512,377,2760,40,2720
-Neofabric Insulation,neofabricinsulation,6028,4308,1720,20163,4024,16139
-Nerve Agents,nerveagents,13441,12000,1441,14489,10601,3888
-Non-Lethal Weapons,nonlethalweapons,2034,1559,475,5268,135,5133
-Occupied Escape Pod,occupiedescapepod,30389,0,30389,46914,0,46914
-Onionhead Gamma Strain,onionheadgammastrain,5334,2517,2817,7003,243,6760
-Organ Sample,organsample,0,0,0,0,0,0
-Osmium,osmium,57483,0,57483,273000,0,273000
-Painite,painite,58375,0,58375,325063,0,325063
-Palladium,palladium,52016,48176,3840,71476,4744,66732
-Performance Enhancers,performanceenhancers,7220,6142,1078,7859,568,7291
-Personal Effects,personaleffects,9575,0,9575,9996,0,9996
-Personal Weapons,personalweapons,4145,3795,350,5425,3116,2309
-Pesticides,pesticides,424,238,186,1697,19,1678
-Platinum,platinum,72271,0,72271,302842,0,302842
-Pod Core Tissue,podcoretissue,47800,0,47800,0,0,0
-Pod Dead Tissue,poddeadtissue,133610,0,133610,0,0,0
-Pod Mesoglea,podmesoglea,270090,0,270090,0,0,0
-Pod Outer Tissue,podoutertissue,72100,0,72100,0,0,0
+Titan Drive Component,titandrivecomponent,18322797,0,18322797,0,0,0
+Semi-Refined Spire Mineral,semirefinedspiremineral,792105,0,792105,0,0,0
 Pod Shell Tissue,podshelltissue,519200,0,519200,0,0,0
+Titan Deep Tissue Sample,titandeeptissuesample,498523,0,498523,0,0,0
+Titan Maw Tissue Sample,titanmawtissuesample,446407,0,446407,0,0,0
+Thargoid Probe,thargoidprobe,440963,0,440963,442189,0,442189
+Thargoid Bio-storage Capsule,thargoidbiostoragecapsule,345832,0,345832,0,0,0
+Thargoid Sensor,thargoidsensor,304143,0,304143,305132,0,305132
+Titan Tissue Sample,titantissuesample,302423,0,302423,0,0,0
+Titan Maw Partial Tissue Sample,titanmawpartialtissuesample,298182,0,298182,0,0,0
 Pod Surface Tissue,podsurfacetissue,288190,0,288190,0,0,0
-Pod Tissue,podtissue,125460,0,125460,0,0,0
-Political Prisoners,politicalprisoners,3776,0,3776,0,0,0
-Polymers,polymers,590,175,415,9332,6,9326
-Power Converter,powerconverter,1879,1060,819,6234,973,5261
-Power Generators,powergenerators,2684,2192,492,23880,1654,22226
-Power Transfer Bus,powertransferbus,2732,1748,984,6478,1647,4831
-Praseodymium,praseodymium,8630,0,8630,11509,0,11509
-Precious Gems,preciousgems,123656,0,123656,0,0,0
-Progenitor Cells,progenitorcells,7110,6062,1048,7875,531,7344
-Prohibited Research Materials,prohibitedresearchmaterials,132881,0,132881,0,0,0
-Protective Membrane Scrap,protectivemembranescrap,0,0,0,0,0,0
-Prototype Tech,prototypetech,17719,0,17719,17830,0,17830
-Pyrophyllite,pyrophyllite,14724,10562,4162,29098,1011,28087
-Radiation Baffle,radiationbaffle,2237,1286,951,2396,1254,1142
-Rare Artwork,rareartwork,22037,0,22037,51301,0,51301
-Reactive Armour,reactivearmour,2374,1850,524,3015,157,2858
-Rebel Transmissions,rebeltransmissions,14986,0,14986,14986,0,14986
-Reinforced Mounting Plate,reinforcedmountingplate,2997,2020,977,3212,1858,1354
-Resonating Separators,resonatingseparators,6048,5284,764,7500,485,7015
+Monazite,monazite,274209,0,274209,865908,0,865908
+Caustic Tissue Sample,caustictissuesample,270720,0,270720,0,0,0
+Pod Mesoglea,podmesoglea,270090,0,270090,0,0,0
+Thargoid Hydra Tissue Sample,thargoidhydratissuesample,269388,0,269388,0,0,0
+Alexandrite,alexandrite,229722,0,229722,857103,0,857103
+Musgravite,musgravite,223866,0,223866,925686,0,925686
+Grandidierite,grandidierite,213833,0,213833,702798,0,702798
+Thargoid Medusa Tissue Sample,thargoidmedusatissuesample,206643,0,206643,0,0,0
+Thargoid Biological Matter,thargoidbiologicalmatter,205472,0,205472,0,0,0
+Thargoid Technology Samples,thargoidtechnologysamples,197247,0,197247,0,0,0
+Serendibite,serendibite,189121,0,189121,628818,0,628818
 Rhodplumsite,rhodplumsite,188096,0,188096,945567,0,945567
-Robotics,robotics,2225,1717,508,3545,1057,2488
-Rockforth Fertiliser,rockforthfertiliser,0,0,0,0,0,0
-Rutile,rutile,3120,2490,630,21240,1292,19948
-Samarium,samarium,28533,0,28533,48636,0,48636
+AI Relics,airelics,183417,0,183417,0,0,0
+Thargoid Basilisk Tissue Sample,thargoidbasilisktissuesample,181046,0,181046,0,0,0
+Thargoid Heart,thargoidheart,169717,0,169717,0,0,0
+Benitoite,benitoite,166720,0,166720,769770,0,769770
+Impure Spire Mineral,impurespiremineral,159930,0,159930,0,0,0
+Thargoid Cyclops Tissue Sample,thargoidcyclopstissuesample,158660,0,158660,0,0,0
+Titan Partial Tissue Sample,titanpartialtissuesample,154874,0,154874,0,0,0
+Large Survey Data Cache,largesurveydatacache,154752,0,154752,0,0,0
+Void Opal,voidopal,151363,0,151363,1050149,0,1050149
+Antiquities,antiquities,151302,0,151302,0,0,0
+Antique Jewellery,antiquejewellery,143778,0,143778,0,0,0
+Pod Dead Tissue,poddeadtissue,133610,0,133610,0,0,0
+Trade Data,tradedata,133188,0,133188,0,0,0
+Low Temperature Diamonds,lowtemperaturediamonds,132915,0,132915,690464,0,690464
+Prohibited Research Materials,prohibitedresearchmaterials,132881,0,132881,0,0,0
+Coral Sap,coralsap,130817,0,130817,0,0,0
+Pod Tissue,podtissue,125460,0,125460,0,0,0
+Precious Gems,preciousgems,123656,0,123656,0,0,0
+Thargoid Orthrus Tissue Sample,thargoidorthrustissuesample,120717,0,120717,0,0,0
+Thargoid Link,thargoidlink,102694,0,102694,0,0,0
+Hafnium 178,hafnium178,76277,0,76277,76410,0,76410
+Antimatter Containment Unit,antimattercontainmentunit,73555,0,73555,0,0,0
+Platinum,platinum,72271,0,72271,302842,0,302842
+Pod Outer Tissue,podoutertissue,72100,0,72100,0,0,0
+Thargoid Glaive Tissue Sample,thargoidglaivetissuesample,71903,0,71903,0,0,0
+Military Intelligence,militaryintelligence,62610,0,62610,62610,0,62610
+Thargoid Scythe Tissue Sample,thargoidscythetissuesample,60344,0,60344,0,0,0
+Thargoid Scout Tissue Sample,thargoidscouttissuesample,59609,0,59609,0,0,0
+Painite,painite,58375,0,58375,325063,0,325063
+Osmium,osmium,57483,0,57483,273000,0,273000
+Tritium,tritium,53420,50906,2514,61894,42459,19435
+Taaffeite,taaffeite,52654,0,52654,264390,0,264390
+Palladium,palladium,52016,48176,3840,71476,4744,66732
 SAP 8 Core Container,sap8corecontainer,49911,0,49911,0,0,0
+Gold,gold,47886,44932,2954,67826,4029,63797
+Pod Core Tissue,podcoretissue,47800,0,47800,0,0,0
+Mollusc Brain Tissue,molluscbraintissue,47106,0,47106,0,0,0
+Mollusc Mycelium,molluscmycelium,46449,0,46449,0,0,0
+Jadeite,jadeite,42793,0,42793,215362,0,215362
+Beryllium,beryllium,41076,38956,2120,44385,3830,40555
+Silver,silver,37672,34488,3184,49426,3020,46406
+Hostages,hostages,34584,0,34584,36178,0,36178
+Bromellite,bromellite,33721,33656,65,305000,33656,271344
+Thargoid Resin,thargoidresin,32825,0,32825,0,0,0
+Black Box,blackbox,31072,0,31072,31953,0,31953
+Occupied Escape Pod,occupiedescapepod,30389,0,30389,46914,0,46914
+Ancient Key,ancientkey,29357,0,29357,29357,0,29357
+Samarium,samarium,28533,0,28533,48636,0,48636
+Moissanite,moissanite,27480,0,27480,207018,0,207018
+Gallium,gallium,25820,24170,1650,27641,2378,25263
+Mollusc Membrane,molluscmembrane,25727,0,25727,0,0,0
+Guardian Relic,guardianrelic,24534,0,24534,24534,0,24534
+Indium,indium,23927,22161,1766,25919,2139,23780
+Unclassified Relic,unclassifiedrelic,23750,0,23750,0,0,0
+Rare Artwork,rareartwork,22037,0,22037,51301,0,51301
+Earth Relics,earthrelics,21867,0,21867,0,0,0
+Mollusc Soft Tissue,molluscsofttissue,20760,0,20760,0,0,0
+Guardian Totem,guardiantotem,20090,0,20090,20090,0,20090
+Bertrandite,bertrandite,18503,16471,2032,21649,1462,20187
+Prototype Tech,prototypetech,17719,0,17719,17830,0,17830
+Damaged Escape Pod,damagedescapepod,17208,0,17208,68178,0,68178
+Guardian Orb,guardianorb,17110,0,17110,17110,0,17110
+Guardian Tablet,guardiantablet,17110,0,17110,17110,0,17110
+Guardian Casket,guardiancasket,16010,0,16010,16010,0,16010
+Experimental Chemicals,experimentalchemicals,15873,0,15873,15873,0,15873
+Military Plans,militaryplans,15873,0,15873,15873,0,15873
+Technical Blueprints,technicalblueprints,15873,0,15873,15873,0,15873
+Cryolite,cryolite,15228,11290,3938,29940,1094,28846
+Rebel Transmissions,rebeltransmissions,14986,0,14986,14986,0,14986
+Pyrophyllite,pyrophyllite,14724,10562,4162,29098,1011,28087
+Guardian Urn,guardianurn,14599,0,14599,14599,0,14599
+Space Pioneer Relics,spacepioneerrelics,14354,0,14354,0,0,0
+Tantalum,tantalum,14313,13000,1313,15582,1221,14361
+Mysterious Idol,mysteriousidol,14282,0,14282,0,0,0
+Nerve Agents,nerveagents,13441,12000,1441,14489,10601,3888
+Gene Bank,genebank,12703,0,12703,0,0,0
+Thorium,thorium,12253,10688,1565,12917,1095,11822
+Gallite,gallite,12229,10545,1684,13829,914,12915
+Insulating Membrane,insulatingmembrane,11380,10101,1279,20675,8623,12052
+Indite,indite,11281,9859,1422,13470,905,12565
+Fossil Remnants,fossilremnants,11199,0,11199,0,0,0
+Slaves,slaves,10895,10036,859,15130,8849,6281
+Ancient Artefact,ancientartefact,9611,0,9611,0,0,0
+Personal Effects,personaleffects,9575,0,9575,9996,0,9996
+Lanthanum,lanthanum,9451,8075,1376,10196,813,9383
+Narcotics,narcotics,9091,8288,803,11395,806,10589
+Wreckage Components,wreckagecomponents,9045,0,9045,9406,0,9406
+Praseodymium,praseodymium,8630,0,8630,11509,0,11509
+Mollusc Spores,molluscspores,8199,0,8199,0,0,0
+Mollusc Fluid,molluscfluid,7926,0,7926,0,0,0
+Goslarite,goslarite,7835,5065,2770,16048,405,15643
+Hardware Diagnostic Sensor,hardwarediagnosticsensor,7612,6041,1571,8087,5836,2251
+Articulation Motors,articulationmotors,7574,0,7574,7851,0,7851
+Uranium,uranium,7571,6633,938,8587,614,7973
+Synthetic Reagents,syntheticreagents,7334,6008,1326,7851,599,7252
+Performance Enhancers,performanceenhancers,7220,6142,1078,7859,568,7291
+Consumer Technology,consumertechnology,7160,6053,1107,7851,534,7317
+Progenitor Cells,progenitorcells,7110,6062,1048,7875,531,7344
+Small Survey Data Cache,smallsurveydatacache,7080,0,7080,0,0,0
+Superconductors,superconductors,7041,6119,922,10706,5020,5686
+Data Core,datacore,6892,0,6892,0,0,0
+CMM Composite,cmmcomposite,6639,5310,1329,20292,4394,15898
+Muon Imager,muonimager,6275,5723,552,7398,524,6874
+Coltan,coltan,6164,5120,1044,7849,460,7389
+Battle Weapons,battleweapons,6121,5960,161,8081,531,7550
+Resonating Separators,resonatingseparators,6048,5284,764,7500,485,7015
+Neofabric Insulation,neofabricinsulation,6028,4308,1720,20163,4024,16139
+Micro Controllers,microcontrollers,5894,5009,885,6840,4252,2588
+Lithium Hydroxide,lithiumhydroxide,5658,0,5658,7729,0,7729
+Tobacco,tobacco,5382,4527,855,6968,391,6577
+Onionhead Gamma Strain,onionheadgammastrain,5334,2517,2817,7003,243,6760
+Unstable Data Core,unstabledatacore,4882,0,4882,0,0,0
+Land Enrichment Systems,landenrichmentsystems,4853,4299,554,8569,414,8155
+Time Capsule,timecapsule,4810,0,4810,0,0,0
+Titanium,titanium,4780,4019,761,5865,374,5491
+Cobalt,cobalt,4772,3659,1113,20108,669,19439
+Steel,steel,4505,3777,728,5593,351,5242
+Thallium,thallium,4279,3278,1001,4985,328,4657
+Landmines,landmines,4253,3622,631,5223,347,4876
+Personal Weapons,personalweapons,4145,3795,350,5425,3116,2309
+Unoccupied Escape Pod,unoccupiedescapepod,4120,0,4120,4418,0,4418
+Auto-Fabricators,autofabricators,3948,3307,641,5286,333,4953
+Marine Equipment,marineequipment,3937,3681,256,5511,356,5155
+Political Prisoners,politicalprisoners,3776,0,3776,0,0,0
+Agronomic Treatment,agronomictreatment,3611,2744,867,35554,242,35312
+Trinkets of Hidden Fortune,trinketsofhiddenfortune,3581,0,3581,0,0,0
+Thermal Cooling Units,thermalcoolingunits,3486,3369,117,37000,327,36673
+Energy Grid Assembly,energygridassembly,3229,2174,1055,6932,2036,4896
+Telemetry Suite,telemetrysuite,3225,0,3225,3381,0,3381
+Combat Stabilisers,combatstabilisers,3150,2474,676,4069,225,3844
+Hydrogen Peroxide,hydrogenperoxide,3120,0,3120,3301,0,3301
+Rutile,rutile,3120,2490,630,21240,1292,19948
+Advanced Catalysers,advancedcatalysers,3078,2500,578,3756,218,3538
+Uraninite,uraninite,3019,2347,672,4202,195,4007
+Medical Diagnostic Equipment,medicaldiagnosticequipment,3011,2557,454,7512,282,7230
+Reinforced Mounting Plate,reinforcedmountingplate,2997,2020,977,3212,1858,1354
+Haematite,haematite,2898,2213,685,19556,1105,18451
+Bismuth,bismuth,2882,2055,827,3557,207,3350
+Ion Distributor,iondistributor,2853,1951,902,3053,1776,1277
+Aluminium,aluminium,2824,2225,599,3758,200,3558
+Emergency Power Cells,emergencypowercells,2791,1888,903,6717,1317,5400
+Power Transfer Bus,powertransferbus,2732,1748,984,6478,1647,4831
+Power Generators,powergenerators,2684,2192,492,23880,1654,22226
+Heatsink Interlink,heatsinkinterlink,2607,1736,871,2764,1596,1168
+Methanol Monohydrate Crystals,methanolmonohydratecrystals,2527,0,2527,3794,0,3794
+Modular Terminals,modularterminals,2482,0,2482,2634,0,2634
+Nanobreakers,nanobreakers,2377,0,2377,2511,0,2511
+Reactive Armour,reactivearmour,2374,1850,524,3015,157,2858
+Exhaust Manifold,exhaustmanifold,2359,1504,855,2511,1378,1133
+Radiation Baffle,radiationbaffle,2237,1286,951,2396,1254,1142
+Robotics,robotics,2225,1717,508,3545,1057,2488
+Bauxite,bauxite,2151,1625,526,36192,566,35626
+Crop Harvesters,cropharvesters,2134,1904,230,3756,173,3583
+Building Fabricators,buildingfabricators,2094,1973,121,3408,177,3231
+Lithium,lithium,2090,1592,498,2892,130,2762
+Non-Lethal Weapons,nonlethalweapons,2034,1559,475,5268,135,5133
+Tea,tea,1976,1410,566,3022,115,2907
+Micro-weave Cooling Hoses,microweavecoolinghoses,1895,1118,777,6276,869,5407
+Power Converter,powerconverter,1879,1060,819,6234,973,5261
+HN Shock Mount,hnshockmount,1865,1532,333,2634,143,2491
+Animal Meat,animalmeat,1821,1282,539,4186,91,4095
+Structural Regulators,structuralregulators,1801,1643,158,3060,1054,2006
+Magnetic Emitter Coil,magneticemittercoil,1791,995,796,1922,906,1016
+Lepidolite,lepidolite,1782,1297,485,6450,42,6408
+Coffee,coffee,1760,1199,561,2847,90,2757
+Geological Equipment,geologicalequipment,1711,1614,97,2840,143,2697
 Scientific Research,scientificresearch,1705,0,1705,0,0,0
 Scientific Samples,scientificsamples,1679,0,1679,0,0,0
-Scrap,scrap,197,124,73,799,11,788
-Semi-Refined Spire Mineral,semirefinedspiremineral,792105,0,792105,0,0,0
+Advanced Medicines,advancedmedicines,1675,1216,459,4805,89,4716
+Liquid oxygen,liquidoxygen,1631,817,814,4276,62,4214
+Methane Clathrate,methaneclathrate,1602,0,1602,1740,0,1740
+Bioreducing Lichen,bioreducinglichen,1290,884,406,1703,84,1619
 Semiconductors,semiconductors,1290,952,338,2021,75,1946
-Serendibite,serendibite,189121,0,189121,628818,0,628818
-Silver,silver,37672,34488,3184,49426,3020,46406
+Agri-Medicines,agrimedicines,1199,901,298,1771,79,1692
+Military Grade Fabrics,militarygradefabrics,1173,898,275,14530,58,14472
+Ceramic Composites,ceramiccomposites,984,342,642,10859,70,10789
+Conductive Fabrics,conductivefabrics,971,562,409,5161,39,5122
+Liquor,liquor,967,718,249,134089,50,134039
 Skimmer Components,skimmercomponents,921,818,103,1703,74,1629
-Slaves,slaves,10895,10036,859,15130,8849,6281
-Small Survey Data Cache,smallsurveydatacache,7080,0,7080,0,0,0
-Space Pioneer Relics,spacepioneerrelics,14354,0,14354,0,0,0
-Steel,steel,4505,3777,728,5593,351,5242
-Structural Regulators,structuralregulators,1801,1643,158,3060,1054,2006
-Superconductors,superconductors,7041,6119,922,10706,5020,5686
+Natural Fabrics,naturalfabrics,889,512,377,2760,40,2720
+Domestic Appliances,domesticappliances,881,559,322,1216,42,1174
+Fish,fish,879,475,404,3411,28,3383
+Assault Plans,assaultplans,812,0,812,0,0,0
+Mineral Extractors,mineralextractors,802,568,234,2647,45,2602
+Aquaponic Systems,aquaponicsystems,797,441,356,2745,19,2726
+Computer Components,computercomponents,780,545,235,1824,252,1572
+Tactical Data,tacticaldata,779,0,779,0,0,0
+Copper,copper,774,460,314,1931,30,1901
+H.E. Suits,hesuits,744,378,366,2270,98,2172
+Fruit and Vegetables,fruitandvegetables,718,311,407,3852,26,3826
+Wine,wine,712,327,385,278755,20,278735
+Clothing,clothing,693,381,312,2850,23,2827
+Encrypted Data Storage,encrypteddatastorage,691,0,691,0,0,0
+Water Purifiers,waterpurifiers,683,382,301,3131,82,3049
+Bootleg Liquor,bootlegliquor,679,0,679,5798,0,5798
+Chemical Waste,chemicalwaste,670,0,670,5280,0,5280
 Surface Stabilisers,surfacestabilisers,640,546,94,2534,37,2497
-Survival Equipment,survivalequipment,573,495,78,7175,240,6935
+Beer,beer,632,227,405,181691,12,181679
+Grain,grain,628,218,410,3466,10,3456
+Explosives,explosives,626,371,255,2101,20,2081
 Synthetic Fabrics,syntheticfabrics,616,264,352,4484,8,4476
 Synthetic Meat,syntheticmeat,616,229,387,2487,13,2474
-Synthetic Reagents,syntheticreagents,7334,6008,1326,7851,599,7252
-Taaffeite,taaffeite,52654,0,52654,264390,0,264390
-Tactical Data,tacticaldata,779,0,779,0,0,0
-Tantalum,tantalum,14313,13000,1313,15582,1221,14361
-Tea,tea,1976,1410,566,3022,115,2907
-Technical Blueprints,technicalblueprints,15873,0,15873,15873,0,15873
-Telemetry Suite,telemetrysuite,3225,0,3225,3381,0,3381
-Thallium,thallium,4279,3278,1001,4985,328,4657
-Thargoid Basilisk Tissue Sample,thargoidbasilisktissuesample,181046,0,181046,0,0,0
-Thargoid Bio-storage Capsule,thargoidbiostoragecapsule,345832,0,345832,0,0,0
-Thargoid Biological Matter,thargoidbiologicalmatter,205472,0,205472,0,0,0
-Thargoid Cyclops Tissue Sample,thargoidcyclopstissuesample,158660,0,158660,0,0,0
-Thargoid Glaive Tissue Sample,thargoidglaivetissuesample,71903,0,71903,0,0,0
-Thargoid Heart,thargoidheart,169717,0,169717,0,0,0
-Thargoid Hydra Tissue Sample,thargoidhydratissuesample,269388,0,269388,0,0,0
-Thargoid Link,thargoidlink,102694,0,102694,0,0,0
-Thargoid Medusa Tissue Sample,thargoidmedusatissuesample,206643,0,206643,0,0,0
-Thargoid Orthrus Tissue Sample,thargoidorthrustissuesample,120717,0,120717,0,0,0
-Thargoid Probe,thargoidprobe,440963,0,440963,442189,0,442189
-Thargoid Resin,thargoidresin,32825,0,32825,0,0,0
-Thargoid Scout Tissue Sample,thargoidscouttissuesample,59609,0,59609,0,0,0
-Thargoid Scythe Tissue Sample,thargoidscythetissuesample,60344,0,60344,0,0,0
-Thargoid Sensor,thargoidsensor,304143,0,304143,305132,0,305132
-Thargoid Technology Samples,thargoidtechnologysamples,197247,0,197247,0,0,0
-Thermal Cooling Units,thermalcoolingunits,3486,3369,117,37000,327,36673
-Thorium,thorium,12253,10688,1565,12917,1095,11822
-Time Capsule,timecapsule,4810,0,4810,0,0,0
-Titan Deep Tissue Sample,titandeeptissuesample,498523,0,498523,0,0,0
-Titan Drive Component,titandrivecomponent,18322797,0,18322797,0,0,0
-Titan Maw Deep Tissue Sample,titanmawdeeptissuesample,1,0,1,0,0,0
-Titan Maw Partial Tissue Sample,titanmawpartialtissuesample,298182,0,298182,0,0,0
-Titan Maw Tissue Sample,titanmawtissuesample,446407,0,446407,0,0,0
-Titan Partial Tissue Sample,titanpartialtissuesample,154874,0,154874,0,0,0
-Titan Tissue Sample,titantissuesample,302423,0,302423,0,0,0
-Titanium,titanium,4780,4019,761,5865,374,5491
-Tobacco,tobacco,5382,4527,855,6968,391,6577
-Toxic Waste,toxicwaste,0,0,0,0,0,0
-Trade Data,tradedata,133188,0,133188,0,0,0
-Trinkets of Hidden Fortune,trinketsofhiddenfortune,3581,0,3581,0,0,0
-Tritium,tritium,53420,50906,2514,61894,42459,19435
-Unclassified Relic,unclassifiedrelic,23750,0,23750,0,0,0
-Unoccupied Escape Pod,unoccupiedescapepod,4120,0,4120,4418,0,4418
-Unstable Data Core,unstabledatacore,4882,0,4882,0,0,0
-Uraninite,uraninite,3019,2347,672,4202,195,4007
-Uranium,uranium,7571,6633,938,8587,614,7973
-Void Opal,voidopal,151363,0,151363,1050149,0,1050149
+Mineral Oil,mineraloil,594,259,335,1483,10,1473
+Polymers,polymers,590,175,415,9332,6,9326
+Animal Monitors,animalmonitors,581,313,268,4673,40,4633
+Survival Equipment,survivalequipment,573,495,78,7175,240,6935
+Leather,leather,557,178,379,2397,13,2384
+Basic Medicines,basicmedicines,528,309,219,5258,15,5243
+Algae,algae,498,79,419,2286,6,2280
 Water,water,496,43,453,1969,2,1967
-Water Purifiers,waterpurifiers,683,382,301,3131,82,3049
-Wine,wine,712,327,385,278755,20,278735
-Wreckage Components,wreckagecomponents,9045,0,9045,9406,0,9406
+Atmospheric Processors,atmosphericprocessors,495,346,149,1851,29,1822
+Diplomatic Bag,diplomaticbag,491,0,491,0,0,0
+Microbial Furnaces,microbialfurnaces,457,165,292,2010,5,2005
+Pesticides,pesticides,424,238,186,1697,19,1678
+Evacuation Shelter,evacuationshelter,396,284,112,4190,18,4172
+Geological Samples,geologicalsamples,382,0,382,0,0,0
+Encrypted Correspondence,encryptedcorrespondence,339,0,339,0,0,0
+Commercial Samples,commercialsamples,316,0,316,0,0,0
+Food Cartridges,foodcartridges,315,66,249,3467,5,3462
+Scrap,scrap,197,124,73,799,11,788
+Biowaste,biowaste,84,83,1,1039,2,1037
+Titan Maw Deep Tissue Sample,titanmawdeeptissuesample,1,0,1,0,0,0
+Anomaly Particles,anomalyparticles,0,0,0,0,0,0
+Bone Fragments,bonefragments,0,0,0,0,0,0
+Cyst Specimen,cystspecimen,0,0,0,0,0,0
+Organ Sample,organsample,0,0,0,0,0,0
+Protective Membrane Scrap,protectivemembranescrap,0,0,0,0,0,0
+Rockforth Fertiliser,rockforthfertiliser,0,0,0,0,0,0
+Toxic Waste,toxicwaste,0,0,0,0,0,0
