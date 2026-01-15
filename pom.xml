@@ -3,7 +3,7 @@
 
 	<groupId>org.dce</groupId>
 	<artifactId>EliteDangerousOverlay</artifactId>
-	<version>0.0.4-SNAPSHOT</version>
+	<version>0.0.7</version>
 
 	<name>EliteDangerousOverlay</name>
 	<description>EliteDangerousOverlay</description>
@@ -162,7 +162,7 @@
 				<jdk.home>${project.basedir}/dist/EDO/jdk21.0.9_10</jdk.home>
 
 				<app.name>EDO Overlay</app.name>
-				<app.version>0.0.1</app.version>
+				<app.version>${project.version}</app.version>
 
 				<!-- Where jpackage will read the jar from -->
 				<jpackage.input.dir>${project.build.directory}</jpackage.input.dir>
