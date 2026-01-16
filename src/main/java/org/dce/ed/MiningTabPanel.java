@@ -113,11 +113,26 @@ private final JLayer<JTable> cargoLayer;
 		headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		headerLabel.setOpaque(false);
 
-		inventoryLabel = new JLabel("Inventory");
-		inventoryLabel.setForeground(EdoUi.ED_ORANGE);
+		JLabel prospectorLabel = new JLabel("Prospector Limpet");
+		prospectorLabel.setForeground(EdoUi.STATUS_BLUE);
+		prospectorLabel.setHorizontalAlignment(SwingConstants.LEFT);
+		prospectorLabel.setOpaque(false);
+		prospectorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		Font base = prospectorLabel.getFont();
+		prospectorLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
+
+		// Let it span the width so BoxLayout doesn't center it
+		Dimension pref = prospectorLabel.getPreferredSize();
+		prospectorLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
+
+		
+		inventoryLabel = new JLabel("Ship Inventory");
+		inventoryLabel.setForeground(EdoUi.STATUS_BLUE);
 		inventoryLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		inventoryLabel.setOpaque(false);
 		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		inventoryLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
 
 		model = new MiningTableModel("Est. Tons");
 
@@ -202,7 +217,6 @@ private final JLayer<JTable> cargoLayer;
 			th.putClientProperty("JTableHeader.cellBorder", null);
 			th.setDefaultRenderer(new HeaderRenderer());
 
-			Dimension pref = th.getPreferredSize();
 			th.setPreferredSize(new Dimension(pref.width, table.getRowHeight()));
 		}
 
@@ -236,6 +250,7 @@ private final JLayer<JTable> cargoLayer;
 					l.setForeground(applyRevealAndFlare(base, reveal, flare));
 					if (isSummaryRow(tbl, row)) {
 						l.setFont(l.getFont().deriveFont(Font.BOLD));
+						c.setForeground(Color.green.darker());
 					}
 					l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
 					l.setBorder(new EmptyBorder(3, 4, 3, 4));
@@ -283,6 +298,7 @@ private final JLayer<JTable> cargoLayer;
 		}
 
 		configureOverlayScroller(materialsScroller);
+		materialsScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		// ----- Cargo table -----
 		cargoModel = new MiningTableModel("Tons");
@@ -319,7 +335,6 @@ private final JLayer<JTable> cargoLayer;
 			cargoHeader.putClientProperty("JTableHeader.cellBorder", null);
 			cargoHeader.setDefaultRenderer(new HeaderRenderer());
 
-			Dimension pref = cargoHeader.getPreferredSize();
 			cargoHeader.setPreferredSize(new Dimension(pref.width, cargoTable.getRowHeight()));
 		}
 
@@ -346,6 +361,10 @@ private final JLayer<JTable> cargoLayer;
 		}
 
 		configureOverlayScroller(cargoScroller);
+		cargoScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
+		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		Dimension invPref = inventoryLabel.getPreferredSize();
+		inventoryLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, invPref.height));
 
 		// Leave about 10 rows for each table.
 		updateScrollerHeights();
@@ -354,6 +373,9 @@ private final JLayer<JTable> cargoLayer;
 		centerPanel.setOpaque(false);
 		centerPanel.setBackground(new Color(0, 0, 0, 0));
 		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+		
+		centerPanel.add(prospectorLabel);
+		centerPanel.add(Box.createVerticalStrut(4)); // small gap, optional
 		centerPanel.add(materialsScroller);
 		centerPanel.add(Box.createVerticalStrut(8));
 		centerPanel.add(inventoryLabel);
@@ -458,10 +480,12 @@ private final JLayer<JTable> cargoLayer;
 		int g = base.getGreen();
 		int b = base.getBlue();
 
-		int add = (int)(110.0f * flare);
+		int add = (int) (180f * flare);   // HOTTER glow
+
+		// Push red harder, suppress green/blue for orange rows
 		r = Math.min(255, r + add);
-		g = Math.min(255, g + add);
-		b = Math.min(255, b + add);
+		g = Math.min(255, g + (int) (add * 0.35f));
+		b = Math.min(255, b + (int) (add * 0.20f));
 
 		int a = (int)(255.0f * reveal);
 		return new Color(r, g, b, a);
@@ -1082,6 +1106,9 @@ private final JLayer<JTable> cargoLayer;
 		private int scanY = Integer.MIN_VALUE;
 		private Timer scanTimer;
 
+		private int lastRowCount = 0;
+		private int scanEndY = 0;
+
 		private TableScanState(JTable table) {
 			this.table = table;
 		}
@@ -1132,6 +1159,13 @@ private final JLayer<JTable> cargoLayer;
 			}
 
 			scanY = 0;
+
+			int currentRowCount = table.getRowCount();
+			int maxRows = Math.max(lastRowCount, currentRowCount);
+			int rowHeight = table.getRowHeight();
+			scanEndY = maxRows * rowHeight;
+			lastRowCount = currentRowCount;
+
 			final Set<Integer> flaredAlready = new HashSet<>();
 
 			scanTimer = new Timer(16, e -> {
@@ -1170,7 +1204,7 @@ private final JLayer<JTable> cargoLayer;
 				}
 				table.repaint();
 
-				if (scanY > table.getHeight() + 10) {
+				if (scanY > scanEndY + 10) {
 					((Timer)e.getSource()).stop();
 					return;
 				}
