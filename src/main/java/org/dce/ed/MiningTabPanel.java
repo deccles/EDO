@@ -17,23 +17,28 @@ import java.nio.file.Path;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JLayer;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
-import javax.swing.JTextField;
 import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
+import javax.swing.plaf.LayerUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
@@ -76,6 +81,13 @@ public class MiningTabPanel extends JPanel {
 	private Path cargoFile;
 	private long lastCargoModified = -1L;
 
+private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
+
+private final TableScanState prospectorScan;
+private final TableScanState cargoScan;
+private final JLayer<JTable> prospectorLayer;
+private final JLayer<JTable> cargoLayer;
+
 
 	private Font uiFont;
 
@@ -101,27 +113,12 @@ public class MiningTabPanel extends JPanel {
 		headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		headerLabel.setOpaque(false);
 
-		JLabel prospectorLabel = new JLabel("Prospector Limpet");
-		prospectorLabel.setForeground(EdoUi.STATUS_BLUE);
-		prospectorLabel.setHorizontalAlignment(SwingConstants.LEFT);
-		prospectorLabel.setOpaque(false);
-		prospectorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-		Font base = prospectorLabel.getFont();
-		prospectorLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
-
-		// Let it span the width so BoxLayout doesn't center it
-		Dimension pref = prospectorLabel.getPreferredSize();
-		prospectorLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
-
-		
-		inventoryLabel = new JLabel("Ship Inventory");
-		inventoryLabel.setForeground(EdoUi.STATUS_BLUE);
+		inventoryLabel = new JLabel("Inventory");
+		inventoryLabel.setForeground(EdoUi.ED_ORANGE);
 		inventoryLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		inventoryLabel.setOpaque(false);
 		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		inventoryLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
-		
+
 		model = new MiningTableModel("Est. Tons");
 
 		table = new JTable(model) {
@@ -205,6 +202,7 @@ public class MiningTabPanel extends JPanel {
 			th.putClientProperty("JTableHeader.cellBorder", null);
 			th.setDefaultRenderer(new HeaderRenderer());
 
+			Dimension pref = th.getPreferredSize();
 			th.setPreferredSize(new Dimension(pref.width, table.getRowHeight()));
 		}
 
@@ -232,17 +230,12 @@ public class MiningTabPanel extends JPanel {
 				if (c instanceof JLabel) {
 					JLabel l = (JLabel)c;
 					l.setFont(tbl.getFont());
-					l.setForeground(resolveRowForeground(tbl, row));
+					Color base = resolveRowForeground(tbl, row);
+					float reveal = getRevealAlpha(tbl, row);
+					float flare = getFlareAlpha(tbl, row);
+					l.setForeground(applyRevealAndFlare(base, reveal, flare));
 					if (isSummaryRow(tbl, row)) {
-						Font f = c.getFont();
-						c.setFont(f.deriveFont(Font.BOLD, f.getSize2D() + 2f));
-						c.setForeground(Color.green.darker());
-//						c.setForeground(new Color(255, 200, 80));
-
-						if (c instanceof JComponent jc) {
-							jc.setOpaque(true);
-							jc.setBackground(new Color(0, 0, 0, 140));
-						}
+						l.setFont(l.getFont().deriveFont(Font.BOLD));
 					}
 					l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
 					l.setBorder(new EmptyBorder(3, 4, 3, 4));
@@ -271,7 +264,10 @@ public class MiningTabPanel extends JPanel {
 		};
 		table.setDefaultRenderer(Object.class, defaultRenderer);
 
-		materialsScroller = new JScrollPane(table);
+		prospectorScan = new TableScanState(table);
+		prospectorLayer = new JLayer<>(table, new ScanLayerUi(prospectorScan));
+
+		materialsScroller = new JScrollPane(prospectorLayer);
 		materialsScroller.setOpaque(false);
 		materialsScroller.setBackground(new Color(0, 0, 0, 0));
 		materialsScroller.getViewport().setOpaque(false);
@@ -287,7 +283,6 @@ public class MiningTabPanel extends JPanel {
 		}
 
 		configureOverlayScroller(materialsScroller);
-		materialsScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		// ----- Cargo table -----
 		cargoModel = new MiningTableModel("Tons");
@@ -324,15 +319,18 @@ public class MiningTabPanel extends JPanel {
 			cargoHeader.putClientProperty("JTableHeader.cellBorder", null);
 			cargoHeader.setDefaultRenderer(new HeaderRenderer());
 
-			Dimension pref2 = cargoHeader.getPreferredSize();
-			cargoHeader.setPreferredSize(new Dimension(pref2.width, cargoTable.getRowHeight()));
+			Dimension pref = cargoHeader.getPreferredSize();
+			cargoHeader.setPreferredSize(new Dimension(pref.width, cargoTable.getRowHeight()));
 		}
 
 		for (int c = 0; c < cargoTable.getColumnModel().getColumnCount(); c++) {
 			cargoTable.getColumnModel().getColumn(c).setCellRenderer(defaultRenderer);
 		}
 
-		cargoScroller = new JScrollPane(cargoTable);
+		cargoScan = new TableScanState(cargoTable);
+		cargoLayer = new JLayer<>(cargoTable, new ScanLayerUi(cargoScan));
+
+		cargoScroller = new JScrollPane(cargoLayer);
 		cargoScroller.setOpaque(false);
 		cargoScroller.setBackground(new Color(0, 0, 0, 0));
 		cargoScroller.getViewport().setOpaque(false);
@@ -348,10 +346,6 @@ public class MiningTabPanel extends JPanel {
 		}
 
 		configureOverlayScroller(cargoScroller);
-		cargoScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
-		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		Dimension invPref = inventoryLabel.getPreferredSize();
-		inventoryLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, invPref.height));
 
 		// Leave about 10 rows for each table.
 		updateScrollerHeights();
@@ -360,9 +354,6 @@ public class MiningTabPanel extends JPanel {
 		centerPanel.setOpaque(false);
 		centerPanel.setBackground(new Color(0, 0, 0, 0));
 		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
-		
-		centerPanel.add(prospectorLabel);
-		centerPanel.add(Box.createVerticalStrut(4)); // small gap, optional
 		centerPanel.add(materialsScroller);
 		centerPanel.add(Box.createVerticalStrut(8));
 		centerPanel.add(inventoryLabel);
@@ -421,6 +412,59 @@ public class MiningTabPanel extends JPanel {
 			return r != null && r.isSummary();
 		}
 		return false;
+	}
+
+	private float getRevealAlpha(JTable tbl, int viewRow) {
+		if (tbl == table) {
+			int modelRow = viewRow;
+			if (tbl.getRowSorter() != null) {
+				modelRow = tbl.convertRowIndexToModel(viewRow);
+			}
+			return prospectorScan.getRevealAlpha(modelRow);
+		}
+		if (tbl == cargoTable) {
+			int modelRow = viewRow;
+			if (tbl.getRowSorter() != null) {
+				modelRow = tbl.convertRowIndexToModel(viewRow);
+			}
+			return cargoScan.getRevealAlpha(modelRow);
+		}
+		return 1.0f;
+	}
+
+	private float getFlareAlpha(JTable tbl, int viewRow) {
+		if (tbl == table) {
+			int modelRow = viewRow;
+			if (tbl.getRowSorter() != null) {
+				modelRow = tbl.convertRowIndexToModel(viewRow);
+			}
+			return prospectorScan.getFlareAlpha(modelRow);
+		}
+		if (tbl == cargoTable) {
+			int modelRow = viewRow;
+			if (tbl.getRowSorter() != null) {
+				modelRow = tbl.convertRowIndexToModel(viewRow);
+			}
+			return cargoScan.getFlareAlpha(modelRow);
+		}
+		return 0.0f;
+	}
+
+	private static Color applyRevealAndFlare(Color base, float reveal, float flare) {
+		reveal = Math.max(0.0f, Math.min(1.0f, reveal));
+		flare = Math.max(0.0f, Math.min(1.0f, flare));
+
+		int r = base.getRed();
+		int g = base.getGreen();
+		int b = base.getBlue();
+
+		int add = (int)(110.0f * flare);
+		r = Math.min(255, r + add);
+		g = Math.min(255, g + add);
+		b = Math.min(255, b + add);
+
+		int a = (int)(255.0f * reveal);
+		return new Color(r, g, b, a);
 	}
 
 	public void applyUiFontPreferences() {
@@ -538,7 +582,9 @@ public class MiningTabPanel extends JPanel {
 
 			JsonObject cargoObj = readJsonObject(cargoFile);
 			List<Row> rows = buildRowsFromCargo(cargoObj);
+			Set<Integer> changedModelRows = computeChangedInventoryModelRows(rows);
 			cargoModel.setRows(withTotalRow(rows));
+			cargoScan.startInventoryScan(cargoLayer, changedModelRows);
 		} catch (Exception ignored) {
 		}
 	}
@@ -631,6 +677,62 @@ public class MiningTabPanel extends JPanel {
 
 		return rows;
 	}
+
+	private Set<Integer> computeChangedInventoryModelRows(List<Row> newRows) {
+		if (newRows == null) {
+			return Set.of();
+		}
+
+		Set<String> changedNames = new HashSet<>();
+		Map<String, Long> now = new HashMap<>();
+
+		for (Row r : newRows) {
+			if (r == null) {
+				continue;
+			}
+			String name = r.getName();
+			if (name == null) {
+				continue;
+			}
+			long tons = Math.round(r.getExpectedTons());
+			now.put(name, tons);
+
+			Long old = lastCargoTonsByName.get(name);
+			if (old == null || old.longValue() != tons) {
+				changedNames.add(name);
+			}
+		}
+
+		boolean removedSomething = false;
+		for (String oldName : lastCargoTonsByName.keySet()) {
+			if (!now.containsKey(oldName)) {
+				removedSomething = true;
+				break;
+			}
+		}
+
+		lastCargoTonsByName.clear();
+		lastCargoTonsByName.putAll(now);
+
+		Set<Integer> changedModelRows = new HashSet<>();
+		for (int i = 0; i < newRows.size(); i++) {
+			Row r = newRows.get(i);
+			if (r == null) {
+				continue;
+			}
+			if (changedNames.contains(r.getName())) {
+				changedModelRows.add(i);
+			}
+		}
+
+		// The Total row changes whenever any cargo line changes.
+		if (!changedModelRows.isEmpty() || removedSomething) {
+			changedModelRows.add(newRows.size());
+		}
+
+		return changedModelRows;
+	}
+
 	public void applyOverlayTransparency(boolean transparent) {
 		setOpaque(false);
 		setBackground(new Color(0, 0, 0, 0));
@@ -684,6 +786,7 @@ public class MiningTabPanel extends JPanel {
 
 
 		model.setRows(rows);
+		prospectorScan.startProspectorScan(prospectorLayer);
 
 		String hdr = "Mining (" + (content == null ? "" : content) + ")";
 		if (motherlode != null && !motherlode.isBlank()) {
@@ -971,7 +1074,169 @@ public class MiningTabPanel extends JPanel {
 		 sp.setCorner(JScrollPane.LOWER_LEFT_CORNER, corner);
 	 }
 
-	 private static final class TransparentTableHeader extends JTableHeader {
+	 	private static final class TableScanState {
+		private final JTable table;
+		private final Map<Integer, Float> revealAlphaByModelRow = new HashMap<>();
+		private final Map<Integer, Float> flareAlphaByModelRow = new HashMap<>();
+
+		private int scanY = Integer.MIN_VALUE;
+		private Timer scanTimer;
+
+		private TableScanState(JTable table) {
+			this.table = table;
+		}
+
+		private float getRevealAlpha(int modelRow) {
+			return revealAlphaByModelRow.getOrDefault(modelRow, 1.0f);
+		}
+
+		private float getFlareAlpha(int modelRow) {
+			return flareAlphaByModelRow.getOrDefault(modelRow, 0.0f);
+		}
+
+		private boolean isScanning() {
+			return scanTimer != null && scanTimer.isRunning();
+		}
+
+		private int getScanY() {
+			return scanY;
+		}
+
+		private void startProspectorScan(JLayer<JTable> layer) {
+			initRevealForAllRows(0.0f);
+			flareAlphaByModelRow.clear();
+			startScan(layer, true, null);
+		}
+
+		private void startInventoryScan(JLayer<JTable> layer, Set<Integer> flareModelRows) {
+			initRevealForAllRows(1.0f);
+			flareAlphaByModelRow.clear();
+			startScan(layer, false, flareModelRows);
+		}
+
+		private void initRevealForAllRows(float alpha) {
+			revealAlphaByModelRow.clear();
+			int rc = table.getRowCount();
+			for (int viewRow = 0; viewRow < rc; viewRow++) {
+				int modelRow = viewRow;
+				if (table.getRowSorter() != null) {
+					modelRow = table.convertRowIndexToModel(viewRow);
+				}
+				revealAlphaByModelRow.put(modelRow, alpha);
+			}
+		}
+
+		private void startScan(JLayer<JTable> layer, boolean revealOnCross, Set<Integer> flareOnlyModelRows) {
+			if (scanTimer != null && scanTimer.isRunning()) {
+				scanTimer.stop();
+			}
+
+			scanY = 0;
+			final Set<Integer> flaredAlready = new HashSet<>();
+
+			scanTimer = new Timer(16, e -> {
+				scanY += 10;
+
+				int y = 0;
+				for (int viewRow = 0; viewRow < table.getRowCount(); viewRow++) {
+					int h = table.getRowHeight(viewRow);
+					int mid = y + (h / 2);
+
+					if (scanY >= mid) {
+						int modelRow = viewRow;
+						if (table.getRowSorter() != null) {
+							modelRow = table.convertRowIndexToModel(viewRow);
+						}
+
+						if (revealOnCross) {
+							Float a = revealAlphaByModelRow.get(modelRow);
+							if (a != null && a.floatValue() < 1.0f) {
+								revealAlphaByModelRow.put(modelRow, 1.0f);
+								triggerFlare(modelRow);
+							}
+						} else {
+							if (flareOnlyModelRows != null && flareOnlyModelRows.contains(modelRow) && !flaredAlready.contains(modelRow)) {
+								flaredAlready.add(modelRow);
+								triggerFlare(modelRow);
+							}
+						}
+					}
+
+					y += h;
+				}
+
+				if (layer != null) {
+					layer.repaint();
+				}
+				table.repaint();
+
+				if (scanY > table.getHeight() + 10) {
+					((Timer)e.getSource()).stop();
+					return;
+				}
+			});
+
+			scanTimer.start();
+		}
+
+		private void triggerFlare(int modelRow) {
+			flareAlphaByModelRow.put(modelRow, 1.0f);
+
+			Timer decay = new Timer(16, null);
+			decay.addActionListener(ev -> {
+				float v = flareAlphaByModelRow.getOrDefault(modelRow, 0.0f);
+				v -= 0.08f;
+				if (v <= 0.0f) {
+					flareAlphaByModelRow.remove(modelRow);
+					((Timer)ev.getSource()).stop();
+				} else {
+					flareAlphaByModelRow.put(modelRow, v);
+				}
+				table.repaint();
+			});
+
+			decay.start();
+		}
+	}
+
+	private static final class ScanLayerUi extends LayerUI<JTable> {
+		private static final long serialVersionUID = 1L;
+		private final TableScanState scan;
+
+		private ScanLayerUi(TableScanState scan) {
+			this.scan = scan;
+		}
+
+		@Override
+		public void paint(Graphics g, JComponent c) {
+			super.paint(g, c);
+
+			if (!scan.isScanning()) {
+				return;
+			}
+
+			Graphics2D g2 = (Graphics2D)g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+				int w = c.getWidth();
+				int y = scan.getScanY();
+
+				// Soft glow band
+				g2.setColor(new Color(255, 140, 0, 40));
+				g2.fillRect(0, y - 6, w, 12);
+
+				// Bright core scan line
+				g2.setColor(new Color(255, 140, 0, 180));
+				g2.fillRect(0, y - 1, w, 3);
+
+			} finally {
+				g2.dispose();
+			}
+		}
+	}
+
+private static final class TransparentTableHeader extends JTableHeader {
 		 private static final long serialVersionUID = 1L;
 
 		 TransparentTableHeader(TableColumnModel cm) {
@@ -1035,5 +1300,4 @@ public class MiningTabPanel extends JPanel {
 			 g2.dispose();
 		 }
 	 }
-	 
 }
