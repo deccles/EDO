@@ -124,7 +124,7 @@ public class EdsmQueryTool extends JFrame {
         trafficOutputPanel = new TabOutputPanel();
         commanderOutputPanel = new TabOutputPanel();
 
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
 
         JLabel titleLabel = new JLabel("Elite Dangerous Star Map (EDSM) Query Tool");
@@ -1877,6 +1877,7 @@ public class EdsmQueryTool extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             EdsmQueryTool tool = new EdsmQueryTool();
+            tool.setDefaultCloseOperation(EXIT_ON_CLOSE);
             tool.setVisible(true);
         });
     }
