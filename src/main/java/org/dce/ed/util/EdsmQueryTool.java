@@ -331,21 +331,29 @@ public class EdsmQueryTool extends JFrame {
                 return;
             }
 
-            String centerName = systemTabSystemField.getText().trim();
-            if (centerName.isEmpty()) {
-                appendOutput(systemOutputPanel, "Please enter a system name (or use Locate) for the sphere center.\n");
+            String xText = sphereXField.getText().trim();
+            String yText = sphereYField.getText().trim();
+            String zText = sphereZField.getText().trim();
+
+            if (xText.isEmpty() || yText.isEmpty() || zText.isEmpty()) {
+                appendOutput(systemOutputPanel, "Please enter X, Y, and Z coordinates (or use Locate).\n");
                 return;
             }
 
             try {
                 int radius = Integer.parseInt(rText);
+                double x = Double.parseDouble(xText);
+                double y = Double.parseDouble(yText);
+                double z = Double.parseDouble(zText);
 
-                runQueryAsync(systemOutputPanel, "sphereSystemsLocal(" + centerName + "," + radius + ")", () -> {
-                    SphereSystemsResponse[] resp = client.sphereSystemsLocal(centerName, radius);
-                    return toJsonOrMessage(resp);
-                });
+                runQueryAsync(systemOutputPanel,
+                        "sphereSystems(" + x + "," + y + "," + z + "," + radius + ")",
+                        () -> {
+                            SphereSystemsResponse[] resp = client.sphereSystems(x, y, z, radius);
+                            return toJsonOrMessage(resp);
+                        });
             } catch (NumberFormatException ex) {
-                appendOutput(systemOutputPanel, "Invalid number format for radius.\n");
+                appendOutput(systemOutputPanel, "Invalid number format for radius or coordinates.\n");
             }
         });
 
@@ -829,7 +837,10 @@ public class EdsmQueryTool extends JFrame {
                 }
                 String system = resp.getSystem();
                 if (system != null && !system.isEmpty()) {
-                    SwingUtilities.invokeLater(() -> setGlobalSystemName(system));
+                    SwingUtilities.invokeLater(() -> {
+                        setGlobalSystemName(system);
+                        populateSphereCoordsFromSystemName(system);
+                    });
                     return "Located commander in system: " + system;
                 } else {
                     return "(getCmdrLastPosition returned no system)";
@@ -1198,6 +1209,44 @@ public class EdsmQueryTool extends JFrame {
         } finally {
             suppressAutoCompleteEvents = false;
         }
+    }
+
+    private void populateSphereCoordsFromSystemName(String systemName) {
+        if (systemName == null) {
+            return;
+        }
+        String trimmed = systemName.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+
+        // These fields exist only on the System tab; if the tab hasn't been built yet, do nothing.
+        if (sphereXField == null && sphereYField == null && sphereZField == null) {
+            return;
+        }
+
+        new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() {
+                try {
+                    SystemResponse resp = client.getSystem(trimmed);
+                    return toJsonOrMessage(resp);
+                } catch (Exception ex) {
+                    return null;
+                }
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    String json = get();
+                    if (json != null && !json.isBlank()) {
+                        updateSphereCoordsFromJson(json);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }.execute();
     }
 
     private void updateSphereCoordsFromJson(String json) {
@@ -1877,7 +1926,6 @@ public class EdsmQueryTool extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             EdsmQueryTool tool = new EdsmQueryTool();
-            tool.setDefaultCloseOperation(EXIT_ON_CLOSE);
             tool.setVisible(true);
         });
     }
