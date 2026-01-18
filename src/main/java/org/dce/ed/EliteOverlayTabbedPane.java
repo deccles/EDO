@@ -258,6 +258,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private void handleProspectedAsteroid(ProspectedAsteroidEvent event) {
 		// Update Mining tab UI (always), regardless of whether announcements are enabled.
 		try {
+			System.out.println("Updating from prospector");
 			miningTab.updateFromProspector(event);
 		} catch (Exception e) {
 			// UI update errors shouldn't break log processing
@@ -271,6 +272,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 
 		String msg = buildProspectorSummary(event);
+		System.out.println("Prospector summary : " + ((msg != null) ? msg : "Nothing valuable"));
 		if (msg != null && !msg.isBlank()) {
 			tts.speakf(msg);
 		}
@@ -362,84 +364,84 @@ public class EliteOverlayTabbedPane extends JPanel {
 		return OverlayPreferences.getMiningEstimateTonsMedium();
 	}
 
-	private void announceValuableProspectByAvgValue(ProspectedAsteroidEvent event, int minAvgValueCrPerTon) {
-		Set<String> wanted = parseMaterialList(OverlayPreferences.getProspectorMaterialsCsv());
-
-		LinkedHashMap<String, String> qualifying = new LinkedHashMap<>();
-		for (ProspectedAsteroidEvent.MaterialProportion m : event.getMaterials()) {
-			if (m == null) {
-				continue;
-			}
-			String rawName = m.getName();
-			String norm = normalizeMaterialName(rawName);
-			if (!wanted.isEmpty() && !wanted.contains(norm)) {
-				continue;
-			}
-
-			OptionalInt avg = galacticAvgPrices.getAvgSellCrPerTon(rawName);
-			if (avg.isEmpty()) {
-				continue;
-			}
-			if (avg.getAsInt() < minAvgValueCrPerTon) {
-				continue;
-			}
-
-			qualifying.putIfAbsent(norm, rawName);
-		}
-
-		if (qualifying.isEmpty()) {
-			return;
-		}
-
-		String motherlodeRaw = event.getMotherlodeMaterial();
-		String motherlodeNorm = normalizeMaterialName(motherlodeRaw);
-		boolean motherlodeQualifies = !motherlodeNorm.isBlank() && qualifying.containsKey(motherlodeNorm);
-
-		int count = qualifying.size();
-		boolean isHigh = event.getContent() != null && event.getContent().equalsIgnoreCase("High");
-		String coreWord = isHigh ? "motherlode" : "core";
-
-		String msg;
-		if (count == 1) {
-			String only = toSpokenMaterialName(qualifying.values().iterator().next());
-			if (motherlodeQualifies) {
-				msg = "Detected " + only + " " + coreWord;
-			} else {
-				msg = "Detected " + only;
-			}
-		} else if (count == 2) {
-			if (motherlodeQualifies) {
-				String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
-				String other = null;
-				for (Entry<String, String> e : qualifying.entrySet()) {
-					if (!e.getKey().equals(motherlodeNorm)) {
-						other = toSpokenMaterialName(e.getValue());
-						break;
-					}
-				}
-				if (other == null) {
-					other = "material";
-				}
-				msg = "Detected " + mother + " " + coreWord + " and " + other;
-			} else {
-				List<String> names = new ArrayList<>();
-				for (String raw : qualifying.values()) {
-					names.add(toSpokenMaterialName(raw));
-				}
-				msg = "Detected " + names.get(0) + " and " + names.get(1);
-			}
-		} else {
-			if (motherlodeQualifies) {
-				String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
-				int otherCount = count - 1;
-				msg = "Detected " + mother + " " + coreWord + " and " + otherCount + " valuable " + (otherCount == 1 ? "material" : "materials");
-			} else {
-				msg = "Detected " + count + " valuable materials";
-			}
-		}
-
-		tts.speakf(msg);
-	}
+//	private void announceValuableProspectByAvgValue(ProspectedAsteroidEvent event, int minAvgValueCrPerTon) {
+//		Set<String> wanted = parseMaterialList(OverlayPreferences.getProspectorMaterialsCsv());
+//
+//		LinkedHashMap<String, String> qualifying = new LinkedHashMap<>();
+//		for (ProspectedAsteroidEvent.MaterialProportion m : event.getMaterials()) {
+//			if (m == null) {
+//				continue;
+//			}
+//			String rawName = m.getName();
+//			String norm = normalizeMaterialName(rawName);
+//			if (!wanted.isEmpty() && !wanted.contains(norm)) {
+//				continue;
+//			}
+//
+//			OptionalInt avg = galacticAvgPrices.getAvgSellCrPerTon(rawName);
+//			if (avg.isEmpty()) {
+//				continue;
+//			}
+//			if (avg.getAsInt() < minAvgValueCrPerTon) {
+//				continue;
+//			}
+//
+//			qualifying.putIfAbsent(norm, rawName);
+//		}
+//
+//		if (qualifying.isEmpty()) {
+//			return;
+//		}
+//
+//		String motherlodeRaw = event.getMotherlodeMaterial();
+//		String motherlodeNorm = normalizeMaterialName(motherlodeRaw);
+//		boolean motherlodeQualifies = !motherlodeNorm.isBlank() && qualifying.containsKey(motherlodeNorm);
+//
+//		int count = qualifying.size();
+//		boolean isHigh = event.getContent() != null && event.getContent().equalsIgnoreCase("High");
+//		String coreWord = isHigh ? "motherlode" : "core";
+//
+//		String msg;
+//		if (count == 1) {
+//			String only = toSpokenMaterialName(qualifying.values().iterator().next());
+//			if (motherlodeQualifies) {
+//				msg = "Detected " + only + " " + coreWord;
+//			} else {
+//				msg = "Detected " + only;
+//			}
+//		} else if (count == 2) {
+//			if (motherlodeQualifies) {
+//				String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
+//				String other = null;
+//				for (Entry<String, String> e : qualifying.entrySet()) {
+//					if (!e.getKey().equals(motherlodeNorm)) {
+//						other = toSpokenMaterialName(e.getValue());
+//						break;
+//					}
+//				}
+//				if (other == null) {
+//					other = "material";
+//				}
+//				msg = "Detected " + mother + " " + coreWord + " and " + other;
+//			} else {
+//				List<String> names = new ArrayList<>();
+//				for (String raw : qualifying.values()) {
+//					names.add(toSpokenMaterialName(raw));
+//				}
+//				msg = "Detected " + names.get(0) + " and " + names.get(1);
+//			}
+//		} else {
+//			if (motherlodeQualifies) {
+//				String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
+//				int otherCount = count - 1;
+//				msg = "Detected " + mother + " " + coreWord + " and " + otherCount + " valuable " + (otherCount == 1 ? "material" : "materials");
+//			} else {
+//				msg = "Detected " + count + " valuable materials";
+//			}
+//		}
+//
+//		tts.speakf(msg);
+//	}
 
 	private static Set<String> parseMaterialList(String csv) {
 		if (csv == null || csv.isBlank()) {
