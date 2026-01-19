@@ -46,7 +46,6 @@ public final class LiveJournalMonitor {
     private WatchService statusWatchService;
     private Thread statusWatcherThread;
 
-
     private Instant lastStatusTimestamp;
     private int lastStatusFlags  = Integer.MIN_VALUE;
     private int lastStatusFlags2 = Integer.MIN_VALUE;
@@ -57,7 +56,7 @@ public final class LiveJournalMonitor {
     private Double lastStatusHeading;
     private String lastStatusBodyName;
     private Double lastStatusPlanetRadius;
-    
+
     private static Map<String,LiveJournalMonitor> INSTANCE = new HashMap<String,LiveJournalMonitor>();
 
     private final CopyOnWriteArrayList<Consumer<EliteLogEvent>> listeners =
@@ -67,17 +66,19 @@ public final class LiveJournalMonitor {
 
     private volatile boolean running = false;
     private Thread workerThread;
-    
-	private String clientKey;
+
+    private Instant lastJournalIoErrorLog;
+
+    private String clientKey;
 
     private LiveJournalMonitor(String clientKey) {
-    	this.clientKey = clientKey;
+        this.clientKey = clientKey;
     }
 
     public static LiveJournalMonitor getInstance(String clientKey) {
         LiveJournalMonitor liveJournalMonitor = INSTANCE.get(clientKey);
         if (liveJournalMonitor == null) {
-        	INSTANCE.put(clientKey,  new LiveJournalMonitor(clientKey));
+            INSTANCE.put(clientKey,  new LiveJournalMonitor(clientKey));
         }
         return INSTANCE.get(clientKey);
     }
@@ -129,21 +130,27 @@ public final class LiveJournalMonitor {
 
     private void runLoop() {
         Path journalDir = null;
-        
-        if (OverlayPreferences.isAutoLogDir(clientKey)) { 
-        	journalDir = EliteLogFileLocator.findDefaultJournalDirectory();
+
+        if (OverlayPreferences.isAutoLogDir(clientKey)) {
+            journalDir = EliteLogFileLocator.findDefaultJournalDirectory();
         } else {
-        	journalDir = Path.of(OverlayPreferences.getCustomLogDir(clientKey));
+            journalDir = Path.of(OverlayPreferences.getCustomLogDir(clientKey));
         }
         if (journalDir == null || !Files.isDirectory(journalDir)) {
+            System.err.println("[EDO] LiveJournalMonitor: journal directory not found. clientKey=" + clientKey
+                    + " autoLogDir=" + OverlayPreferences.isAutoLogDir(clientKey)
+                    + " customDir=\"" + OverlayPreferences.getCustomLogDir(clientKey) + "\"");
             running = false;
             return;
         }
 
-        // NEW: remember Status.json in the same directory
+        System.err.println("[EDO] LiveJournalMonitor: watching journals in \""
+                + journalDir.toAbsolutePath() + "\" (clientKey=" + clientKey + ")");
+
+        // remember Status.json in the same directory
         statusFile = journalDir.resolve("Status.json");
 
-        // NEW: watch Status.json for immediate updates
+        // watch Status.json for immediate updates
         startStatusWatcher(journalDir);
 
         // Seed with the current Status.json so listeners (e.g. Biology tab) have an initial position immediately.
@@ -305,10 +312,7 @@ public final class LiveJournalMonitor {
             }
         }
     }
-    /**
-     * Poll Status.json in the journal directory.
-     * When Flags / Flags2 change, emit a StatusFlagsEvent into the normal pipeline.
-     */
+
     /**
      * Poll Status.json in the journal directory.
      * When Flags / Flags2 change, emit a StatusEvent into the normal pipeline.
@@ -337,7 +341,7 @@ public final class LiveJournalMonitor {
 
             int flags = getIntOrDefault(root, "Flags", 0);
             int flags2 = getIntOrDefault(root, "Flags2", 0);
-        	
+
             // Pips: [sys, eng, wep]
             int[] pips = new int[] { 0, 0, 0 };
             JsonElement pipsEl = root.get("Pips");
@@ -558,7 +562,7 @@ public final class LiveJournalMonitor {
             return null;
         }
     }
-    
+
     private long readFromFile(Path file, long startPos) {
         if (!Files.isRegularFile(file)) {
             return startPos;
@@ -591,9 +595,26 @@ public final class LiveJournalMonitor {
             }
         } catch (IOException ex) {
             // transient I/O – skip; retry next poll
+            maybeLogJournalIoError(file, ex);
         }
 
         return newPos;
+    }
+
+    private void maybeLogJournalIoError(Path file, IOException ex) {
+        Instant now = Instant.now();
+        if (lastJournalIoErrorLog != null && Duration.between(lastJournalIoErrorLog, now).getSeconds() < 30) {
+            return;
+        }
+        lastJournalIoErrorLog = now;
+
+        String msg = ex.getMessage();
+        if (msg == null) {
+            msg = ex.getClass().getSimpleName();
+        }
+
+        System.err.println("[EDO] LiveJournalMonitor: I/O while reading \""
+                + file.toAbsolutePath() + "\": " + msg);
     }
 
     public void dispatch(EliteLogEvent event) {
