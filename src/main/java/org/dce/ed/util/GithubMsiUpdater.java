@@ -440,37 +440,39 @@ public final class GithubMsiUpdater {
     }
     
     private static Path createInstallAndRelaunchScript(Path msi) throws IOException {
-        // Adjust these two lines if your app name differs in Program Files.
         String programFiles = System.getenv("ProgramFiles");
         if (programFiles == null || programFiles.isBlank()) {
             programFiles = "C:\\Program Files";
         }
 
-        Path expectedExe = Path.of(programFiles, APP_FOLDER_NAME, APP_EXE_NAME);
-
-        // Use /passive to reduce prompts (still may show UAC). If you want totally silent, use /qn.
-        // /norestart avoids surprise reboots.
-        String msiCmd = "msiexec /i \"" + msi.toAbsolutePath() + "\" /passive /norestart";
-
-        // After install, try to launch the expected EXE. If it's not there, just open the install folder.
-        String relaunchCmd =
-                "if exist \"" + expectedExe.toAbsolutePath() + "\" (\r\n" +
-                "  start \"\" \"" + expectedExe.toAbsolutePath() + "\"\r\n" +
-                ") else (\r\n" +
-                "  start \"\" \"" + Path.of(programFiles, APP_FOLDER_NAME).toAbsolutePath() + "\"\r\n" +
-                ")\r\n";
+        Path installDir = Path.of(programFiles, "EDO Overlay");
+        Path exe = installDir.resolve("EDO Overlay.exe");
 
         String scriptText =
                 "@echo off\r\n" +
                 "setlocal\r\n" +
+                "echo Waiting for EDO Overlay to exit...\r\n" +
+
+                // Give the JVM a moment to shut down cleanly
+                "timeout /t 2 /nobreak >nul\r\n" +
+
+                // Ensure no running instances remain
+                "taskkill /IM \"EDO Overlay.exe\" /F >nul 2>&1\r\n" +
+
                 "echo Installing update...\r\n" +
-                msiCmd + "\r\n" +
-                "echo Install finished (errorlevel=%errorlevel%). Relaunching...\r\n" +
-                relaunchCmd +
+                "msiexec /i \"" + msi.toAbsolutePath() + "\" /passive /norestart\r\n" +
+
+                "echo Relaunching EDO Overlay...\r\n" +
+                "if exist \"" + exe.toAbsolutePath() + "\" (\r\n" +
+                "  start \"\" \"" + exe.toAbsolutePath() + "\"\r\n" +
+                ") else (\r\n" +
+                "  start \"\" \"" + installDir.toAbsolutePath() + "\"\r\n" +
+                ")\r\n" +
+
                 "endlocal\r\n";
 
         Path script = Files.createTempFile("EDO-Overlay-Update-", ".cmd");
-        Files.writeString(script, scriptText, StandardCharsets.UTF_8);
+        Files.writeString(script, scriptText, java.nio.charset.StandardCharsets.UTF_8);
         script.toFile().deleteOnExit();
         return script;
     }
