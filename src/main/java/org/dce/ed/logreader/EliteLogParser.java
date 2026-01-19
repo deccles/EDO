@@ -118,7 +118,6 @@ default:
         String motherlode = getString(obj, "MotherlodeMaterial");
         String content = getString(obj, "Content");
 
-        System.out.println("Received prospector event from log");
         List<ProspectedAsteroidEvent.MaterialProportion> materials = new ArrayList<>();
         if (obj.has("Materials") && obj.get("Materials").isJsonArray()) {
             JsonArray arr = obj.getAsJsonArray("Materials");
@@ -134,7 +133,6 @@ default:
                 }
             }
         }
-        System.out.println("Parsed PropectedAsteroidEvent");
         return new ProspectedAsteroidEvent(ts, obj, materials, motherlode, content);
     }
 

@@ -26,6 +26,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 
 import org.dce.ed.util.EdsmQueryTool;
+import org.dce.ed.util.GithubMsiUpdater;
 
 /**
  * Preferences dialog for the overlay.
@@ -399,10 +400,16 @@ public class PreferencesDialog extends JDialog {
         JButton launchEdsmQueryToolsButton = new JButton("Run EDSM Query Tools");
         launchEdsmQueryToolsButton.addActionListener(e -> launchEdsmQueryTools());
 
+        JButton checkForUpdatesButton = new JButton("Check for Updates");
+        checkForUpdatesButton.addActionListener(e -> GithubMsiUpdater.checkAndUpdate(this));
+
         content.add(launchLogMonitorButton, gbc);
 
         gbc.gridy++;
         content.add(launchEdsmQueryToolsButton, gbc);
+
+        gbc.gridy++;
+        content.add(checkForUpdatesButton, gbc);
 
         gbc.gridy++;
         gbc.weighty = 1.0;

@@ -162,36 +162,35 @@ public final class LiveJournalMonitor {
         while (running) {
             try {
                 Path latest = findLatestJournalFile(journalDir);
+
                 if (!Objects.equals(latest, currentFile)) {
-                    // new or rotated file: start tailing from the end
                     currentFile = latest;
-                    filePointer = (currentFile != null && Files.isRegularFile(currentFile))
-                            ? Files.size(currentFile)
-                            : 0L;
+
+                    if (currentFile != null) {
+                        System.err.println("[EDO] LiveJournalMonitor: tailing journal file \""
+                                + currentFile.toAbsolutePath() + "\"");
+
+                        // IMPORTANT: when the journal rotates while we're running, start at 0
+                        // so we don't miss initial events that were written before our next poll.
+                        filePointer = 0L;
+                    } else {
+                        filePointer = 0L;
+                    }
                 }
 
                 if (currentFile != null) {
                     filePointer = readFromFile(currentFile, filePointer);
                 }
 
-                // Fallback poll in case the OS watcher misses events.
-                // This is intentionally slower than the watcher path.
                 if (statusWatcherThread == null || !statusWatcherThread.isAlive()) {
                     pollStatusFileWithRetry();
                 }
 
-                try {
-                    Thread.sleep(POLL_INTERVAL.toMillis());
-                } catch (InterruptedException ie) {
-                    if (!running) {
-                        break;
-                    }
-                }
+                Thread.sleep(POLL_INTERVAL.toMillis());
             } catch (Exception ex) {
                 try {
                     Thread.sleep(POLL_INTERVAL.toMillis());
                 } catch (InterruptedException ignored) {
-                    // ignore
                 }
             }
         }
