@@ -212,8 +212,8 @@ public final class GithubMsiUpdater {
                     Path script = createInstallAndRelaunchScript(downloaded);
 
                     // Kick it off detached, then exit the overlay so files aren't locked.
-                    new ProcessBuilder("cmd", "/c", "start", "\"\"", script.toAbsolutePath().toString())
-                            .start();
+                    new ProcessBuilder("cmd", "/c", "\"" + script.toAbsolutePath().toString() + "\"")
+                    .start();
 
                     System.exit(0);
 
@@ -440,6 +440,13 @@ public final class GithubMsiUpdater {
     }
     
     private static Path createInstallAndRelaunchScript(Path msi) throws IOException {
+        String temp = System.getenv("TEMP");
+        if (temp == null || temp.isBlank()) {
+            temp = System.getProperty("java.io.tmpdir");
+        }
+
+        Path script = Files.createTempFile(Path.of(temp), "EDO-Overlay-Update-", ".cmd");
+
         String programFiles = System.getenv("ProgramFiles");
         if (programFiles == null || programFiles.isBlank()) {
             programFiles = "C:\\Program Files";
@@ -452,8 +459,6 @@ public final class GithubMsiUpdater {
                 "@echo off\r\n" +
                 "setlocal\r\n" +
                 "echo Waiting for EDO Overlay to exit...\r\n" +
-
-                // Give the JVM a moment to shut down cleanly
                 "timeout /t 2 /nobreak >nul\r\n" +
 
                 // Ensure no running instances remain
@@ -468,11 +473,9 @@ public final class GithubMsiUpdater {
                 ") else (\r\n" +
                 "  start \"\" \"" + installDir.toAbsolutePath() + "\"\r\n" +
                 ")\r\n" +
-
                 "endlocal\r\n";
 
-        Path script = Files.createTempFile("EDO-Overlay-Update-", ".cmd");
-        Files.writeString(script, scriptText, java.nio.charset.StandardCharsets.UTF_8);
+        Files.writeString(script, scriptText, java.nio.charset.Charset.forName("windows-1252"));
         script.toFile().deleteOnExit();
         return script;
     }
