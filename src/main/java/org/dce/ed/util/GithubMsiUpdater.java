@@ -247,14 +247,20 @@ public final class GithubMsiUpdater {
 
                     String outerEncoded = toPowershellEncodedCommand(outer);
 
-                    new ProcessBuilder(
+                    Process p = new ProcessBuilder(
                             "powershell.exe",
                             "-NoProfile",
                             "-EncodedCommand",
                             outerEncoded
                     ).start();
 
-                    // Exit so MSI can replace files
+                    // Give Windows time to spawn the elevated process
+                    try {
+                        Thread.sleep(1500);
+                    } catch (InterruptedException ignored) {
+                    }
+
+                    // Now exit so MSI can replace files
                     System.exit(0);
 
                 } catch (Exception ex) {

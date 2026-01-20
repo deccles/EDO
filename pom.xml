@@ -263,8 +263,6 @@
 										<argument>
 											${project.basedir}\src\main\resources\edo.ico</argument>
 
-										<argument>--win-console</argument>
-
 										<argument>--java-options</argument>
 										<argument>-Djava.library.path=$APPDIR</argument>
 
