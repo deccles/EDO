@@ -3,7 +3,7 @@
 
 	<groupId>org.dce</groupId>
 	<artifactId>EliteDangerousOverlay</artifactId>
-	<version>0.0.17</version>
+	<version>0.0.16</version>
 
 	<name>EliteDangerousOverlay</name>
 	<description>EliteDangerousOverlay</description>
@@ -30,16 +30,16 @@
 	</dependencyManagement>
 
 	<dependencies>
-    <dependency>
-        <groupId>org.apache.logging.log4j</groupId>
-        <artifactId>log4j-api</artifactId>
-        <version>2.25.0</version>
-    </dependency>
-    <dependency>
-        <groupId>org.apache.logging.log4j</groupId>
-        <artifactId>log4j-core</artifactId>
-        <version>2.25.0</version>
-    </dependency>
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-api</artifactId>
+			<version>2.25.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-core</artifactId>
+			<version>2.25.0</version>
+		</dependency>
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>polly</artifactId>
@@ -114,6 +114,10 @@
 				<version>3.13.0</version>
 				<configuration>
 					<release>21</release>
+					<compilerArgs>
+						<arg>-Alog4j.graalvm.groupId=org.apache.logging.log4j</arg>
+						<arg>-Alog4j.graalvm.artifactId=log4j-core</arg>
+					</compilerArgs>
 				</configuration>
 			</plugin>
 
@@ -199,7 +203,8 @@
 									<outputDirectory>${project.build.directory}</outputDirectory>
 									<resources>
 										<resource>
-											<directory>${project.basedir}\src\main\resources\native</directory>
+											<directory>
+												${project.basedir}\src\main\resources\native</directory>
 											<includes>
 												<include>JNativeHook.x86_64.dll</include>
 											</includes>
