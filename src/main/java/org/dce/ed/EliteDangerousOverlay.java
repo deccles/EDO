@@ -15,10 +15,10 @@ import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.ConsoleMonitor;
 import org.dce.ed.util.AppIconUtil;
+import org.dce.ed.util.GithubMsiUpdater;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
-import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
 
 public class EliteDangerousOverlay implements NativeKeyListener {
@@ -40,6 +40,8 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         this.overlayFrame = new OverlayFrame();
 
         AppIconUtil.applyAppIcon(overlayFrame, "/org/dce/ed/edsm/locate_icon.png");
+        
+        GithubMsiUpdater.checkForUpdatesOnStartup(overlayFrame);
     }
 
     public static void main(String[] args) {

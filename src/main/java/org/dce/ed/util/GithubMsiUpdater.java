@@ -499,6 +499,86 @@ public final class GithubMsiUpdater {
 
         return JsonParser.parseString(resp.body()).getAsJsonObject();
     }
+    public static void checkForUpdatesOnStartup(Component parent) {
+        // Same as checkAndUpdate, but:
+        // - no "No update available" dialog
+        // - no "No MSI found" dialog
+        // - only show UI if update exists and can be installed
+        Cursor oldCursor = parent != null ? parent.getCursor() : null;
+
+        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+
+            private String currentVersion;
+            private String latestVersion;
+            private String latestHtmlUrl;
+            private String msiName;
+            private String msiUrl;
+            private Exception failure;
+
+            @Override
+            protected Void doInBackground() {
+                try {
+                    currentVersion = readCurrentVersion();
+
+                    JsonObject latest = fetchLatestReleaseJson();
+                    latestVersion = readVersionFromTag(latest);
+                    latestHtmlUrl = getString(latest, "html_url");
+
+                    JsonObject msiAsset = findMsiAsset(latest);
+                    if (msiAsset != null) {
+                        msiName = getString(msiAsset, "name");
+                        msiUrl = getString(msiAsset, "browser_download_url");
+                    }
+                } catch (Exception ex) {
+                    failure = ex;
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                // Startup behavior: NEVER pop errors or "no update" messages.
+                if (failure != null) {
+                    return;
+                }
+
+                if (latestVersion == null || latestVersion.isBlank()) {
+                    return;
+                }
+
+                if (currentVersion != null && !currentVersion.isBlank() && !"(unknown)".equals(currentVersion)) {
+                    if (compareVersions(latestVersion, currentVersion) <= 0) {
+                        return;
+                    }
+                }
+
+                // Only prompt if an update is actually available.
+                if (msiUrl == null || msiUrl.isBlank()) {
+                    // Optional: you could show a warning, but you asked for silent unless installable.
+                    return;
+                }
+
+                int choice = JOptionPane.showConfirmDialog(parent,
+                        "Update available.\n\n"
+                                + "Current: " + nullToUnknown(currentVersion) + "\n"
+                                + "Latest: " + latestVersion + "\n\n"
+                                + "Download and run installer now?\n\n"
+                                + "MSI: " + nullToUnknown(msiName) + "\n\n"
+                                + "Windows will ask for admin permission to install.",
+                        "Update Available",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE);
+
+                if (choice != JOptionPane.YES_OPTION) {
+                    return;
+                }
+
+                downloadAndInstall(parent, msiUrl, msiName);
+            }
+        };
+
+        worker.execute();
+    }
 
     private static JsonObject findMsiAsset(JsonObject release) {
         JsonElement assetsEl = release.get("assets");
