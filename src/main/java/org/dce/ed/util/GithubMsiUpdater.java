@@ -107,7 +107,8 @@ public final class GithubMsiUpdater {
                     JOptionPane.showMessageDialog(parent,
                             "Latest release was found (" + latestVersion + "), but no MSI asset was attached.\n\n"
                                     + "Open the Releases page and download the MSI manually:\n"
-                                    + (latestHtmlUrl != null ? latestHtmlUrl : "https://github.com/" + OWNER + "/" + REPO + "/releases"),
+                                    + (latestHtmlUrl != null ? latestHtmlUrl
+                                            : "https://github.com/" + OWNER + "/" + REPO + "/releases"),
                             "No MSI Found",
                             JOptionPane.WARNING_MESSAGE);
                     return;
@@ -214,25 +215,48 @@ public final class GithubMsiUpdater {
                 }
 
                 try {
-                	String msiPath = downloaded.toAbsolutePath().toString();
+                    // --- NEW: run msiexec elevated and then relaunch the installed EXE ---
+                    String programFiles = System.getenv("ProgramFiles");
+                    if (programFiles == null || programFiles.isBlank()) {
+                        programFiles = "C:\\Program Files";
+                    }
 
-                	String cmd =
-                	        "Start-Process msiexec.exe " +
-                	        "-Verb RunAs " +
-                	        "-ArgumentList '/i \"" + msiPath + "\" /passive /norestart'";
+                    Path exe = Path.of(programFiles, INSTALL_DIR_NAME, EXE_NAME);
 
-                	String encoded = Base64.getEncoder()
-                	        .encodeToString(cmd.getBytes(StandardCharsets.UTF_16LE));
+                    String msiPath = downloaded.toAbsolutePath().toString();
+                    String exePath = exe.toAbsolutePath().toString();
 
-                	new ProcessBuilder(
-                	        "powershell.exe",
-                	        "-NoProfile",
-                	        "-EncodedCommand",
-                	        encoded
-                	).start();
+                    // Inner command runs ELEVATED. No .ps1 involved.
+                    String inner =
+                            "$msi = \"" + escapeForPowershell(msiPath) + "\"; " +
+                            "$exe = \"" + escapeForPowershell(exePath) + "\"; " +
+                            "$args = \"/i `\"$msi`\" /passive /norestart\"; " +
+                            "$p = Start-Process -FilePath \"msiexec.exe\" -ArgumentList $args -Wait -PassThru; " +
+                            "    Start-Sleep -Seconds 1; " +
+                            "    Start-Process -FilePath $exe; ";
 
-                	// Exit so MSI can replace files
-                	System.exit(0);
+                    String innerEncoded = toPowershellEncodedCommand(inner);
+
+                    // Outer command just triggers UAC once and runs the encoded inner command elevated.
+                    String outer =
+                            "Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -ArgumentList @(" +
+                            "    '-NoProfile'," +
+                            "    '-EncodedCommand'," +
+                            "    '" + innerEncoded + "'" +
+                            ")";
+
+                    String outerEncoded = toPowershellEncodedCommand(outer);
+
+                    new ProcessBuilder(
+                            "powershell.exe",
+                            "-NoProfile",
+                            "-EncodedCommand",
+                            outerEncoded
+                    ).start();
+
+                    // Exit so MSI can replace files
+                    System.exit(0);
+
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(parent,
                             "Downloaded installer, but couldn't start the updater:\n" + safeMessage(ex) + "\n\n"
@@ -322,8 +346,8 @@ public final class GithubMsiUpdater {
         return outFile;
     }
 
+    // Left in place (your file already had these); currently unused, but harmless.
     private static Path createInstallAndRelaunchPs1(Path msi) throws IOException {
-
         Path updaterDir = getUpdaterDir();
         Files.createDirectories(updaterDir);
 
@@ -379,7 +403,6 @@ public final class GithubMsiUpdater {
                 "$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArgs -Wait -PassThru\n" +
                 "Log ('msiexec exit code: ' + $p.ExitCode)\n" +
                 "\n" +
-                "# Treat 0 and 3010 as success\n" +
                 "if (($p.ExitCode -ne 0) -and ($p.ExitCode -ne 3010)) {\n" +
                 "  Log 'Install FAILED; not relaunching app.'\n" +
                 "  exit $p.ExitCode\n" +
@@ -399,7 +422,6 @@ public final class GithubMsiUpdater {
     }
 
     private static Path createElevatedLauncherPs1(Path updatePs1) throws IOException {
-
         Path updaterDir = getUpdaterDir();
         Files.createDirectories(updaterDir);
 
@@ -439,8 +461,7 @@ public final class GithubMsiUpdater {
     }
 
     private static String toPowershellEncodedCommand(String command) {
-        // PowerShell -EncodedCommand expects UTF-16LE bytes, Base64 encoded.
-        byte[] bytes = command.getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+        byte[] bytes = command.getBytes(StandardCharsets.UTF_16LE);
         return Base64.getEncoder().encodeToString(bytes);
     }
 

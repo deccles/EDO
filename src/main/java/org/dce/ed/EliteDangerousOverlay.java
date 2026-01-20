@@ -13,6 +13,7 @@ import javax.swing.SwingUtilities;
 import org.dce.ed.logreader.RescanJournalsMain;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import org.dce.ed.ui.ConsoleMonitor;
 import org.dce.ed.util.AppIconUtil;
 
 import com.github.kwhat.jnativehook.GlobalScreen;
@@ -45,6 +46,9 @@ public class EliteDangerousOverlay implements NativeKeyListener {
 
         System.out.println("EDO Overlay version: " + getAppVersion());
 
+        ConsoleMonitor consoleMonitor = ConsoleMonitor.getInstance(1000);
+        consoleMonitor.redirectOutput();
+        
         String commander = "villanous";
 
         TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
