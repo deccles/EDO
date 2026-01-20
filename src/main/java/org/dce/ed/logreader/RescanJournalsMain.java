@@ -1,8 +1,6 @@
 package org.dce.ed.logreader;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -29,41 +27,8 @@ import org.dce.ed.state.SystemState;
  */
 public class RescanJournalsMain {
 
-	private static final String LAST_IMPORT_FILENAME = "edo-cache.lastRescanTimestamp";
 
 	private static final String PREF_KEY_EXO_CREDITS_TOTAL = "exo.creditsTotal";
-
-	private static Instant readLastImportInstant(Path journalDirectory) {
-		if (journalDirectory == null) {
-			return null;
-		}
-		Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
-		if (!Files.isRegularFile(cursor)) {
-			return null;
-		}
-		try {
-			String text = Files.readString(cursor, StandardCharsets.UTF_8).trim();
-			if (text.isEmpty()) {
-				return null;
-			}
-			return Instant.parse(text);
-		} catch (Exception ex) {
-			System.err.println("Failed to read last import timestamp from " + cursor + ": " + ex.getMessage());
-			return null;
-		}
-	}
-
-	private static void writeLastImportInstant(Path journalDirectory, Instant instant) {
-		if (journalDirectory == null || instant == null) {
-			return;
-		}
-		Path cursor = journalDirectory.resolve(LAST_IMPORT_FILENAME);
-		try {
-			Files.writeString(cursor, instant.toString(), StandardCharsets.UTF_8);
-		} catch (Exception ex) {
-			System.err.println("Failed to write last import timestamp to " + cursor + ": " + ex.getMessage());
-		}
-	}
 
 	public static void main(String[] args) throws IOException {
 		System.out.println("Rescanning Elite Dangerous journals and rebuilding local system cache...");
@@ -120,7 +85,7 @@ public class RescanJournalsMain {
 
 		Instant lastImport = null;
 		if (!forceFull) {
-			lastImport = readLastImportInstant(journalDirectory);
+			lastImport = JournalImportCursor.read(journalDirectory);
 			if (lastImport == null) {
 				System.out.println("No previous journal import timestamp found; doing full rescan.");
 			} else {
@@ -219,7 +184,7 @@ public class RescanJournalsMain {
 		System.out.println("Recomputed exobiology expected credits total (unsold): " + exoCreditsTotal + " Cr");
 
 		if (journalDirectory != null && newestEventTimestamp != null) {
-			writeLastImportInstant(journalDirectory, newestEventTimestamp);
+			JournalImportCursor.write(journalDirectory, newestEventTimestamp);
 			System.out.println("Updated last journal import time to: " + newestEventTimestamp);
 		}
 

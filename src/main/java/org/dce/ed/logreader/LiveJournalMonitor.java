@@ -71,6 +71,11 @@ public final class LiveJournalMonitor {
 
     private String clientKey;
 
+
+    private Path journalDirectory;
+
+    private Instant lastProcessedJournalTimestamp;
+    private Instant lastCursorPersistAt;
     private LiveJournalMonitor(String clientKey) {
         this.clientKey = clientKey;
     }
@@ -150,6 +155,12 @@ public final class LiveJournalMonitor {
         // remember Status.json in the same directory
         statusFile = journalDir.resolve("Status.json");
 
+
+        journalDirectory = journalDir;
+        lastProcessedJournalTimestamp = JournalImportCursor.read(journalDirectory);
+        if (lastProcessedJournalTimestamp != null) {
+            System.err.println("[EDO] LiveJournalMonitor: last journal timestamp (UTC): " + lastProcessedJournalTimestamp);
+        }
         // watch Status.json for immediate updates
         startStatusWatcher(journalDir);
 
@@ -586,7 +597,12 @@ public final class LiveJournalMonitor {
                 try {
                     EliteLogEvent event = parser.parseRecord(line);
                     if (event != null) {
+                        Instant ts = event.getTimestamp();
+                        if (ts != null && lastProcessedJournalTimestamp != null && !ts.isAfter(lastProcessedJournalTimestamp)) {
+                            continue;
+                        }
                         dispatch(event);
+                        updateCursorIfNeeded(ts);
                     }
                 } catch (JsonSyntaxException | IllegalStateException ex) {
                     // malformed line – skip
@@ -598,6 +614,22 @@ public final class LiveJournalMonitor {
         }
 
         return newPos;
+    }
+
+    private void updateCursorIfNeeded(Instant eventTimestamp) {
+        if (eventTimestamp == null) {
+            return;
+        }
+        if (lastProcessedJournalTimestamp == null || eventTimestamp.isAfter(lastProcessedJournalTimestamp)) {
+            lastProcessedJournalTimestamp = eventTimestamp;
+        }
+
+        Instant now = Instant.now();
+        if (lastCursorPersistAt != null && Duration.between(lastCursorPersistAt, now).toMillis() < 1000) {
+            return;
+        }
+        lastCursorPersistAt = now;
+        JournalImportCursor.write(journalDirectory, lastProcessedJournalTimestamp);
     }
 
     private void maybeLogJournalIoError(Path file, IOException ex) {
