@@ -126,7 +126,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		tabBar.add(systemButton);
 		tabBar.add(biologyButton);
 		tabBar.add(miningButton);
-		tabBar.add(miningButton);
 
 		// ----- Card area with the actual tab contents -----
 		cardLayout = new CardLayout();
