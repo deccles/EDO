@@ -650,11 +650,15 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (biologyButton != null) {
 			biologyButton.setSelected(selectedButton == biologyButton);
 		}
+		if (miningButton != null) {
+			miningButton.setSelected(selectedButton == miningButton);
+		}
 
 		applyTabButtonStyle(routeButton);
 		applyTabButtonStyle(systemButton);
 		applyTabButtonStyle(biologyButton);
-
+		applyTabButtonStyle(miningButton);
+		
 		cardLayout.show(cardPanel, cardName);
 	}
 
