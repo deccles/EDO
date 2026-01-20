@@ -82,7 +82,7 @@ public class PreferencesDialog extends JDialog {
     };
     
     public PreferencesDialog(OverlayFrame owner, String clientKey) {
-        super(owner, "Overlay Preferences", true);
+        super(owner, "Overlay Preferences", false);
         this.clientKey = clientKey;
         this.originalUiFont = OverlayPreferences.getUiFont();
         this.originalOverlayTransparent = OverlayPreferences.isOverlayTransparent();
@@ -395,8 +395,8 @@ public class PreferencesDialog extends JDialog {
         gbc.anchor = GridBagConstraints.NORTHWEST;
         gbc.insets = new Insets(6, 6, 6, 6);
 
-        JButton launchLogMonitorButton = new JButton("Launch Standalone Log Monitor");
-        launchLogMonitorButton.addActionListener(e -> launchStandaloneLogMonitor());
+        JButton launchLogMonitorButton = new JButton("Journal Monitor");
+        launchLogMonitorButton.addActionListener(e -> launchJournalMonitor());
 
         JButton launchEdsmQueryToolsButton = new JButton("Run EDSM Query Tools");
         launchEdsmQueryToolsButton.addActionListener(e -> launchEdsmQueryTools());
@@ -426,7 +426,7 @@ public class PreferencesDialog extends JDialog {
         return panel;
     }
 
-    private void launchStandaloneLogMonitor() {
+    private void launchJournalMonitor() {
         // Prefer StandaloneLogMonitor if you have it; fall back to StandaloneLogViewer (which exists in this project).
         SwingUtilities.invokeLater(() -> {
             try {
