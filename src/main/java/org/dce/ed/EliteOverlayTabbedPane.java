@@ -145,7 +145,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		cardPanel.add(systemTab, CARD_SYSTEM);
 		cardPanel.add(biologyTab, CARD_BIOLOGY);
 		cardPanel.add(miningTab, CARD_MINING);
-		cardPanel.add(miningTab, CARD_MINING);
 
 		systemButton.setSelected(true);
 		applyTabButtonStyle(routeButton);
