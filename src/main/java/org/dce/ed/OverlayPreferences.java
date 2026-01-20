@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.prefs.Preferences;
 
+import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
+
 import org.dce.ed.logreader.EliteLogFileLocator;
 
 import software.amazon.awssdk.services.polly.model.Engine;
@@ -15,9 +17,15 @@ import software.amazon.awssdk.services.polly.model.Engine;
  */
 public final class OverlayPreferences {
 
-    private static final String KEY_IS_OVERLAY_TRANSPARENT = "overlay.transparent"; // legacy
-    private static final String KEY_OVERLAY_BG_RGB = "overlay.bg.rgb";
-    private static final String KEY_OVERLAY_TRANSPARENCY_PERCENT = "overlay.transparency.percent";
+    private static final String KEY_IS_OVERLAY_TRANSPARENT = "overlay.transparent";
+
+    // New overlay background preferences (normal + pass-through)
+    private static final String KEY_OVERLAY_BG_RGB = "overlay.bg.rgb"; // 0xRRGGBB
+    private static final String KEY_OVERLAY_BG_TRANSPARENCY_PCT = "overlay.bg.transparencyPct"; // 0-100
+    private static final String KEY_OVERLAY_BG_PT_RGB = "overlay.bg.passthrough.rgb"; // 0xRRGGBB
+    private static final String KEY_OVERLAY_BG_PT_TRANSPARENCY_PCT = "overlay.bg.passthrough.transparencyPct"; // 0-100
+
+    private static final String KEY_PASSTHROUGH_TOGGLE_KEYCODE = "overlay.passthrough.toggleKeyCode"; // JNativeHook NativeKeyEvent VC_*
     private static final String KEY_LOG_AUTO = "log.autoDetect";
     private static final String KEY_LOG_CUSTOM_DIR = "log.customDir";
 
@@ -50,102 +58,109 @@ public final class OverlayPreferences {
     private OverlayPreferences() {
     }
 
-    /**
-     * Legacy helper (kept so older callers compile).
-     * True when the overlay transparency is set to 100% (fully transparent).
-     */
     public static boolean isOverlayTransparent() {
-        return getOverlayTransparencyPercent() >= 100;
+        boolean b = PREFS.getBoolean(KEY_IS_OVERLAY_TRANSPARENT, true);
+        return b;
     }
 
-    /**
-     * Legacy helper (kept so older callers compile).
-     * True => 100% transparent, False => 0% transparent (fully opaque).
-     */
     public static void setOverlayTransparent(boolean transparent) {
-        setOverlayTransparencyPercent(transparent ? 100 : 0);
+        PREFS.putBoolean(KEY_IS_OVERLAY_TRANSPARENT, transparent);
     }
+
+    // ---------------------------------------------------------------------
+    // Overlay background (new)
+    // ---------------------------------------------------------------------
+
+    public static int getNormalBackgroundRgb() {
+        ensureOverlayBackgroundMigratedIfNeeded();
+        return PREFS.getInt(KEY_OVERLAY_BG_RGB, 0x000000);
+    }
+
+    public static void setNormalBackgroundRgb(int rgb) {
+        PREFS.putInt(KEY_OVERLAY_BG_RGB, rgb & 0xFFFFFF);
+    }
+
+    public static int getNormalTransparencyPercent() {
+        ensureOverlayBackgroundMigratedIfNeeded();
+        return clampPercent(PREFS.getInt(KEY_OVERLAY_BG_TRANSPARENCY_PCT, 100));
+    }
+
+    public static void setNormalTransparencyPercent(int percent) {
+        PREFS.putInt(KEY_OVERLAY_BG_TRANSPARENCY_PCT, clampPercent(percent));
+    }
+
+    public static int getPassThroughBackgroundRgb() {
+        ensureOverlayBackgroundMigratedIfNeeded();
+        return PREFS.getInt(KEY_OVERLAY_BG_PT_RGB, 0x000000);
+    }
+
+    public static void setPassThroughBackgroundRgb(int rgb) {
+        PREFS.putInt(KEY_OVERLAY_BG_PT_RGB, rgb & 0xFFFFFF);
+    }
+
+    public static int getPassThroughTransparencyPercent() {
+        ensureOverlayBackgroundMigratedIfNeeded();
+        return clampPercent(PREFS.getInt(KEY_OVERLAY_BG_PT_TRANSPARENCY_PCT, 100));
+    }
+
+    public static void setPassThroughTransparencyPercent(int percent) {
+        PREFS.putInt(KEY_OVERLAY_BG_PT_TRANSPARENCY_PCT, clampPercent(percent));
+    }
+
+    public static int getPassThroughToggleKeyCode() {
+        // Default: F9
+        return PREFS.getInt(KEY_PASSTHROUGH_TOGGLE_KEYCODE, NativeKeyEvent.VC_F9);
+    }
+
+    public static void setPassThroughToggleKeyCode(int keyCode) {
+        PREFS.putInt(KEY_PASSTHROUGH_TOGGLE_KEYCODE, keyCode);
+    }
+
+    // ---------------------------------------------------------------------
+    // Legacy compatibility (used by existing panels like MiningTabPanel)
+    // ---------------------------------------------------------------------
 
     public static Color getOverlayBackgroundColor() {
-        // Default: black (RGB only).
-        String raw = PREFS.get(KEY_OVERLAY_BG_RGB, null);
-        int rgb;
-        if (raw == null) {
-            rgb = 0x000000;
-        } else {
-            try {
-                rgb = Integer.parseInt(raw);
-            } catch (Exception e) {
-                rgb = 0x000000;
-            }
-        }
-        return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        int rgb = getNormalBackgroundRgb();
+        return new Color(rgb);
     }
 
-    public static void setOverlayBackgroundColor(Color color) {
-        if (color == null) {
-            color = Color.black;
+    public static int getOverlayTransparencyPercent() {
+        return getNormalTransparencyPercent();
+    }
+
+    private static int clampPercent(int percent) {
+        if (percent < 0) {
+            return 0;
         }
-        int rgb = (color.getRed() << 16) | (color.getGreen() << 8) | color.getBlue();
-        PREFS.putInt(KEY_OVERLAY_BG_RGB, rgb);
+        if (percent > 100) {
+            return 100;
+        }
+        return percent;
     }
 
     /**
-     * 0% means fully opaque, 100% means fully transparent.
+     * One-time migration from the legacy boolean "overlay.transparent".
+     *
+     * Previous behavior:
+     *  - true  => fully transparent background
+     *  - false => fully opaque black background
+     *
+     * New defaults:
+     *  - Normal mode: derived from old flag
+     *  - Pass-through: default to fully transparent (matches previous toggle behavior)
      */
-    public static int getOverlayTransparencyPercent() {
-        // Migration: if the new key is not present, fall back to the old boolean.
-        String raw = PREFS.get(KEY_OVERLAY_TRANSPARENCY_PERCENT, null);
-        int p;
-        if (raw == null) {
-            boolean legacy = PREFS.getBoolean(KEY_IS_OVERLAY_TRANSPARENT, true);
-            p = legacy ? 100 : 0;
-        } else {
-            try {
-                p = Integer.parseInt(raw.trim());
-            } catch (Exception e) {
-                p = 100;
-            }
+    private static void ensureOverlayBackgroundMigratedIfNeeded() {
+        if (PREFS.get(KEY_OVERLAY_BG_TRANSPARENCY_PCT, null) != null) {
+            return;
         }
-        if (p < 0) {
-            p = 0;
-        }
-        if (p > 100) {
-            p = 100;
-        }
-        return p;
-    }
 
-    public static void setOverlayTransparencyPercent(int transparencyPercent) {
-        int p = transparencyPercent;
-        if (p < 0) {
-            p = 0;
-        }
-        if (p > 100) {
-            p = 100;
-        }
-        PREFS.putInt(KEY_OVERLAY_TRANSPARENCY_PERCENT, p);
-    }
+        boolean wasTransparent = isOverlayTransparent();
+        setNormalBackgroundRgb(0x000000);
+        setNormalTransparencyPercent(wasTransparent ? 100 : 0);
 
-    public static Color buildOverlayBackgroundColor(Color baseRgb, int transparencyPercent) {
-        if (baseRgb == null) {
-            baseRgb = Color.black;
-        }
-        int p = transparencyPercent;
-        if (p < 0) {
-            p = 0;
-        }
-        if (p > 100) {
-            p = 100;
-        }
-        int alpha = (int) Math.round(255.0 * (100.0 - p) / 100.0);
-        if (alpha < 0) {
-            alpha = 0;
-        }
-        if (alpha > 255) {
-            alpha = 255;
-        }
-        return new Color(baseRgb.getRed(), baseRgb.getGreen(), baseRgb.getBlue(), alpha);
+        setPassThroughBackgroundRgb(0x000000);
+        setPassThroughTransparencyPercent(100);
     }
 
     public static boolean isAutoLogDir(String clientKey) {
@@ -475,6 +490,19 @@ public final class OverlayPreferences {
         } catch (Exception e) {
             return def;
         }
+    }
+    public static Color buildOverlayBackgroundColor(Color baseColor, int transparencyPercent) {
+        if (baseColor == null) {
+            baseColor = Color.BLACK;
+        }
+
+        int pct = clampPercent(transparencyPercent);
+
+        // 100% transparent => alpha 0
+        // 0% transparent   => alpha 255
+        int alpha = (int)Math.round(255.0 * (1.0 - (pct / 100.0)));
+
+        return new Color(baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue(), alpha);
     }
 
     private static void putDoubleClamped(String key, double v, double min, double max) {

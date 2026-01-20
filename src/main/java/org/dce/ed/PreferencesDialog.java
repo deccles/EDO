@@ -11,12 +11,9 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.File;
 
-import javax.swing.JButton;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JColorChooser;
-import javax.swing.JSlider;
-import javax.swing.SwingConstants;
-import javax.swing.event.ChangeListener;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
@@ -24,12 +21,15 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JSlider;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
@@ -41,12 +41,17 @@ import org.dce.ed.util.GithubMsiUpdater;
 public class PreferencesDialog extends JDialog {
 
 	public final String clientKey;
+
     // Overlay-tab fields so OK can read them
-    private Color overlayBackgroundColor;
-    private JPanel overlayColorSwatch;
-    private JButton overlayChooseColorButton;
-    private JSlider overlayTransparencySlider;
-    private JLabel overlayTransparencyValueLabel;
+    private JButton normalBgColorButton;
+    private JSlider normalTransparencySlider;
+    private JLabel normalTransparencyValueLabel;
+
+    private JButton passThroughBgColorButton;
+    private JSlider passThroughTransparencySlider;
+    private JLabel passThroughTransparencyValueLabel;
+
+    private JComboBox<String> passThroughHotkeyCombo;
 
     // Logging-tab fields so OK can read them
     private JCheckBox autoDetectCheckBox;
@@ -78,8 +83,12 @@ public class PreferencesDialog extends JDialog {
 
     private boolean okPressed;
     private final Font originalUiFont;
-    private final Color originalOverlayBackgroundColor;
-    private final int originalOverlayTransparencyPercent;
+    private final int originalNormalBgRgb;
+    private final int originalNormalTransparencyPct;
+    private final int originalPassThroughBgRgb;
+    private final int originalPassThroughTransparencyPct;
+    private final int originalPassThroughToggleKeyCode;
+
     public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
             "Joanna",
             "Matthew",
@@ -95,8 +104,13 @@ public class PreferencesDialog extends JDialog {
         super(owner, "Overlay Preferences", false);
         this.clientKey = clientKey;
         this.originalUiFont = OverlayPreferences.getUiFont();
-        this.originalOverlayBackgroundColor = OverlayPreferences.getOverlayBackgroundColor();
-        this.originalOverlayTransparencyPercent = OverlayPreferences.getOverlayTransparencyPercent();
+
+        this.originalNormalBgRgb = OverlayPreferences.getNormalBackgroundRgb();
+        this.originalNormalTransparencyPct = OverlayPreferences.getNormalTransparencyPercent();
+        this.originalPassThroughBgRgb = OverlayPreferences.getPassThroughBackgroundRgb();
+        this.originalPassThroughTransparencyPct = OverlayPreferences.getPassThroughTransparencyPercent();
+        this.originalPassThroughToggleKeyCode = OverlayPreferences.getPassThroughToggleKeyCode();
+
         this.okPressed = false;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -138,74 +152,65 @@ public class PreferencesDialog extends JDialog {
         JPanel content = new JPanel(new GridBagLayout());
         content.setOpaque(false);
 
+        GridBagConstraints outer = new GridBagConstraints();
+        outer.gridx = 0;
+        outer.gridy = 0;
+        outer.fill = GridBagConstraints.HORIZONTAL;
+        outer.anchor = GridBagConstraints.NORTHWEST;
+        outer.weightx = 1.0;
+        outer.insets = new Insets(6, 6, 6, 6);
+
+        // --- Normal mode ---
+        JPanel normalPanel = createOverlayAppearanceSection(
+                "Normal mode",
+                originalNormalBgRgb,
+                originalNormalTransparencyPct,
+                (btn, slider, valueLabel) -> {
+                    normalBgColorButton = btn;
+                    normalTransparencySlider = slider;
+                    normalTransparencyValueLabel = valueLabel;
+                },
+                () -> applyLiveOverlayBackgroundPreview(false)
+        );
+
+        content.add(normalPanel, outer);
+
+        // --- Pass-through mode ---
+        outer.gridy++;
+        JPanel ptPanel = createOverlayAppearanceSection(
+                "Mouse-pass through mode",
+                originalPassThroughBgRgb,
+                originalPassThroughTransparencyPct,
+                (btn, slider, valueLabel) -> {
+                    passThroughBgColorButton = btn;
+                    passThroughTransparencySlider = slider;
+                    passThroughTransparencyValueLabel = valueLabel;
+                },
+                () -> applyLiveOverlayBackgroundPreview(true)
+        );
+        content.add(ptPanel, outer);
+
+        // --- Hotkey ---
+        outer.gridy++;
+        JPanel hotkeyPanel = new JPanel(new GridBagLayout());
+        hotkeyPanel.setOpaque(false);
+        hotkeyPanel.setBorder(BorderFactory.createTitledBorder("Controls"));
+
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.WEST;
-        gbc.insets = new Insets(6, 4, 6, 4);
+        gbc.insets = new Insets(4, 4, 4, 4);
 
-        // Background color
-        JLabel bgLabel = new JLabel("Background color:");
-        content.add(bgLabel, gbc);
-
-        gbc.gridx = 1;
-        JPanel colorPanel = new JPanel(new BorderLayout(6, 0));
-        colorPanel.setOpaque(false);
-
-        overlayBackgroundColor = originalOverlayBackgroundColor == null ? Color.black : originalOverlayBackgroundColor;
-
-        overlayColorSwatch = new JPanel();
-        overlayColorSwatch.setBorder(BorderFactory.createLineBorder(new Color(180, 180, 180, 180)));
-        overlayColorSwatch.setPreferredSize(new Dimension(38, 18));
-        overlayColorSwatch.setBackground(overlayBackgroundColor);
-
-        overlayChooseColorButton = new JButton("Choose...");
-        overlayChooseColorButton.addActionListener(e -> {
-            Color chosen = JColorChooser.showDialog(
-                    PreferencesDialog.this,
-                    "Choose overlay background color",
-                    overlayBackgroundColor
-            );
-            if (chosen != null) {
-                overlayBackgroundColor = new Color(chosen.getRed(), chosen.getGreen(), chosen.getBlue());
-                overlayColorSwatch.setBackground(overlayBackgroundColor);
-                applyLiveOverlayAppearancePreview();
-            }
-        });
-
-        colorPanel.add(overlayColorSwatch, BorderLayout.WEST);
-        colorPanel.add(overlayChooseColorButton, BorderLayout.CENTER);
-        content.add(colorPanel, gbc);
-
-        // Transparency slider
-        gbc.gridx = 0;
-        gbc.gridy++;
-        JLabel transparencyLabel = new JLabel("Transparency:");
-        content.add(transparencyLabel, gbc);
+        JLabel hotkeyLabel = new JLabel("Mouse-pass through toggle key:");
+        hotkeyPanel.add(hotkeyLabel, gbc);
 
         gbc.gridx = 1;
-        JPanel sliderPanel = new JPanel(new BorderLayout(8, 0));
-        sliderPanel.setOpaque(false);
+        passThroughHotkeyCombo = new JComboBox<>(buildFunctionKeyChoices());
+        passThroughHotkeyCombo.setSelectedItem(keyCodeToDisplayString(originalPassThroughToggleKeyCode));
+        hotkeyPanel.add(passThroughHotkeyCombo, gbc);
 
-        overlayTransparencySlider = new JSlider(SwingConstants.HORIZONTAL, 0, 100, originalOverlayTransparencyPercent);
-        overlayTransparencySlider.setMajorTickSpacing(25);
-        overlayTransparencySlider.setMinorTickSpacing(5);
-        overlayTransparencySlider.setPaintTicks(true);
-        overlayTransparencySlider.setPaintLabels(true);
-
-        overlayTransparencyValueLabel = new JLabel(originalOverlayTransparencyPercent + "%");
-
-        ChangeListener change = e -> {
-            int v = overlayTransparencySlider.getValue();
-            overlayTransparencyValueLabel.setText(v + "%");
-            applyLiveOverlayAppearancePreview();
-        };
-        overlayTransparencySlider.addChangeListener(change);
-
-        sliderPanel.add(overlayTransparencySlider, BorderLayout.CENTER);
-        sliderPanel.add(overlayTransparencyValueLabel, BorderLayout.EAST);
-
-        content.add(sliderPanel, gbc);
+        content.add(hotkeyPanel, outer);
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
@@ -574,7 +579,10 @@ public class PreferencesDialog extends JDialog {
         }
         OverlayFrame f = (OverlayFrame) getOwner();
         f.applyUiFontPreview(originalUiFont);
-        f.applyOverlayAppearance(originalOverlayBackgroundColor, originalOverlayTransparencyPercent);
+        boolean pt = f.isPassThroughEnabled();
+        int rgb = pt ? originalPassThroughBgRgb : originalNormalBgRgb;
+        int pct = pt ? originalPassThroughTransparencyPct : originalNormalTransparencyPct;
+        f.applyOverlayBackgroundPreview(pt, rgb, pct);
     }
 
 private JPanel createSpeechPanel() {
@@ -722,7 +730,7 @@ private JPanel createSpeechPanel() {
             applyAndSavePreferences();
             if (getOwner() instanceof OverlayFrame) {
                 OverlayFrame f = (OverlayFrame) getOwner();
-                f.applyOverlayAppearanceFromPreferences();
+                f.applyOverlayBackgroundFromPreferences(f.isPassThroughEnabled());
                 f.applyUiFontPreferences();
             }
             dispose();
@@ -740,13 +748,22 @@ private JPanel createSpeechPanel() {
 
     private void applyAndSavePreferences() {
         // Overlay tab
-        if (overlayTransparencySlider != null) {
-            OverlayPreferences.setOverlayTransparencyPercent(overlayTransparencySlider.getValue());
+        if (normalBgColorButton != null) {
+            OverlayPreferences.setNormalBackgroundRgb(colorToRgb(normalBgColorButton.getBackground()));
         }
-        if (overlayBackgroundColor != null) {
-            OverlayPreferences.setOverlayBackgroundColor(overlayBackgroundColor);
+        if (normalTransparencySlider != null) {
+            OverlayPreferences.setNormalTransparencyPercent(normalTransparencySlider.getValue());
         }
-
+        if (passThroughBgColorButton != null) {
+            OverlayPreferences.setPassThroughBackgroundRgb(colorToRgb(passThroughBgColorButton.getBackground()));
+        }
+        if (passThroughTransparencySlider != null) {
+            OverlayPreferences.setPassThroughTransparencyPercent(passThroughTransparencySlider.getValue());
+        }
+        if (passThroughHotkeyCombo != null && passThroughHotkeyCombo.getSelectedItem() != null) {
+            int keyCode = displayStringToKeyCode(passThroughHotkeyCombo.getSelectedItem().toString());
+            OverlayPreferences.setPassThroughToggleKeyCode(keyCode);
+        }
 
         // Logging tab
         if (autoDetectCheckBox != null && customPathField != null) {
@@ -865,18 +882,195 @@ private JPanel createSpeechPanel() {
 
 // Other tabs can be wired into OverlayPreferences later as needed.
     }
-    private void applyLiveOverlayAppearancePreview() {
+
+    private void applyLiveOverlayBackgroundPreview(boolean passThroughSection) {
         if (!(getOwner() instanceof OverlayFrame)) {
             return;
         }
 
-        Color c = overlayBackgroundColor == null ? Color.black : overlayBackgroundColor;
-        int p = 100;
-        if (overlayTransparencySlider != null) {
-            p = overlayTransparencySlider.getValue();
+        OverlayFrame f = (OverlayFrame) getOwner();
+        // Only preview the section that corresponds to the overlay's current mode.
+        if (f.isPassThroughEnabled() != passThroughSection) {
+            return;
         }
 
-        ((OverlayFrame) getOwner()).applyOverlayAppearance(c, p);
+        int rgb;
+        int pct;
+        if (passThroughSection) {
+            rgb = colorToRgb(passThroughBgColorButton != null ? passThroughBgColorButton.getBackground() : Color.black);
+            pct = passThroughTransparencySlider != null ? passThroughTransparencySlider.getValue() : 100;
+        } else {
+            rgb = colorToRgb(normalBgColorButton != null ? normalBgColorButton.getBackground() : Color.black);
+            pct = normalTransparencySlider != null ? normalTransparencySlider.getValue() : 100;
+        }
+
+        f.applyOverlayBackgroundPreview(passThroughSection, rgb, pct);
+    }
+
+    private interface OverlaySectionBinder {
+        void bind(JButton colorButton, JSlider transparencySlider, JLabel transparencyValueLabel);
+    }
+
+    private JPanel createOverlayAppearanceSection(
+            String title,
+            int initialRgb,
+            int initialTransparencyPct,
+            OverlaySectionBinder binder,
+            Runnable onPreview
+    ) {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        panel.setBorder(BorderFactory.createTitledBorder(title));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(4, 4, 4, 4);
+
+        panel.add(new JLabel("Background color:"), gbc);
+
+        gbc.gridx = 1;
+        JButton colorBtn = new JButton("Choose...");
+        colorBtn.setBackground(rgbToColor(initialRgb));
+        colorBtn.setOpaque(true);
+        colorBtn.addActionListener(e -> {
+            Color chosen = JColorChooser.showDialog(this, "Choose background color", colorBtn.getBackground());
+            if (chosen != null) {
+                colorBtn.setBackground(chosen);
+                if (onPreview != null) {
+                    onPreview.run();
+                }
+            }
+        });
+        panel.add(colorBtn, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("Transparency:"), gbc);
+
+        gbc.gridx = 1;
+        JSlider slider = new JSlider(0, 100, clampPct(initialTransparencyPct));
+        slider.setPaintTicks(true);
+        slider.setMajorTickSpacing(25);
+        slider.setMinorTickSpacing(5);
+        panel.add(slider, gbc);
+
+        gbc.gridx = 2;
+        JLabel valueLabel = new JLabel(slider.getValue() + "%");
+        panel.add(valueLabel, gbc);
+
+        slider.addChangeListener(new ChangeListener() {
+            @Override
+            public void stateChanged(ChangeEvent e) {
+                valueLabel.setText(slider.getValue() + "%");
+                if (!slider.getValueIsAdjusting() && onPreview != null) {
+                    onPreview.run();
+                }
+            }
+        });
+
+        if (binder != null) {
+            binder.bind(colorBtn, slider, valueLabel);
+        }
+
+        return panel;
+    }
+
+    private static int clampPct(int pct) {
+        if (pct < 0) {
+            return 0;
+        }
+        if (pct > 100) {
+            return 100;
+        }
+        return pct;
+    }
+
+    private static Color rgbToColor(int rgb) {
+        return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+
+    private static int colorToRgb(Color c) {
+        if (c == null) {
+            return 0x000000;
+        }
+        return (c.getRed() << 16) | (c.getGreen() << 8) | c.getBlue();
+    }
+
+    private static String[] buildFunctionKeyChoices() {
+        String[] keys = new String[12];
+        for (int i = 0; i < 12; i++) {
+            keys[i] = "F" + (i + 1);
+        }
+        return keys;
+    }
+
+    private static String keyCodeToDisplayString(int keyCode) {
+        // Only map F1-F12 for now.
+        switch (keyCode) {
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F1:
+                return "F1";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F2:
+                return "F2";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F3:
+                return "F3";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F4:
+                return "F4";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F5:
+                return "F5";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F6:
+                return "F6";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F7:
+                return "F7";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F8:
+                return "F8";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F9:
+                return "F9";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F10:
+                return "F10";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F11:
+                return "F11";
+            case com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F12:
+                return "F12";
+            default:
+                return "F9";
+        }
+    }
+
+    private static int displayStringToKeyCode(String display) {
+        if (display == null) {
+            return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F9;
+        }
+        String s = display.trim().toUpperCase();
+        switch (s) {
+            case "F1":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F1;
+            case "F2":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F2;
+            case "F3":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F3;
+            case "F4":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F4;
+            case "F5":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F5;
+            case "F6":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F6;
+            case "F7":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F7;
+            case "F8":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F8;
+            case "F9":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F9;
+            case "F10":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F10;
+            case "F11":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F11;
+            case "F12":
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F12;
+            default:
+                return com.github.kwhat.jnativehook.keyboard.NativeKeyEvent.VC_F9;
+        }
     }
 
 }

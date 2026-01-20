@@ -140,7 +140,8 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     //
     @Override
     public void nativeKeyPressed(com.github.kwhat.jnativehook.keyboard.NativeKeyEvent e) {
-        if (e.getKeyCode() == NativeKeyEvent.VC_F9) {
+        int toggleKey = OverlayPreferences.getPassThroughToggleKeyCode();
+        if (toggleKey > 0 && e.getKeyCode() == toggleKey) {
             overlayFrame.togglePassThrough();
         }
     }

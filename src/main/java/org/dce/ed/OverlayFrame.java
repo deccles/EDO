@@ -75,6 +75,7 @@ public class OverlayFrame extends JFrame {
 
     private final TitleBarPanel titleBar;
     private final OverlayContentPanel contentPanel;
+	private final OverlayBackgroundPanel backgroundPanel;
 
     // Crosshair overlay and timer to show mouse position in pass-through mode
     private final CrosshairOverlay crosshairOverlay = new CrosshairOverlay();
@@ -112,18 +113,19 @@ public class OverlayFrame extends JFrame {
         // Transparent window background
         setBackground(new java.awt.Color(0, 0, 0, 0));
 
-        // Root + content transparent
-        getRootPane().setOpaque(false);
-        JComponent content = (JComponent) getContentPane();
-        content.setOpaque(false);
-        content.setBackground(new java.awt.Color(0, 0, 0, 0));
+	    // Root + content transparent; background is painted by our custom content pane.
+	    getRootPane().setOpaque(false);
+	    backgroundPanel = new OverlayBackgroundPanel();
+	    backgroundPanel.setOpaque(false);
+	    backgroundPanel.setBackground(new java.awt.Color(0, 0, 0, 0));
+	    setContentPane(backgroundPanel);
 
         // Subtle border so you can see the edges
         getRootPane().setBorder(overlayBorder);
 
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setAlwaysOnTop(true);
-        setLayout(new BorderLayout());
+        backgroundPanel.setLayout(new BorderLayout());
         setResizable(true);
         setMinimumSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
 
@@ -146,7 +148,7 @@ public class OverlayFrame extends JFrame {
         contentPanel = new OverlayContentPanel(this);
         add(contentPanel, BorderLayout.CENTER);
 
-        applyOverlayAppearanceFromPreferences();
+        applyOverlayBackgroundFromPreferences(false);
 
         // Load saved bounds if available; otherwise use defaults
         loadBoundsFromPreferences(prefs, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
@@ -396,15 +398,7 @@ private void installExoCreditsTracker() {
     public void togglePassThrough() {
         passThroughEnabled = !passThroughEnabled;
         applyPassThrough(passThroughEnabled);
-
-        // Pass-through is easiest to use when the overlay is transparent.
-        // This is a temporary visual change only; when pass-through is disabled
-        // we revert back to whatever the preference is currently set to.
-        if (passThroughEnabled) {
-            applyOverlayTransparency(true);
-        } else {
-            applyOverlayAppearanceFromPreferences();
-        }
+        applyOverlayBackgroundFromPreferences(passThroughEnabled);
 
         titleBar.setPassThrough(passThroughEnabled); // hide/show X
         System.out.println("Pass-through " + (passThroughEnabled ? "ENABLED" : "DISABLED"));
@@ -429,41 +423,51 @@ private void installExoCreditsTracker() {
         revalidate();
         repaint();
     }
-    public void applyOverlayAppearanceFromPreferences() {
-        applyOverlayAppearance(
-                OverlayPreferences.getOverlayBackgroundColor(),
-                OverlayPreferences.getOverlayTransparencyPercent()
-        );
-    }
 
-    public void applyOverlayAppearance(java.awt.Color baseRgb, int transparencyPercent) {
-        java.awt.Color bg = OverlayPreferences.buildOverlayBackgroundColor(baseRgb, transparencyPercent);
-        applyOverlayBackground(bg);
-    }
-
+    /**
+     * Legacy wrapper kept so older call sites still compile.
+     *
+     * New behavior is driven by two settings:
+     *  - background RGB
+     *  - transparency percent (0..100)
+     */
     public void applyOverlayTransparency(boolean transparent) {
-        // Legacy behavior: transparent => 100% transparent; opaque => use current preference percent
-        int p = transparent ? 100 : OverlayPreferences.getOverlayTransparencyPercent();
-        applyOverlayAppearance(OverlayPreferences.getOverlayBackgroundColor(), p);
+        OverlayPreferences.setNormalTransparencyPercent(transparent ? 100 : 0);
+        applyOverlayBackgroundFromPreferences(passThroughEnabled);
     }
 
-    private void applyOverlayBackground(java.awt.Color bg) {
-        if (bg == null) {
-            bg = java.awt.Color.black;
+    public void applyOverlayBackgroundFromPreferences(boolean passThroughMode) {
+        int rgb = passThroughMode
+                ? OverlayPreferences.getPassThroughBackgroundRgb()
+                : OverlayPreferences.getNormalBackgroundRgb();
+
+        int pct = passThroughMode
+                ? OverlayPreferences.getPassThroughTransparencyPercent()
+                : OverlayPreferences.getNormalTransparencyPercent();
+
+        applyOverlayBackgroundPreview(passThroughMode, rgb, pct);
+    }
+
+    /**
+     * Used by PreferencesDialog for live preview.
+     */
+    public void applyOverlayBackgroundPreview(boolean passThroughMode, int rgb, int transparencyPercent) {
+        int pct = Math.max(0, Math.min(100, transparencyPercent));
+        int alpha = (int) Math.round(255.0 * (1.0 - (pct / 100.0)));
+
+        java.awt.Color base = new java.awt.Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        java.awt.Color bg = new java.awt.Color(base.getRed(), base.getGreen(), base.getBlue(), Math.max(0, Math.min(255, alpha)));
+
+        // Frame background must stay fully transparent for per-pixel alpha.
+        setBackground(new java.awt.Color(0, 0, 0, 0));
+
+        if (backgroundPanel != null) {
+            backgroundPanel.setPaintColor(bg);
         }
 
-        boolean fullyOpaque = bg.getAlpha() >= 255;
-
-        setBackground(bg);
-
-        if (getContentPane() instanceof javax.swing.JComponent) {
-            javax.swing.JComponent cp = (javax.swing.JComponent) getContentPane();
-            cp.setOpaque(fullyOpaque);
-            cp.setBackground(bg);
-        }
-
+        boolean treatAsTransparent = pct > 0;
         if (contentPanel != null) {
-            contentPanel.applyOverlayBackground(bg);
+            contentPanel.applyOverlayBackground(bg, treatAsTransparent);
         }
 
         revalidate();
@@ -847,6 +851,42 @@ private void installExoCreditsTracker() {
         return obj.has(field) && !obj.get(field).isJsonNull()
                 ? obj.get(field).getAsInt()
                 : defaultValue;
+    }
+
+    private static final class OverlayBackgroundPanel extends javax.swing.JPanel {
+
+        private static final long serialVersionUID = 1L;
+		private java.awt.Color paintColor = new java.awt.Color(0, 0, 0, 0);
+
+        OverlayBackgroundPanel() {
+            setOpaque(false);
+        }
+
+        void setPaintColor(java.awt.Color paintColor) {
+            if (paintColor == null) {
+                paintColor = new java.awt.Color(0, 0, 0, 0);
+            }
+            this.paintColor = paintColor;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            super.paintComponent(g);
+            if (paintColor == null) {
+                return;
+            }
+            if (paintColor.getAlpha() <= 0) {
+                return;
+            }
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            try {
+                g2.setColor(paintColor);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+            } finally {
+                g2.dispose();
+            }
+        }
     }
 
 }
