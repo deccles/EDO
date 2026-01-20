@@ -382,6 +382,14 @@ public class RouteTabPanel extends JPanel {
         if (event instanceof NavRouteClearEvent) {
             // Route cleared: no active FSD target anymore
             targetSystemName = null;
+            targetSystemAddress = 0L;
+
+            // Clear Status.json destination state too; otherwise we can display stale synthetic rows.
+            destinationSystemAddress = null;
+            destinationBodyId = null;
+            destinationName = null;
+
+            rebuildDisplayedEntries();
             table.repaint();
         }
         if (event instanceof FsdTargetEvent target) {
@@ -433,20 +441,22 @@ public class RouteTabPanel extends JPanel {
 	        destinationName = se.getDestinationDisplayName();
 
 	        // Some journal setups rely on Status.json "Destination" fields without emitting FsdTarget.
-	        if (destinationBodyId == null && destinationName != null && !destinationName.isBlank()) {
+	        if (destinationBodyId == null && destinationSystemAddress != null && destinationName != null && !destinationName.isBlank()) {
 	            if (targetSystemName == null || targetSystemName.isBlank()) {
 	                targetSystemName = destinationName;
 	                targetSystemAddress = (destinationSystemAddress != null ? destinationSystemAddress.longValue() : 0L);
 	            }
 	        }
         	
-        	if (hyperdriveCharging && !timerRunning) {
-	        		pendingJumpSystemName = se.getDestinationDisplayName();
+	        if (hyperdriveCharging && !timerRunning) {
+	        	pendingJumpSystemName = se.getDestinationDisplayName();
         		jumpFlashTimer.start();
         	} 
         	if (!hyperdriveCharging && timerRunning ){
-        		jumpFlashTimer.stop();
-        		jumpFlashOn = false;
+        	    // Jump finished charging / canceled. Stop blinking and show the hollow triangle steadily.
+        	    jumpFlashTimer.stop();
+        	    pendingJumpSystemName = null;
+        	    jumpFlashOn = true;
         	}
 
 	        rebuildDisplayedEntries();
@@ -516,6 +526,13 @@ public class RouteTabPanel extends JPanel {
             return;
         }
 
+        targetSystemName = null;
+        targetSystemAddress = 0L;
+
+        destinationSystemAddress = null;
+        destinationBodyId = null;
+        destinationName = null;
+        
         List<RouteEntry> entries = new ArrayList<>();
         try (Reader reader = Files.newBufferedReader(navRoute, StandardCharsets.UTF_8)) {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
@@ -705,6 +722,18 @@ public class RouteTabPanel extends JPanel {
             return; // not a body destination
         }
 
+        // We only add a synthetic *body* row when Status.json tells us which system the body is in.
+        // If we don't have a system address, it's too easy to accidentally display an extra row for a
+        // totally unrelated target (or for the plotted destination system).
+        if (destinationSystemAddress == null) {
+            return;
+        }
+
+        // If the destination name is already being treated as a system target, don't also add a body row.
+        if (targetSystemName != null && destinationName.equals(targetSystemName)) {
+            return;
+        }
+
         // If the destination name is the system name, treat it as a system target (handled elsewhere).
         if (destinationName.equals(getCurrentSystemName())) {
             return;
@@ -731,8 +760,8 @@ public class RouteTabPanel extends JPanel {
             resolvedCurrentAddress = currentSystemAddress;
         }
 
-        // If Status.json provided a destination system id, enforce "same system" using the best address we have.
-        if (destinationSystemAddress != null && resolvedCurrentAddress != 0L) {
+        // Enforce "same system" for a body destination.
+        if (resolvedCurrentAddress != 0L) {
             if (destinationSystemAddress.longValue() != resolvedCurrentAddress) {
                 return;
             }
