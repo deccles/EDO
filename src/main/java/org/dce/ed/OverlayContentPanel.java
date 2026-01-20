@@ -14,8 +14,12 @@ public class OverlayContentPanel extends JPanel {
     public OverlayContentPanel(OverlayFrame overlayFrame) {
         this.overlayFrame = overlayFrame;
 
-        boolean opaque = !OverlayPreferences.isOverlayTransparent();
-        setOpaque(opaque);
+        java.awt.Color bg = OverlayPreferences.buildOverlayBackgroundColor(
+                OverlayPreferences.getOverlayBackgroundColor(),
+                OverlayPreferences.getOverlayTransparencyPercent()
+        );
+        setOpaque(bg.getAlpha() >= 255);
+        setBackground(bg);
         setLayout(new BorderLayout());
 
         tabbedPane = new EliteOverlayTabbedPane();
@@ -25,17 +29,27 @@ public class OverlayContentPanel extends JPanel {
     public EliteOverlayTabbedPane getTabbedPane() {
         return tabbedPane;
     }
+    public void applyOverlayBackground(java.awt.Color bg) {
+        if (bg == null) {
+            bg = java.awt.Color.black;
+        }
 
-    
-    public void applyOverlayTransparency(boolean transparent) {
-        boolean opaque = !transparent;
-        setOpaque(opaque);
-        setBackground(transparent ? new java.awt.Color(0, 0, 0, 0) : java.awt.Color.black);
+        setOpaque(bg.getAlpha() >= 255);
+        setBackground(bg);
 
-        tabbedPane.applyOverlayTransparency(transparent);
+        tabbedPane.applyOverlayBackground(bg);
 
         revalidate();
         repaint();
+    }
+
+    public void applyOverlayTransparency(boolean transparent) {
+        // Legacy wrapper
+        java.awt.Color bg = OverlayPreferences.buildOverlayBackgroundColor(
+                OverlayPreferences.getOverlayBackgroundColor(),
+                transparent ? 100 : OverlayPreferences.getOverlayTransparencyPercent()
+        );
+        applyOverlayBackground(bg);
     }
 
 public void applyUiFontPreferences() {

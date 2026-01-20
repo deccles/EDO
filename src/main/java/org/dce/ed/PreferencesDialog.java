@@ -1,6 +1,7 @@
 package org.dce.ed;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -11,6 +12,11 @@ import java.awt.Insets;
 import java.io.File;
 
 import javax.swing.JButton;
+import javax.swing.BorderFactory;
+import javax.swing.JColorChooser;
+import javax.swing.JSlider;
+import javax.swing.SwingConstants;
+import javax.swing.event.ChangeListener;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
@@ -36,7 +42,11 @@ public class PreferencesDialog extends JDialog {
 
 	public final String clientKey;
     // Overlay-tab fields so OK can read them
-    private JCheckBox overlayTransparentCheckBox;
+    private Color overlayBackgroundColor;
+    private JPanel overlayColorSwatch;
+    private JButton overlayChooseColorButton;
+    private JSlider overlayTransparencySlider;
+    private JLabel overlayTransparencyValueLabel;
 
     // Logging-tab fields so OK can read them
     private JCheckBox autoDetectCheckBox;
@@ -68,8 +78,8 @@ public class PreferencesDialog extends JDialog {
 
     private boolean okPressed;
     private final Font originalUiFont;
-    private final boolean originalOverlayTransparent;
-
+    private final Color originalOverlayBackgroundColor;
+    private final int originalOverlayTransparencyPercent;
     public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
             "Joanna",
             "Matthew",
@@ -85,7 +95,8 @@ public class PreferencesDialog extends JDialog {
         super(owner, "Overlay Preferences", false);
         this.clientKey = clientKey;
         this.originalUiFont = OverlayPreferences.getUiFont();
-        this.originalOverlayTransparent = OverlayPreferences.isOverlayTransparent();
+        this.originalOverlayBackgroundColor = OverlayPreferences.getOverlayBackgroundColor();
+        this.originalOverlayTransparencyPercent = OverlayPreferences.getOverlayTransparencyPercent();
         this.okPressed = false;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -131,21 +142,70 @@ public class PreferencesDialog extends JDialog {
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.WEST;
-        gbc.insets = new Insets(4, 4, 4, 4);
+        gbc.insets = new Insets(6, 4, 6, 4);
 
-        // Transparency toggle
-        JLabel transparencyLabel = new JLabel("Make overlay transparent:");
-        overlayTransparentCheckBox = new JCheckBox();
-        overlayTransparentCheckBox.setOpaque(false);
+        // Background color
+        JLabel bgLabel = new JLabel("Background color:");
+        content.add(bgLabel, gbc);
 
-        // Load current transparency preference
-        overlayTransparentCheckBox.setSelected(originalOverlayTransparent);
-
-        overlayTransparentCheckBox.addActionListener(e -> applyLiveOverlayTransparencyPreview());
-
-        content.add(transparencyLabel, gbc);
         gbc.gridx = 1;
-        content.add(overlayTransparentCheckBox, gbc);
+        JPanel colorPanel = new JPanel(new BorderLayout(6, 0));
+        colorPanel.setOpaque(false);
+
+        overlayBackgroundColor = originalOverlayBackgroundColor == null ? Color.black : originalOverlayBackgroundColor;
+
+        overlayColorSwatch = new JPanel();
+        overlayColorSwatch.setBorder(BorderFactory.createLineBorder(new Color(180, 180, 180, 180)));
+        overlayColorSwatch.setPreferredSize(new Dimension(38, 18));
+        overlayColorSwatch.setBackground(overlayBackgroundColor);
+
+        overlayChooseColorButton = new JButton("Choose...");
+        overlayChooseColorButton.addActionListener(e -> {
+            Color chosen = JColorChooser.showDialog(
+                    PreferencesDialog.this,
+                    "Choose overlay background color",
+                    overlayBackgroundColor
+            );
+            if (chosen != null) {
+                overlayBackgroundColor = new Color(chosen.getRed(), chosen.getGreen(), chosen.getBlue());
+                overlayColorSwatch.setBackground(overlayBackgroundColor);
+                applyLiveOverlayAppearancePreview();
+            }
+        });
+
+        colorPanel.add(overlayColorSwatch, BorderLayout.WEST);
+        colorPanel.add(overlayChooseColorButton, BorderLayout.CENTER);
+        content.add(colorPanel, gbc);
+
+        // Transparency slider
+        gbc.gridx = 0;
+        gbc.gridy++;
+        JLabel transparencyLabel = new JLabel("Transparency:");
+        content.add(transparencyLabel, gbc);
+
+        gbc.gridx = 1;
+        JPanel sliderPanel = new JPanel(new BorderLayout(8, 0));
+        sliderPanel.setOpaque(false);
+
+        overlayTransparencySlider = new JSlider(SwingConstants.HORIZONTAL, 0, 100, originalOverlayTransparencyPercent);
+        overlayTransparencySlider.setMajorTickSpacing(25);
+        overlayTransparencySlider.setMinorTickSpacing(5);
+        overlayTransparencySlider.setPaintTicks(true);
+        overlayTransparencySlider.setPaintLabels(true);
+
+        overlayTransparencyValueLabel = new JLabel(originalOverlayTransparencyPercent + "%");
+
+        ChangeListener change = e -> {
+            int v = overlayTransparencySlider.getValue();
+            overlayTransparencyValueLabel.setText(v + "%");
+            applyLiveOverlayAppearancePreview();
+        };
+        overlayTransparencySlider.addChangeListener(change);
+
+        sliderPanel.add(overlayTransparencySlider, BorderLayout.CENTER);
+        sliderPanel.add(overlayTransparencyValueLabel, BorderLayout.EAST);
+
+        content.add(sliderPanel, gbc);
 
         panel.add(content, BorderLayout.NORTH);
         return panel;
@@ -514,7 +574,7 @@ public class PreferencesDialog extends JDialog {
         }
         OverlayFrame f = (OverlayFrame) getOwner();
         f.applyUiFontPreview(originalUiFont);
-        f.applyOverlayTransparency(originalOverlayTransparent);
+        f.applyOverlayAppearance(originalOverlayBackgroundColor, originalOverlayTransparencyPercent);
     }
 
 private JPanel createSpeechPanel() {
@@ -662,7 +722,7 @@ private JPanel createSpeechPanel() {
             applyAndSavePreferences();
             if (getOwner() instanceof OverlayFrame) {
                 OverlayFrame f = (OverlayFrame) getOwner();
-                f.applyOverlayTransparency(overlayTransparentCheckBox != null && overlayTransparentCheckBox.isSelected());
+                f.applyOverlayAppearanceFromPreferences();
                 f.applyUiFontPreferences();
             }
             dispose();
@@ -680,9 +740,13 @@ private JPanel createSpeechPanel() {
 
     private void applyAndSavePreferences() {
         // Overlay tab
-        if (overlayTransparentCheckBox != null) {
-            OverlayPreferences.setOverlayTransparent(overlayTransparentCheckBox.isSelected());
+        if (overlayTransparencySlider != null) {
+            OverlayPreferences.setOverlayTransparencyPercent(overlayTransparencySlider.getValue());
         }
+        if (overlayBackgroundColor != null) {
+            OverlayPreferences.setOverlayBackgroundColor(overlayBackgroundColor);
+        }
+
 
         // Logging tab
         if (autoDetectCheckBox != null && customPathField != null) {
@@ -801,12 +865,18 @@ private JPanel createSpeechPanel() {
 
 // Other tabs can be wired into OverlayPreferences later as needed.
     }
-    private void applyLiveOverlayTransparencyPreview() {
+    private void applyLiveOverlayAppearancePreview() {
         if (!(getOwner() instanceof OverlayFrame)) {
             return;
         }
-        boolean transparent = overlayTransparentCheckBox != null && overlayTransparentCheckBox.isSelected();
-        ((OverlayFrame) getOwner()).applyOverlayTransparency(transparent);
+
+        Color c = overlayBackgroundColor == null ? Color.black : overlayBackgroundColor;
+        int p = 100;
+        if (overlayTransparencySlider != null) {
+            p = overlayTransparencySlider.getValue();
+        }
+
+        ((OverlayFrame) getOwner()).applyOverlayAppearance(c, p);
     }
 
 }

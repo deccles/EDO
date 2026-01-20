@@ -757,13 +757,30 @@ private final JLayer<JTable> cargoLayer;
 		return changedModelRows;
 	}
 
-	public void applyOverlayTransparency(boolean transparent) {
-		setOpaque(false);
-		setBackground(new Color(0, 0, 0, 0));
-		table.setOpaque(false);
-		cargoTable.setOpaque(false);
-		repaint();
-	}
+    public void applyOverlayBackground(Color bg) {
+        if (bg == null) {
+            bg = new Color(0, 0, 0, 0);
+        }
+
+        boolean opaque = bg.getAlpha() >= 255;
+        setOpaque(opaque);
+        setBackground(bg);
+
+        // Keep tables non-opaque so the panel background shows through.
+        table.setOpaque(false);
+        cargoTable.setOpaque(false);
+
+        repaint();
+    }
+
+    public void applyOverlayTransparency(boolean transparent) {
+        // Legacy wrapper
+        Color bg = OverlayPreferences.buildOverlayBackgroundColor(
+                OverlayPreferences.getOverlayBackgroundColor(),
+                transparent ? 100 : OverlayPreferences.getOverlayTransparencyPercent()
+        );
+        applyOverlayBackground(bg);
+    }
 
 	public void updateFromProspector(ProspectedAsteroidEvent event) {
 		if (event == null) {

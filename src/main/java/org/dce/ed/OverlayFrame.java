@@ -146,7 +146,7 @@ public class OverlayFrame extends JFrame {
         contentPanel = new OverlayContentPanel(this);
         add(contentPanel, BorderLayout.CENTER);
 
-        applyOverlayTransparency(OverlayPreferences.isOverlayTransparent());
+        applyOverlayAppearanceFromPreferences();
 
         // Load saved bounds if available; otherwise use defaults
         loadBoundsFromPreferences(prefs, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
@@ -403,7 +403,7 @@ private void installExoCreditsTracker() {
         if (passThroughEnabled) {
             applyOverlayTransparency(true);
         } else {
-            applyOverlayTransparency(OverlayPreferences.isOverlayTransparent());
+            applyOverlayAppearanceFromPreferences();
         }
 
         titleBar.setPassThrough(passThroughEnabled); // hide/show X
@@ -429,20 +429,41 @@ private void installExoCreditsTracker() {
         revalidate();
         repaint();
     }
+    public void applyOverlayAppearanceFromPreferences() {
+        applyOverlayAppearance(
+                OverlayPreferences.getOverlayBackgroundColor(),
+                OverlayPreferences.getOverlayTransparencyPercent()
+        );
+    }
+
+    public void applyOverlayAppearance(java.awt.Color baseRgb, int transparencyPercent) {
+        java.awt.Color bg = OverlayPreferences.buildOverlayBackgroundColor(baseRgb, transparencyPercent);
+        applyOverlayBackground(bg);
+    }
 
     public void applyOverlayTransparency(boolean transparent) {
-        java.awt.Color bg = transparent ? new java.awt.Color(0, 0, 0, 0) : java.awt.Color.black;
+        // Legacy behavior: transparent => 100% transparent; opaque => use current preference percent
+        int p = transparent ? 100 : OverlayPreferences.getOverlayTransparencyPercent();
+        applyOverlayAppearance(OverlayPreferences.getOverlayBackgroundColor(), p);
+    }
+
+    private void applyOverlayBackground(java.awt.Color bg) {
+        if (bg == null) {
+            bg = java.awt.Color.black;
+        }
+
+        boolean fullyOpaque = bg.getAlpha() >= 255;
 
         setBackground(bg);
 
         if (getContentPane() instanceof javax.swing.JComponent) {
             javax.swing.JComponent cp = (javax.swing.JComponent) getContentPane();
-            cp.setOpaque(!transparent);
+            cp.setOpaque(fullyOpaque);
             cp.setBackground(bg);
         }
 
         if (contentPanel != null) {
-            contentPanel.applyOverlayTransparency(transparent);
+            contentPanel.applyOverlayBackground(bg);
         }
 
         revalidate();

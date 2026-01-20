@@ -102,14 +102,19 @@ public class EliteOverlayTabbedPane extends JPanel {
 	public EliteOverlayTabbedPane() {
 		super(new BorderLayout());
 
-		boolean opaque = !OverlayPreferences.isOverlayTransparent();
+		Color bg = OverlayPreferences.buildOverlayBackgroundColor(
+				OverlayPreferences.getOverlayBackgroundColor(),
+				OverlayPreferences.getOverlayTransparencyPercent()
+		);
+		boolean opaque = bg.getAlpha() >= 255;
 
 		setOpaque(opaque);
+		setBackground(bg);
 
 		// ----- Tab bar (row of buttons) -----
 		tabBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
 		tabBar.setOpaque(opaque);
-		tabBar.setBackground(Color.black);
+		tabBar.setBackground(bg);
 		ButtonGroup group = new ButtonGroup();
 
 		routeButton = createTabButton("Route");
@@ -132,7 +137,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 		cardLayout = new CardLayout();
 		cardPanel = new JPanel(cardLayout);
 		cardPanel.setOpaque(opaque);
-		cardPanel.setBackground(Color.black);
+		cardPanel.setBackground(bg);
 		cardPanel.setPreferredSize(new Dimension(400, 1000));
 
 		// Create tab content panels
@@ -793,22 +798,42 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 	}
 
+    public void applyOverlayBackground(Color bg) {
+        if (bg == null) {
+            bg = Color.black;
+        }
+        boolean opaque = bg.getAlpha() >= 255;
 
-	public void applyOverlayTransparency(boolean transparent) {
-		boolean opaque = !transparent;
+        setOpaque(opaque);
+        setBackground(bg);
 
-		setOpaque(opaque);
-		setBackground(transparent ? new Color(0, 0, 0, 0) : Color.black);
+        tabBar.setOpaque(opaque);
+        tabBar.setBackground(bg);
 
-		tabBar.setOpaque(opaque);
-		tabBar.setBackground(transparent ? new Color(0, 0, 0, 0) : Color.black);
+        cardPanel.setOpaque(opaque);
+        cardPanel.setBackground(bg);
 
-		cardPanel.setOpaque(opaque);
-		cardPanel.setBackground(transparent ? new Color(0, 0, 0, 0) : Color.black);
+        // Ensure each tab inherits the same background.
+        routeTab.setBackground(bg);
+        routeTab.setOpaque(opaque);
+        systemTab.setBackground(bg);
+        systemTab.setOpaque(opaque);
+        biologyTab.setBackground(bg);
+        biologyTab.setOpaque(opaque);
+        miningTab.applyOverlayBackground(bg);
 
-		revalidate();
-		repaint();
-	}
+        revalidate();
+        repaint();
+    }
+
+    public void applyOverlayTransparency(boolean transparent) {
+        // Legacy wrapper
+        Color bg = OverlayPreferences.buildOverlayBackgroundColor(
+                OverlayPreferences.getOverlayBackgroundColor(),
+                transparent ? 100 : OverlayPreferences.getOverlayTransparencyPercent()
+        );
+        applyOverlayBackground(bg);
+    }
 	private void maybeRemindAboutLimpets() {
 		// Avoid spamming if multiple events fire close together.
 		long now = System.currentTimeMillis();

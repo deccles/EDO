@@ -1,5 +1,6 @@
 package org.dce.ed;
 
+import java.awt.Color;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -14,7 +15,9 @@ import software.amazon.awssdk.services.polly.model.Engine;
  */
 public final class OverlayPreferences {
 
-    private static final String KEY_IS_OVERLAY_TRANSPARENT = "overlay.transparent";
+    private static final String KEY_IS_OVERLAY_TRANSPARENT = "overlay.transparent"; // legacy
+    private static final String KEY_OVERLAY_BG_RGB = "overlay.bg.rgb";
+    private static final String KEY_OVERLAY_TRANSPARENCY_PERCENT = "overlay.transparency.percent";
     private static final String KEY_LOG_AUTO = "log.autoDetect";
     private static final String KEY_LOG_CUSTOM_DIR = "log.customDir";
 
@@ -47,13 +50,102 @@ public final class OverlayPreferences {
     private OverlayPreferences() {
     }
 
+    /**
+     * Legacy helper (kept so older callers compile).
+     * True when the overlay transparency is set to 100% (fully transparent).
+     */
     public static boolean isOverlayTransparent() {
-        boolean b = PREFS.getBoolean(KEY_IS_OVERLAY_TRANSPARENT, true);
-        return b;
+        return getOverlayTransparencyPercent() >= 100;
     }
 
+    /**
+     * Legacy helper (kept so older callers compile).
+     * True => 100% transparent, False => 0% transparent (fully opaque).
+     */
     public static void setOverlayTransparent(boolean transparent) {
-        PREFS.putBoolean(KEY_IS_OVERLAY_TRANSPARENT, transparent);
+        setOverlayTransparencyPercent(transparent ? 100 : 0);
+    }
+
+    public static Color getOverlayBackgroundColor() {
+        // Default: black (RGB only).
+        String raw = PREFS.get(KEY_OVERLAY_BG_RGB, null);
+        int rgb;
+        if (raw == null) {
+            rgb = 0x000000;
+        } else {
+            try {
+                rgb = Integer.parseInt(raw);
+            } catch (Exception e) {
+                rgb = 0x000000;
+            }
+        }
+        return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+
+    public static void setOverlayBackgroundColor(Color color) {
+        if (color == null) {
+            color = Color.black;
+        }
+        int rgb = (color.getRed() << 16) | (color.getGreen() << 8) | color.getBlue();
+        PREFS.putInt(KEY_OVERLAY_BG_RGB, rgb);
+    }
+
+    /**
+     * 0% means fully opaque, 100% means fully transparent.
+     */
+    public static int getOverlayTransparencyPercent() {
+        // Migration: if the new key is not present, fall back to the old boolean.
+        String raw = PREFS.get(KEY_OVERLAY_TRANSPARENCY_PERCENT, null);
+        int p;
+        if (raw == null) {
+            boolean legacy = PREFS.getBoolean(KEY_IS_OVERLAY_TRANSPARENT, true);
+            p = legacy ? 100 : 0;
+        } else {
+            try {
+                p = Integer.parseInt(raw.trim());
+            } catch (Exception e) {
+                p = 100;
+            }
+        }
+        if (p < 0) {
+            p = 0;
+        }
+        if (p > 100) {
+            p = 100;
+        }
+        return p;
+    }
+
+    public static void setOverlayTransparencyPercent(int transparencyPercent) {
+        int p = transparencyPercent;
+        if (p < 0) {
+            p = 0;
+        }
+        if (p > 100) {
+            p = 100;
+        }
+        PREFS.putInt(KEY_OVERLAY_TRANSPARENCY_PERCENT, p);
+    }
+
+    public static Color buildOverlayBackgroundColor(Color baseRgb, int transparencyPercent) {
+        if (baseRgb == null) {
+            baseRgb = Color.black;
+        }
+        int p = transparencyPercent;
+        if (p < 0) {
+            p = 0;
+        }
+        if (p > 100) {
+            p = 100;
+        }
+        int alpha = (int) Math.round(255.0 * (100.0 - p) / 100.0);
+        if (alpha < 0) {
+            alpha = 0;
+        }
+        if (alpha > 255) {
+            alpha = 255;
+        }
+        return new Color(baseRgb.getRed(), baseRgb.getGreen(), baseRgb.getBlue(), alpha);
     }
 
     public static boolean isAutoLogDir(String clientKey) {
