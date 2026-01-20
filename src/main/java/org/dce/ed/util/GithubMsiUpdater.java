@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -20,7 +21,6 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JProgressBar;
-import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 
 import com.google.gson.JsonArray;
@@ -30,14 +30,15 @@ import com.google.gson.JsonParser;
 
 public final class GithubMsiUpdater {
 
-	private static final String APP_FOLDER_NAME = "EDO Overlay";
-	private static final String APP_EXE_NAME = "EDO Overlay.exe";
-	
     private static final String OWNER = "deccles";
     private static final String REPO = "EDO";
 
-    private static final String GROUP_ID = "org.dce";
-    private static final String ARTIFACT_ID = "EliteDangerousOverlay";
+    // Must match your Maven coords for pom.properties lookup
+    private static final String MAVEN_GROUP_ID = "org.dce";
+    private static final String MAVEN_ARTIFACT_ID = "EliteDangerousOverlay";
+
+    private static final String INSTALL_DIR_NAME = "EDO Overlay";
+    private static final String EXE_NAME = "EDO Overlay.exe";
 
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(20);
 
@@ -51,6 +52,7 @@ public final class GithubMsiUpdater {
         }
 
         SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+
             private String currentVersion;
             private String latestVersion;
             private String latestHtmlUrl;
@@ -63,6 +65,7 @@ public final class GithubMsiUpdater {
             protected Void doInBackground() {
                 try {
                     currentVersion = readCurrentVersion();
+
                     JsonObject latest = fetchLatestReleaseJson();
                     latestVersion = readVersionFromTag(latest);
                     latestHtmlUrl = getString(latest, "html_url");
@@ -72,7 +75,6 @@ public final class GithubMsiUpdater {
                         msiName = getString(msiAsset, "name");
                         msiUrl = getString(msiAsset, "browser_download_url");
                     }
-
                 } catch (Exception ex) {
                     failure = ex;
                 }
@@ -103,7 +105,7 @@ public final class GithubMsiUpdater {
 
                 if (msiUrl == null || msiUrl.isBlank()) {
                     JOptionPane.showMessageDialog(parent,
-                            "Latest release was found (" + latestVersion + "), but no MSI asset was attached.\n"
+                            "Latest release was found (" + latestVersion + "), but no MSI asset was attached.\n\n"
                                     + "Open the Releases page and download the MSI manually:\n"
                                     + (latestHtmlUrl != null ? latestHtmlUrl : "https://github.com/" + OWNER + "/" + REPO + "/releases"),
                             "No MSI Found",
@@ -111,9 +113,8 @@ public final class GithubMsiUpdater {
                     return;
                 }
 
-                // If we couldn't read current version, still allow updating.
                 boolean newer = true;
-                if (currentVersion != null && !currentVersion.isBlank()) {
+                if (currentVersion != null && !currentVersion.isBlank() && !"(unknown)".equals(currentVersion)) {
                     newer = compareVersions(latestVersion, currentVersion) > 0;
                 }
 
@@ -132,7 +133,8 @@ public final class GithubMsiUpdater {
                                 + "Current: " + nullToUnknown(currentVersion) + "\n"
                                 + "Latest: " + latestVersion + "\n\n"
                                 + "Download and run installer now?\n\n"
-                                + "MSI: " + msiName,
+                                + "MSI: " + nullToUnknown(msiName) + "\n\n"
+                                + "Windows will ask for admin permission to install.",
                         "Update Available",
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.QUESTION_MESSAGE);
@@ -149,7 +151,11 @@ public final class GithubMsiUpdater {
     }
 
     private static void downloadAndInstall(Component parent, String msiUrl, String msiName) {
-        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(parent), "Downloading Update", Dialog.ModalityType.APPLICATION_MODAL);
+
+        JDialog dialog = new JDialog(
+                javax.swing.SwingUtilities.getWindowAncestor(parent),
+                "Downloading Update",
+                Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
 
         JLabel label = new JLabel("Downloading " + (msiName != null ? msiName : "installer") + "...");
@@ -159,7 +165,7 @@ public final class GithubMsiUpdater {
         dialog.getContentPane().setLayout(new java.awt.BorderLayout(10, 10));
         dialog.getContentPane().add(label, java.awt.BorderLayout.NORTH);
         dialog.getContentPane().add(bar, java.awt.BorderLayout.CENTER);
-        dialog.setSize(420, 110);
+        dialog.setSize(460, 120);
         dialog.setLocationRelativeTo(parent);
 
         SwingWorker<Path, Integer> dlWorker = new SwingWorker<Path, Integer>() {
@@ -169,7 +175,7 @@ public final class GithubMsiUpdater {
             @Override
             protected Path doInBackground() {
                 try {
-                    return downloadFile(msiUrl, bar, label);
+                    return downloadMsiToUpdaterDir(msiUrl, msiName, bar, label);
                 } catch (Exception ex) {
                     failure = ex;
                     return null;
@@ -208,23 +214,32 @@ public final class GithubMsiUpdater {
                 }
 
                 try {
-                    // Make a small temp cmd that installs, then relaunches.
-                    Path script = createInstallAndRelaunchScript(downloaded);
+                	String msiPath = downloaded.toAbsolutePath().toString();
 
-                    // Kick it off detached, then exit the overlay so files aren't locked.
-                    new ProcessBuilder("cmd", "/c", "\"" + script.toAbsolutePath().toString() + "\"")
-                    .start();
+                	String cmd =
+                	        "Start-Process msiexec.exe " +
+                	        "-Verb RunAs " +
+                	        "-ArgumentList '/i \"" + msiPath + "\" /passive /norestart'";
 
-                    System.exit(0);
+                	String encoded = Base64.getEncoder()
+                	        .encodeToString(cmd.getBytes(StandardCharsets.UTF_16LE));
 
+                	new ProcessBuilder(
+                	        "powershell.exe",
+                	        "-NoProfile",
+                	        "-EncodedCommand",
+                	        encoded
+                	).start();
+
+                	// Exit so MSI can replace files
+                	System.exit(0);
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(parent,
-                            "Downloaded installer, but couldn't launch it:\n" + safeMessage(ex) + "\n\n"
-                                    + "File:\n" + downloaded.toAbsolutePath(),
-                            "Install Launch Failed",
+                            "Downloaded installer, but couldn't start the updater:\n" + safeMessage(ex) + "\n\n"
+                                    + "MSI:\n" + downloaded.toAbsolutePath(),
+                            "Update Launch Failed",
                             JOptionPane.ERROR_MESSAGE);
                 }
-
             }
         };
 
@@ -232,7 +247,24 @@ public final class GithubMsiUpdater {
         dialog.setVisible(true);
     }
 
-    private static Path downloadFile(String url, JProgressBar bar, JLabel label) throws Exception {
+    private static Path downloadMsiToUpdaterDir(String url, String msiName, JProgressBar bar, JLabel label) throws Exception {
+
+        Path updaterDir = getUpdaterDir();
+        Files.createDirectories(updaterDir);
+
+        String safeName = toSafeFilename(msiName);
+        if (safeName == null || safeName.isBlank()) {
+            safeName = "EDO-Overlay-Update.msi";
+        }
+        if (!safeName.toLowerCase(Locale.ROOT).endsWith(".msi")) {
+            safeName = safeName + ".msi";
+        }
+
+        Path outFile = updaterDir.resolve(safeName);
+        if (Files.exists(outFile)) {
+            outFile = updaterDir.resolve(stripExtension(safeName) + "-" + System.currentTimeMillis() + ".msi");
+        }
+
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .connectTimeout(HTTP_TIMEOUT)
@@ -240,7 +272,7 @@ public final class GithubMsiUpdater {
 
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofMinutes(5))
+                .timeout(Duration.ofMinutes(10))
                 .header("User-Agent", "EDO-Overlay-Updater")
                 .GET()
                 .build();
@@ -253,44 +285,167 @@ public final class GithubMsiUpdater {
 
         long len = resp.headers().firstValueAsLong("Content-Length").orElse(-1L);
         if (len > 0) {
-            SwingUtilities.invokeLater(() -> {
+            javax.swing.SwingUtilities.invokeLater(() -> {
                 bar.setIndeterminate(false);
                 bar.setMinimum(0);
                 bar.setMaximum(1000);
             });
         } else {
-            SwingUtilities.invokeLater(() -> bar.setIndeterminate(true));
+            javax.swing.SwingUtilities.invokeLater(() -> bar.setIndeterminate(true));
         }
 
-        Path tmp = Files.createTempFile("EDO-Overlay-", ".msi");
-        tmp.toFile().deleteOnExit();
+        try (InputStream in = resp.body();
+             var out = Files.newOutputStream(outFile)) {
 
-        try (InputStream in = resp.body()) {
             byte[] buf = new byte[128 * 1024];
             long readTotal = 0;
 
-            try (var out = Files.newOutputStream(tmp)) {
-                int r;
-                while ((r = in.read(buf)) >= 0) {
-                    if (r == 0) {
-                        continue;
-                    }
-                    out.write(buf, 0, r);
-                    readTotal += r;
+            int r;
+            while ((r = in.read(buf)) >= 0) {
+                if (r == 0) {
+                    continue;
+                }
+                out.write(buf, 0, r);
+                readTotal += r;
 
-                    if (len > 0) {
-                        final long rt = readTotal;
-                        SwingUtilities.invokeLater(() -> {
-                            int v = (int) Math.min(1000L, (rt * 1000L) / len);
-                            bar.setValue(v);
-                            label.setText("Downloading... " + (v / 10) + "%");
-                        });
-                    }
+                if (len > 0) {
+                    final long rt = readTotal;
+                    javax.swing.SwingUtilities.invokeLater(() -> {
+                        int v = (int) Math.min(1000L, (rt * 1000L) / len);
+                        bar.setValue(v);
+                        label.setText("Downloading... " + (v / 10) + "%");
+                    });
                 }
             }
         }
 
-        return tmp;
+        return outFile;
+    }
+
+    private static Path createInstallAndRelaunchPs1(Path msi) throws IOException {
+
+        Path updaterDir = getUpdaterDir();
+        Files.createDirectories(updaterDir);
+
+        Path updateLog = updaterDir.resolve("update.log");
+        Path msiLog = updaterDir.resolve("msiexec.log");
+        Path ps1 = updaterDir.resolve("update.ps1");
+
+        String programFiles = System.getenv("ProgramFiles");
+        if (programFiles == null || programFiles.isBlank()) {
+            programFiles = "C:\\Program Files";
+        }
+
+        Path exe = Path.of(programFiles, INSTALL_DIR_NAME, EXE_NAME);
+
+        String script =
+                "$ErrorActionPreference = 'Stop'\n" +
+                "$UpdateLog = '" + escapeForPowershell(updateLog.toAbsolutePath().toString()) + "'\n" +
+                "$MsiLog = '" + escapeForPowershell(msiLog.toAbsolutePath().toString()) + "'\n" +
+                "$MsiPath = '" + escapeForPowershell(msi.toAbsolutePath().toString()) + "'\n" +
+                "$ExePath = '" + escapeForPowershell(exe.toAbsolutePath().toString()) + "'\n" +
+                "\n" +
+                "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $UpdateLog) | Out-Null\n" +
+                "Add-Content -Path $UpdateLog -Value ((Get-Date).ToString('s') + '  update.ps1 entered')\n" +
+                "\n" +
+                "function Log($m) { Add-Content -Path $UpdateLog -Value ((Get-Date).ToString('s') + '  ' + $m) }\n" +
+                "Log '================================================'\n" +
+                "Log ('Updater starting. Script=' + $PSCommandPath)\n" +
+                "Log ('MSI=' + $MsiPath)\n" +
+                "Log ('EXE=' + $ExePath)\n" +
+                "Log ('User=' + [Environment]::UserName)\n" +
+                "\n" +
+                "$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')\n" +
+                "Log ('isAdmin=' + $isAdmin)\n" +
+                "if (-not $isAdmin) {\n" +
+                "  Log 'ERROR: Not running elevated. Aborting.'\n" +
+                "  exit 740\n" +
+                "}\n" +
+                "\n" +
+                "if (-not (Test-Path $MsiPath)) {\n" +
+                "  Log 'MSI file missing; aborting.'\n" +
+                "  exit 1619\n" +
+                "}\n" +
+                "\n" +
+                "Start-Sleep -Seconds 1\n" +
+                "\n" +
+                "try {\n" +
+                "  Log 'Killing any running EDO Overlay.exe'\n" +
+                "  Get-Process -Name 'EDO Overlay' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue\n" +
+                "} catch { Log ('Kill failed: ' + $_) }\n" +
+                "\n" +
+                "Log ('Launching msiexec with verbose log ' + $MsiLog)\n" +
+                "$msiArgs = @('/i', $MsiPath, '/passive', '/norestart', '/l*v', $MsiLog)\n" +
+                "$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArgs -Wait -PassThru\n" +
+                "Log ('msiexec exit code: ' + $p.ExitCode)\n" +
+                "\n" +
+                "# Treat 0 and 3010 as success\n" +
+                "if (($p.ExitCode -ne 0) -and ($p.ExitCode -ne 3010)) {\n" +
+                "  Log 'Install FAILED; not relaunching app.'\n" +
+                "  exit $p.ExitCode\n" +
+                "}\n" +
+                "\n" +
+                "if (Test-Path $ExePath) {\n" +
+                "  Log 'Relaunching installed EXE'\n" +
+                "  Start-Process -FilePath $ExePath\n" +
+                "} else {\n" +
+                "  Log 'EXE not found; opening install folder'\n" +
+                "  Start-Process -FilePath (Split-Path -Parent $ExePath)\n" +
+                "}\n" +
+                "Log 'Updater finished.'\n";
+
+        Files.writeString(ps1, script, StandardCharsets.UTF_8);
+        return ps1;
+    }
+
+    private static Path createElevatedLauncherPs1(Path updatePs1) throws IOException {
+
+        Path updaterDir = getUpdaterDir();
+        Files.createDirectories(updaterDir);
+
+        Path launcher = updaterDir.resolve("run_update.ps1");
+        Path outLog = updaterDir.resolve("powershell-out.log");
+        Path updateLog = updaterDir.resolve("update.log");
+
+        String script =
+                "$ErrorActionPreference = 'Continue'\n" +
+                "$Out = '" + escapeForPowershell(outLog.toAbsolutePath().toString()) + "'\n" +
+                "$Ulog = '" + escapeForPowershell(updateLog.toAbsolutePath().toString()) + "'\n" +
+                "$Ps1 = '" + escapeForPowershell(updatePs1.toAbsolutePath().toString()) + "'\n" +
+                "\n" +
+                "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Out) | Out-Null\n" +
+                "Add-Content -Path $Ulog -Value ((Get-Date).ToString('s') + '  run_update.ps1 starting (elevated wrapper)')\n" +
+                "Add-Content -Path $Out  -Value ((Get-Date).ToString('s') + '  run_update.ps1 starting (elevated wrapper)')\n" +
+                "Add-Content -Path $Out  -Value ('Will run: ' + $Ps1)\n" +
+                "\n" +
+                "try {\n" +
+                "  & $Ps1 *>> $Out\n" +
+                "  Add-Content -Path $Out -Value ((Get-Date).ToString('s') + '  update.ps1 finished')\n" +
+                "} catch {\n" +
+                "  Add-Content -Path $Out  -Value ((Get-Date).ToString('s') + '  ERROR: ' + $_.Exception.Message)\n" +
+                "  Add-Content -Path $Ulog -Value ((Get-Date).ToString('s') + '  ERROR: ' + $_.Exception.Message)\n" +
+                "}\n";
+
+        Files.writeString(launcher, script, StandardCharsets.UTF_8);
+        return launcher;
+    }
+
+    private static Path getUpdaterDir() {
+        String localAppData = System.getenv("LOCALAPPDATA");
+        if (localAppData == null || localAppData.isBlank()) {
+            localAppData = System.getProperty("user.home");
+        }
+        return Path.of(localAppData, INSTALL_DIR_NAME, "updater");
+    }
+
+    private static String toPowershellEncodedCommand(String command) {
+        // PowerShell -EncodedCommand expects UTF-16LE bytes, Base64 encoded.
+        byte[] bytes = command.getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+        return Base64.getEncoder().encodeToString(bytes);
+    }
+
+    private static String escapeForPowershell(String s) {
+        return s.replace("'", "''");
     }
 
     private static JsonObject fetchLatestReleaseJson() throws Exception {
@@ -354,7 +509,6 @@ public final class GithubMsiUpdater {
     }
 
     private static String readCurrentVersion() {
-        // Try package manifest first
         try {
             String v = GithubMsiUpdater.class.getPackage().getImplementationVersion();
             if (v != null && !v.isBlank()) {
@@ -363,18 +517,17 @@ public final class GithubMsiUpdater {
         } catch (Exception ignored) {
         }
 
-        // Fall back to pom.properties inside the jar
-        String pomPropsPath = "/META-INF/maven/" + GROUP_ID + "/" + ARTIFACT_ID + "/pom.properties";
+        String pomPropsPath = "/META-INF/maven/" + MAVEN_GROUP_ID + "/" + MAVEN_ARTIFACT_ID + "/pom.properties";
         try (InputStream in = GithubMsiUpdater.class.getResourceAsStream(pomPropsPath)) {
             if (in == null) {
-                return null;
+                return "(unknown)";
             }
             Properties props = new Properties();
             props.load(in);
             String v = props.getProperty("version");
-            return v != null ? v.trim() : null;
+            return (v != null && !v.isBlank()) ? v.trim() : "(unknown)";
         } catch (Exception ignored) {
-            return null;
+            return "(unknown)";
         }
     }
 
@@ -390,19 +543,12 @@ public final class GithubMsiUpdater {
         }
     }
 
-    /**
-     * Compare dotted version numbers like 0.0.8 vs 0.0.10.
-     * Returns >0 if a>b, <0 if a<b, 0 if equal/unknown.
-     */
     private static int compareVersions(String a, String b) {
         if (a == null || b == null) {
             return 0;
         }
-        String aa = a.trim();
-        String bb = b.trim();
-
-        String[] ap = aa.split("[^0-9]+");
-        String[] bp = bb.split("[^0-9]+");
+        String[] ap = a.trim().split("[^0-9]+");
+        String[] bp = b.trim().split("[^0-9]+");
 
         int n = Math.max(ap.length, bp.length);
         for (int i = 0; i < n; i++) {
@@ -438,46 +584,26 @@ public final class GithubMsiUpdater {
         }
         return m;
     }
-    
-    private static Path createInstallAndRelaunchScript(Path msi) throws IOException {
-        String temp = System.getenv("TEMP");
-        if (temp == null || temp.isBlank()) {
-            temp = System.getProperty("java.io.tmpdir");
+
+    private static String toSafeFilename(String name) {
+        if (name == null) {
+            return null;
         }
-
-        Path script = Files.createTempFile(Path.of(temp), "EDO-Overlay-Update-", ".cmd");
-
-        String programFiles = System.getenv("ProgramFiles");
-        if (programFiles == null || programFiles.isBlank()) {
-            programFiles = "C:\\Program Files";
+        String s = name.trim();
+        if (s.isBlank()) {
+            return null;
         }
-
-        Path installDir = Path.of(programFiles, "EDO Overlay");
-        Path exe = installDir.resolve("EDO Overlay.exe");
-
-        String scriptText =
-                "@echo off\r\n" +
-                "setlocal\r\n" +
-                "echo Waiting for EDO Overlay to exit...\r\n" +
-                "timeout /t 2 /nobreak >nul\r\n" +
-
-                // Ensure no running instances remain
-                "taskkill /IM \"EDO Overlay.exe\" /F >nul 2>&1\r\n" +
-
-                "echo Installing update...\r\n" +
-                "msiexec /i \"" + msi.toAbsolutePath() + "\" /passive /norestart\r\n" +
-
-                "echo Relaunching EDO Overlay...\r\n" +
-                "if exist \"" + exe.toAbsolutePath() + "\" (\r\n" +
-                "  start \"\" \"" + exe.toAbsolutePath() + "\"\r\n" +
-                ") else (\r\n" +
-                "  start \"\" \"" + installDir.toAbsolutePath() + "\"\r\n" +
-                ")\r\n" +
-                "endlocal\r\n";
-
-        Files.writeString(script, scriptText, java.nio.charset.Charset.forName("windows-1252"));
-        script.toFile().deleteOnExit();
-        return script;
+        return s.replaceAll("[\\\\/:*?\"<>|]+", "_");
     }
-    
+
+    private static String stripExtension(String filename) {
+        if (filename == null) {
+            return "";
+        }
+        int idx = filename.lastIndexOf('.');
+        if (idx <= 0) {
+            return filename;
+        }
+        return filename.substring(0, idx);
+    }
 }
