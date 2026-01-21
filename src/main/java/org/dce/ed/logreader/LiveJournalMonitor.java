@@ -598,7 +598,7 @@ public final class LiveJournalMonitor {
                     EliteLogEvent event = parser.parseRecord(line);
                     if (event != null) {
                         Instant ts = event.getTimestamp();
-                        if (ts != null && lastProcessedJournalTimestamp != null && !ts.isAfter(lastProcessedJournalTimestamp)) {
+                        if (ts != null && lastProcessedJournalTimestamp != null && ts.isBefore(lastProcessedJournalTimestamp)) {
                             continue;
                         }
                         dispatch(event);

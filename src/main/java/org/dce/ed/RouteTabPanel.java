@@ -292,8 +292,6 @@ public class RouteTabPanel extends JPanel {
 		}
 		th.setBorder(null);
 
-
-
 		add(headerLabel, BorderLayout.NORTH);
 		add(scroll, BorderLayout.CENTER);
 
@@ -346,12 +344,20 @@ public class RouteTabPanel extends JPanel {
 			table.repaint();
 		}
 		if (event instanceof FsdTargetEvent target) {
-			// FSD target selected: remember the target system for the crosshair
-			targetSystemName = target.getName();
-			targetSystemAddress = target.getSystemAddress();
+			// FSD target selected or cleared: remember (or clear) the target system for the crosshair
+			String newName = target.getName();
+			long newAddr = target.getSystemAddress();
+
+			if (newName == null || newName.isBlank() || newAddr == 0L) {
+				targetSystemName = null;
+				targetSystemAddress = 0L;
+			} else {
+				targetSystemName = newName;
+				targetSystemAddress = newAddr;
+			}
+
 			rebuildDisplayedEntries();
 		}
-
 
 		if (event instanceof LocationEvent loc) {
 			setCurrentSystemName(loc.getStarSystem());
@@ -389,42 +395,43 @@ public class RouteTabPanel extends JPanel {
 			destinationBodyId = se.getDestinationBody();
 			destinationName = se.getDestinationDisplayName();
 
-			// If the user cleared the side-trip target in-game, Status stops reporting a destination.
-			// Elite does NOT emit a "target cleared" journal event, so we must clear our synthetic target here.
-			String statusDestName = se.getDestinationDisplayName();
+			// Side-trip clearing:
+			// When the side-trip target is cleared in-game, Status 'Destination' typically snaps back to the plotted route
+			// (next hop or final destination), and Elite may not emit a dedicated "target cleared" journal event.
+			// If Status destination is blank OR refers to a system on the plotted route, drop any latched off-route FsdTarget.
+			String statusDestName = destinationName;
+			boolean clearedSideTrip = false;
+
 			if (statusDestName == null || statusDestName.isBlank()) {
-
-				// Clear ALL destination/target state so the side-trip row disappears immediately.
-				targetSystemName = null;
-				targetSystemAddress = 0L;
-
-				destinationName = null;
-				destinationSystemAddress = null;
-				destinationBodyId = null;
-			} else {
-				// If Status destination is just the next plotted hop, it's not a side-trip.
-				// Clear any previously latched FsdTarget side-trip so it doesn't persist.
-				String nextHopName = null;
-				if (baseRouteEntries != null && !baseRouteEntries.isEmpty()) {
-					int curIdx = findSystemRow(baseRouteEntries, currentSystemName, currentSystemAddress);
-					if (curIdx >= 0 && curIdx + 1 < baseRouteEntries.size()) {
-						nextHopName = baseRouteEntries.get(curIdx + 1).systemName;
-					}
-				}
-
-				if (nextHopName != null && statusDestName.equals(nextHopName)) {
+				if (targetSystemName != null) {
 					targetSystemName = null;
 					targetSystemAddress = 0L;
+					clearedSideTrip = true;
+				}
+			} else {
+				boolean statusDestIsOnRoute = false;
+				if (baseRouteEntries != null && !baseRouteEntries.isEmpty()) {
+					for (RouteEntry e : baseRouteEntries) {
+						if (e == null)
+							continue;
+						if (statusDestName.equals(e.systemName)) {
+							statusDestIsOnRoute = true;
+							break;
+						}
+					}
+				}
+				if (statusDestIsOnRoute) {
+					if (targetSystemName != null) {
+						targetSystemName = null;
+						targetSystemAddress = 0L;
+						clearedSideTrip = true;
+					}
 				}
 			}
 
-
-			// Some journal setups rely on Status.json "Destination" fields without emitting FsdTarget.
-			if (destinationBodyId == null && destinationSystemAddress != null && destinationName != null && !destinationName.isBlank()) {
-				if (targetSystemName == null || targetSystemName.isBlank()) {
-					targetSystemName = destinationName;
-					targetSystemAddress = (destinationSystemAddress != null ? destinationSystemAddress.longValue() : 0L);
-				}
+			if (clearedSideTrip) {
+				rebuildDisplayedEntries();
+				return;
 			}
 
 			if (hyperdriveCharging && !timerRunning) {
@@ -458,7 +465,6 @@ public class RouteTabPanel extends JPanel {
 		//        String starClass;
 		//        Double distanceLy;
 		//        ScanStatus status;
-
 
 		List<RouteEntry> list = new ArrayList<>();
 		list.add(entry);
