@@ -121,6 +121,9 @@ public class RouteTabPanel extends JPanel {
 
     // Last raw navroute entries (no synthetic rows). We rebuild the displayed list from this.
     private List<RouteEntry> baseRouteEntries = new ArrayList<>();
+
+    // Last list rendered in the table (includes synthetic current row / side-trip rows).
+    private List<RouteEntry> displayedEntries = new ArrayList<>();
     private boolean jumpFlashOn = true;
     private final Timer jumpFlashTimer = new Timer(500, e -> {
         jumpFlashOn = !jumpFlashOn;
@@ -375,11 +378,28 @@ public class RouteTabPanel extends JPanel {
             return;
         }
 
-        if (event instanceof NavRouteEvent
-            || event instanceof NavRouteClearEvent) {
+        if (event instanceof NavRouteEvent) {
+            // A brand new plotted route arrived. Elite does not always emit NavRouteClear first,
+            // so clear any previously selected "side trip" target / destination state here.
+            targetSystemName = null;
+            targetSystemAddress = 0L;
+
+            destinationSystemAddress = null;
+            destinationBodyId = null;
+            destinationName = null;
+
+            pendingJumpSystemName = null;
+            if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
+                jumpFlashTimer.stop();
+            }
+            jumpFlashOn = true;
+
             reloadFromNavRouteFile();
         }
         if (event instanceof NavRouteClearEvent) {
+        	// clear plotted route
+            baseRouteEntries.clear();
+            
             // Route cleared: no active FSD target anymore
             targetSystemName = null;
             targetSystemAddress = 0L;
@@ -388,7 +408,7 @@ public class RouteTabPanel extends JPanel {
             destinationSystemAddress = null;
             destinationBodyId = null;
             destinationName = null;
-
+            
             rebuildDisplayedEntries();
             table.repaint();
         }
@@ -419,7 +439,8 @@ public class RouteTabPanel extends JPanel {
             
             if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
     			jumpFlashTimer.stop();
-    			jumpFlashOn = false;
+				// After a completed jump, we want the next-jump hollow triangle to be visible steadily.
+				jumpFlashOn = true;
     		}
             setCurrentSystemIfEmpty(getCurrentSystemName(), currentSystemAddress);
 
@@ -439,6 +460,35 @@ public class RouteTabPanel extends JPanel {
 	        destinationSystemAddress = se.getDestinationSystem();
 	        destinationBodyId = se.getDestinationBody();
 	        destinationName = se.getDestinationDisplayName();
+
+            // If Status indicates no destination at all, clear any previously remembered side-trip target.
+            if ((destinationSystemAddress == null)
+                && (destinationBodyId == null)
+                && (destinationName == null || destinationName.isBlank())) {
+                targetSystemName = null;
+                targetSystemAddress = 0L;
+            }
+
+            // If the player cleared a side-trip target, Status will typically revert Destination back to the
+            // next jump in the plotted route. In that case, remove any remembered side-trip target so we
+            // don't keep displaying a stale non-numbered row.
+            String nextJumpName = null;
+            int curIdx = findSystemRow(baseRouteEntries, getCurrentSystemName(), currentSystemAddress);
+            if (curIdx >= 0 && curIdx + 1 < baseRouteEntries.size()) {
+                RouteEntry next = baseRouteEntries.get(curIdx + 1);
+                if (next != null) {
+                    nextJumpName = next.systemName;
+                }
+            }
+            if (destinationBodyId == null
+                && nextJumpName != null
+                && destinationName != null
+                && destinationName.equals(nextJumpName)) {
+                targetSystemName = null;
+                targetSystemAddress = 0L;
+            }
+
+
 
 	        // Some journal setups rely on Status.json "Destination" fields without emitting FsdTarget.
 	        if (destinationBodyId == null && destinationSystemAddress != null && destinationName != null && !destinationName.isBlank()) {
@@ -514,15 +564,17 @@ public class RouteTabPanel extends JPanel {
     private void reloadFromNavRouteFile() {
         Path dir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
         if (dir == null) {
-            headerLabel.setText("No journal directory.");
-            tableModel.setEntries(new ArrayList<>());
+            baseRouteEntries = new ArrayList<>();
+            rebuildDisplayedEntries();
+            updateHeaderLabelFromDisplayed();
             return;
         }
 
         Path navRoute = dir.resolve("NavRoute.json");
         if (!Files.isRegularFile(navRoute)) {
-            headerLabel.setText("No plotted route.");
-            tableModel.setEntries(new ArrayList<>());
+            baseRouteEntries = new ArrayList<>();
+            rebuildDisplayedEntries();
+            updateHeaderLabelFromDisplayed();
             return;
         }
 
@@ -599,20 +651,46 @@ public class RouteTabPanel extends JPanel {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            headerLabel.setText("Error reading NavRoute.json");
-            tableModel.setEntries(new ArrayList<>());
+            baseRouteEntries = new ArrayList<>();
+            rebuildDisplayedEntries();
+            headerLabel.setText("Route");
             return;
         }
 
-        headerLabel.setText(entries.isEmpty()
-                            ? "No plotted route."
-                            : "Route: " + entries.size() + " systems");
+        updateHeaderLabelFromDisplayed();
 
         // Save the raw NavRoute entries (no synthetic rows). We'll rebuild the displayed list
         // whenever current/destination changes.
         baseRouteEntries = deepCopy(entries);
         rebuildDisplayedEntries();
     }
+
+    private void updateHeaderLabelFromDisplayed() {
+        int systemCount = 0;
+        if (displayedEntries != null) {
+            for (RouteEntry e : displayedEntries) {
+                if (e == null || e.isBodyRow) {
+                    continue;
+                }
+                systemCount++;
+            }
+        }
+
+        // Never show "No plotted route." If we know the current system, show at least one system.
+        if (systemCount == 0) {
+            String cur = getCurrentSystemName();
+            if (cur != null && !cur.isBlank()) {
+                systemCount = 1;
+            }
+        }
+
+        if (systemCount == 0) {
+            headerLabel.setText("Route");
+        } else {
+            headerLabel.setText("Route: " + systemCount + " systems");
+        }
+    }
+
 
     private void rebuildDisplayedEntries() {
         List<RouteEntry> working = deepCopy(baseRouteEntries);
@@ -625,6 +703,7 @@ public class RouteTabPanel extends JPanel {
         renumberDisplayIndexes(working);
         applyMarkerKinds(working);
 
+        displayedEntries = working;
         tableModel.setEntries(working);
 
         // Async EDSM lookups to refine status icons (skip body rows).
@@ -914,27 +993,70 @@ public class RouteTabPanel extends JPanel {
 
         String currentName = getCurrentSystemName();
 
+        // Clear marker kinds first (but leave body rows alone; they manage their own marker).
         for (RouteEntry e : entries) {
             if (e == null) {
                 continue;
             }
             if (e.isBodyRow) {
-                // Body rows already carry their own markerKind.
                 continue;
             }
+            e.markerKind = MarkerKind.NONE;
+        }
 
-            if (e.markerKind == MarkerKind.CURRENT || e.markerKind == MarkerKind.TARGET) {
-                // Keep synthetic marker assignment.
-            } else {
-                e.markerKind = MarkerKind.NONE;
+        // Mark current system.
+        int currentRow = findSystemRow(entries, currentName, currentSystemAddress);
+        if (currentRow >= 0) {
+            RouteEntry cur = entries.get(currentRow);
+            if (cur != null && !cur.isBodyRow) {
+                cur.markerKind = MarkerKind.CURRENT;
             }
+        }
 
-            if (e.systemName != null) {
-                if (e.systemName.equals(currentName)) {
-                    e.markerKind = MarkerKind.CURRENT;
-                } else if (pendingJumpSystemName != null && e.systemName.equals(pendingJumpSystemName)) {
-                    e.markerKind = MarkerKind.PENDING_JUMP;
-                } else if (targetSystemName != null && e.systemName.equals(targetSystemName)) {
+        boolean hasExplicitDestination = false;
+        if (targetSystemName != null && !targetSystemName.isBlank()) {
+            hasExplicitDestination = true;
+        } else if (destinationName != null && !destinationName.isBlank()) {
+            // Status destination can represent either a system target or a body. If a destination is set,
+            // the in-game UI shows the hollow triangle on that destination instead of the next plotted hop.
+            hasExplicitDestination = (destinationSystemAddress != null) || (destinationBodyId != null);
+        }
+
+        // Mark next jump system (first non-synthetic, non-body row after the current system row).
+        // Only do this when there is NOT an explicit destination/side-trip selected.
+        if (!hasExplicitDestination && currentRow >= 0) {
+            for (int i = currentRow + 1; i < entries.size(); i++) {
+                RouteEntry e = entries.get(i);
+                if (e == null) {
+                    continue;
+                }
+                if (e.isBodyRow) {
+                    continue;
+                }
+                if (e.isSynthetic) {
+                    continue; // skip side-trip / synthetic rows
+                }
+                e.markerKind = MarkerKind.PENDING_JUMP;
+                break;
+            }
+        }
+
+        // Mark side-trip target system (do not override CURRENT or PENDING_JUMP).
+        if (targetSystemName != null && !targetSystemName.isBlank()) {
+            for (RouteEntry e : entries) {
+                if (e == null) {
+                    continue;
+                }
+                if (e.isBodyRow) {
+                    continue;
+                }
+                if (e.systemName == null) {
+                    continue;
+                }
+                if (!targetSystemName.equals(e.systemName)) {
+                    continue;
+                }
+                if (e.markerKind == MarkerKind.NONE) {
                     e.markerKind = MarkerKind.TARGET;
                 }
             }
@@ -1192,15 +1314,20 @@ public class RouteTabPanel extends JPanel {
             String systemName = null;
 
             List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(3);
-            for (EliteLogEvent event : events) {
-                if (event instanceof LocationEvent e) {
-                    systemName = e.getStarSystem();
-                } else if (event instanceof FsdJumpEvent e) {
-                    systemName = e.getStarSystem();
-                }
-            }
 
-            return systemName;
+// EliteJournalReader ordering isn't guaranteed here. To be safe, scan from the end and take
+// the first Location/FSDJump we see (most recent).
+for (int i = events.size() - 1; i >= 0; i--) {
+    EliteLogEvent event = events.get(i);
+    if (event instanceof LocationEvent e) {
+        return e.getStarSystem();
+    }
+    if (event instanceof FsdJumpEvent e) {
+        return e.getStarSystem();
+    }
+}
+
+return systemName;
         } catch (Exception e) {
             e.printStackTrace();
             return null;
