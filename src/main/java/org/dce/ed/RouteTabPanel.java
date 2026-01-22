@@ -18,6 +18,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EventObject;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -31,6 +34,7 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
+
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
@@ -47,6 +51,7 @@ import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.util.EdsmClient;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -376,8 +381,10 @@ public class RouteTabPanel extends JPanel {
 
 			if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
 				jumpFlashTimer.stop();
-				jumpFlashOn = false;
 			}
+			jumpFlashOn = true;
+			pendingJumpSystemName = null;
+			
 			setCurrentSystemIfEmpty(getCurrentSystemName(), currentSystemAddress);
 			rebuildDisplayedEntries();
 		}
@@ -436,6 +443,7 @@ public class RouteTabPanel extends JPanel {
 
 			if (hyperdriveCharging && !timerRunning) {
 				pendingJumpSystemName = se.getDestinationDisplayName();
+				jumpFlashOn = true;
 				jumpFlashTimer.start();
 			} 
 			if (!hyperdriveCharging && timerRunning ){
@@ -578,6 +586,8 @@ public class RouteTabPanel extends JPanel {
 	}
 	private void rebuildDisplayedEntries() {
 		List<RouteEntry> working = deepCopy(baseRouteEntries);
+		applyRememberedScanStatuses(working);
+		
 		applySyntheticCurrentRow(working);
 		applySyntheticTargetRow(working);
 		applySyntheticDestinationBodyRow(working);
@@ -825,7 +835,9 @@ public class RouteTabPanel extends JPanel {
 		if (entries == null) {
 			return;
 		}
+
 		String currentName = getCurrentSystemName();
+
 		// Clear marker kinds first (body rows manage their own markerKind).
 		for (RouteEntry e : entries) {
 			if (e == null) {
@@ -836,6 +848,7 @@ public class RouteTabPanel extends JPanel {
 			}
 			e.markerKind = MarkerKind.NONE;
 		}
+
 		// Mark current system row.
 		int currentRow = findSystemRow(entries, currentName, currentSystemAddress);
 		if (currentRow >= 0) {
@@ -844,9 +857,33 @@ public class RouteTabPanel extends JPanel {
 				cur.markerKind = MarkerKind.CURRENT;
 			}
 		}
-		// Identify the next plotted hop (first non-synthetic, non-body row after current).
-		RouteEntry nextHop = null;
-		if (currentRow >= 0) {
+
+		// If Status.json is pointing at a SYSTEM destination (not a body),
+		// prefer that as the pending jump marker.
+		RouteEntry pending = null;
+
+		if (destinationBodyId == null) {
+			long destAddr = 0L;
+			if (destinationSystemAddress != null) {
+				destAddr = destinationSystemAddress.longValue();
+			}
+
+			if (destAddr != 0L || (destinationName != null && !destinationName.isBlank())) {
+				int destRow = findSystemRow(entries, destinationName, destAddr);
+				if (destRow >= 0) {
+					RouteEntry e = entries.get(destRow);
+					if (e != null && !e.isBodyRow) {
+						// Avoid marking the current row as pending.
+						if (destRow != currentRow) {
+							pending = e;
+						}
+					}
+				}
+			}
+		}
+
+		// Fallback: next plotted hop (first non-synthetic, non-body row after current).
+		if (pending == null && currentRow >= 0) {
 			for (int i = currentRow + 1; i < entries.size(); i++) {
 				RouteEntry e = entries.get(i);
 				if (e == null) {
@@ -858,55 +895,19 @@ public class RouteTabPanel extends JPanel {
 				if (e.isSynthetic) {
 					continue;
 				}
-				nextHop = e;
+				pending = e;
 				break;
 			}
 		}
-		// Determine whether there is an "explicit destination" that should take precedence over
-		// the normal next-hop hollow triangle.
-		//
-		// IMPORTANT: Status.json Destination commonly points at the next plotted hop when a route exists.
-		// That should NOT suppress the next-hop marker (otherwise it flickers/disappears when Status updates).
-		boolean explicitDestination = false;
-		// Side-trip target takes precedence only when it differs from the next plotted hop.
-		if (targetSystemName != null && !targetSystemName.isBlank()) {
-			if (nextHop == null || nextHop.systemName == null || !targetSystemName.equals(nextHop.systemName)) {
-				explicitDestination = true;
-			}
+
+		if (pending != null) {
+			pending.markerKind = MarkerKind.PENDING_JUMP;
 		}
-		// A destination BODY always takes precedence.
-		if (!explicitDestination && destinationBodyId != null) {
-			explicitDestination = true;
-		}
-		// A destination SYSTEM takes precedence only if it differs from the next plotted hop.
-		if (!explicitDestination && destinationSystemAddress != null && destinationName != null && !destinationName.isBlank()) {
-			if (nextHop == null) {
-				explicitDestination = true;
-			} else {
-				boolean sameByName = (nextHop.systemName != null) && destinationName.equals(nextHop.systemName);
-				boolean sameByAddr = (nextHop.systemAddress != 0L) && (destinationSystemAddress.longValue() == nextHop.systemAddress);
-				if (!sameByName && !sameByAddr) {
-					explicitDestination = true;
-				}
-			}
-		}
-		// Mark next hop when there is no explicit destination overriding it.
-		if (!explicitDestination && nextHop != null) {
-			nextHop.markerKind = MarkerKind.PENDING_JUMP;
-		}
-		// Mark side-trip target system row (do not override CURRENT / PENDING_JUMP).
-		if (targetSystemName != null && !targetSystemName.isBlank()) {
+
+		// Side-trip target system row (do not override CURRENT / PENDING_JUMP).
+		if (targetSystemName != null && !targetSystemName.isBlank() && targetSystemAddress != 0L) {
 			for (RouteEntry e : entries) {
-				if (e == null) {
-					continue;
-				}
-				if (e.isBodyRow) {
-					continue;
-				}
-				if (e.systemName == null) {
-					continue;
-				}
-				if (!targetSystemName.equals(e.systemName)) {
+				if (!matchesTarget(e)) {
 					continue;
 				}
 				if (e.markerKind == MarkerKind.NONE) {
@@ -915,6 +916,75 @@ public class RouteTabPanel extends JPanel {
 			}
 		}
 	}
+	
+	private boolean matchesTarget(RouteEntry e) {
+		if (e == null) {
+			return false;
+		}
+		if (e.isBodyRow) {
+			return false;
+		}
+
+		if (targetSystemAddress != 0L && e.systemAddress != 0L) {
+			if (e.systemAddress == targetSystemAddress) {
+				return true;
+			}
+		}
+
+		if (targetSystemName != null && !targetSystemName.isBlank() && e.systemName != null) {
+			if (targetSystemName.equals(e.systemName)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+	
+	private final Map<Long, ScanStatus> lastKnownScanStatusByAddress = new ConcurrentHashMap<>();
+
+	private void rememberScanStatus(RouteEntry entry, ScanStatus status) {
+		if (entry == null) {
+			return;
+		}
+		if (entry.systemAddress == 0L) {
+			return;
+		}
+		if (status == null || status == ScanStatus.UNKNOWN) {
+			return;
+		}
+		lastKnownScanStatusByAddress.put(entry.systemAddress, status);
+	}
+
+	private void applyRememberedScanStatuses(List<RouteEntry> entries) {
+		if (entries == null) {
+			return;
+		}
+		for (RouteEntry e : entries) {
+			if (e == null) {
+				continue;
+			}
+			if (e.isBodyRow) {
+				continue;
+			}
+
+			// Prefer LOCAL scan state first (if known).
+			ScanStatus local = getLocalScanStatus(e);
+			if (local != ScanStatus.UNKNOWN) {
+				e.status = local;
+				rememberScanStatus(e, local);
+				continue;
+			}
+
+			// If we already knew something, don't reset back to UNKNOWN.
+			if (e.status == null || e.status == ScanStatus.UNKNOWN) {
+				ScanStatus remembered = lastKnownScanStatusByAddress.get(e.systemAddress);
+				if (remembered != null && remembered != ScanStatus.UNKNOWN) {
+					e.status = remembered;
+				}
+			}
+		}
+	}
+
 	private Double[] resolveSystemCoords(String systemName, long systemAddress, double[] preferred) {
 		if (preferred != null && preferred.length == 3) {
 			return new Double[] { preferred[0], preferred[1], preferred[2] };
@@ -958,6 +1028,7 @@ public class RouteTabPanel extends JPanel {
 		ScanStatus local = getLocalScanStatus(entry);
 		if (local != ScanStatus.UNKNOWN) {
 			entry.status = local;
+			rememberScanStatus(entry, local);
 			SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
 			return;
 		}
@@ -982,8 +1053,18 @@ public class RouteTabPanel extends JPanel {
 					newStatus = ScanStatus.UNKNOWN;
 				}
 			}
-			entry.status = newStatus;
-			SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
+			if (newStatus != ScanStatus.UNKNOWN) {
+				entry.status = newStatus;
+				rememberScanStatus(entry, newStatus);
+				SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
+			} else {
+				// Don't downgrade a known status back to UNKNOWN.
+				if (entry.status == null || entry.status == ScanStatus.UNKNOWN) {
+					entry.status = ScanStatus.UNKNOWN;
+					SwingUtilities.invokeLater(() -> tableModel.fireRowChanged(row));
+				}
+			}
+
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -1594,21 +1675,22 @@ public class RouteTabPanel extends JPanel {
 				entry = null;
 			}
 			MarkerKind kind = (entry != null ? entry.markerKind : MarkerKind.NONE);
+
 			if (kind == MarkerKind.CURRENT) {
 				icon = new TriangleIcon(EdoUi.ED_ORANGE, 10, 10);
+
 			} else if (kind == MarkerKind.PENDING_JUMP) {
-				if (jumpFlashOn) {
+				// Blink the "next jump" empty triangle.
+				if (jumpFlashOn)
+				{
 					icon = new OutlineTriangleIcon(EdoUi.ED_ORANGE_LESS_TRANS, 10, 10, 2f);
-				} else {
-					icon = null;
 				}
+
 			} else if (kind == MarkerKind.TARGET) {
-				if (pendingJumpSystemName == null) {
-					icon = new OutlineTriangleIcon(EdoUi.ED_ORANGE_LESS_TRANS, 10, 10, 2f);
-				} else {
-					icon = null;
-				}
+				// Keep target visible regardless of pending jump.
+				icon = new OutlineTriangleIcon(EdoUi.ED_ORANGE_LESS_TRANS, 10, 10, 2f);
 			}
+
 			l.setIcon(icon);
 			return l;
 		}
