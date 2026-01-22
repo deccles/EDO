@@ -12,9 +12,11 @@ import java.awt.Insets;
 import java.io.File;
 
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
-import javax.swing.JColorChooser;
 import javax.swing.JCheckBox;
+import javax.swing.JColorChooser;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
@@ -74,6 +76,11 @@ public class PreferencesDialog extends JDialog {
     private JTextField prospectorMaterialsField;
     private JSpinner prospectorMinPropSpinner;
     private JSpinner prospectorMinAvgValueSpinner;
+
+    // Mining tab: limpet reminder
+    private JCheckBox miningLowLimpetReminderEnabledCheckBox;
+    private JSpinner miningLowLimpetReminderThresholdSpinner;
+
 
     // Mining tab: value estimation (used by Mining tab only)
     private JSpinner miningTonsLowSpinner;
@@ -346,104 +353,167 @@ public class PreferencesDialog extends JDialog {
     }
 
     private JPanel createMiningPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        panel.setOpaque(false);
+    	JPanel panel = new JPanel(new BorderLayout());
+    	panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+    	panel.setOpaque(false);
 
-        JPanel content = new JPanel(new GridBagLayout());
-        content.setOpaque(false);
+    	JPanel outer = new JPanel();
+    	outer.setOpaque(false);
+    	outer.setLayout(new BoxLayout(outer, BoxLayout.Y_AXIS));
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.insets = new Insets(6, 6, 6, 6);
+    	// -----------------------------------------------------------------
+    	// Prospector box
+    	// -----------------------------------------------------------------
+    	JPanel prospectorBox = new JPanel(new GridBagLayout());
+    	prospectorBox.setOpaque(false);
+    	prospectorBox.setBorder(
+    			BorderFactory.createTitledBorder(
+    				BorderFactory.createLineBorder(new Color(120, 120, 120)),
+    				"Prospector"
+    			)
+    		);
 
-        JLabel materialsLabel = new JLabel("Prospector materials (comma separated):");
-        content.add(materialsLabel, gbc);
 
-        gbc.gridx = 1;
-        prospectorMaterialsField = new JTextField(32);
-        prospectorMaterialsField.setText(OverlayPreferences.getProspectorMaterialsCsv());
-        content.add(prospectorMaterialsField, gbc);
+    	GridBagConstraints gbc = new GridBagConstraints();
+    	gbc.gridx = 0;
+    	gbc.gridy = 0;
+    	gbc.anchor = GridBagConstraints.WEST;
+    	gbc.insets = new Insets(6, 8, 6, 8);
 
-        gbc.gridx = 0;
-        gbc.gridy++;
-        JLabel minPropLabel = new JLabel("Minimum proportion (%):");
-        content.add(minPropLabel, gbc);
+    	JLabel materialsLabel = new JLabel("Materials (comma separated):");
+    	prospectorBox.add(materialsLabel, gbc);
 
-        gbc.gridx = 1;
-        double current = OverlayPreferences.getProspectorMinProportionPercent();
-        prospectorMinPropSpinner = new JSpinner(new SpinnerNumberModel(current, 0.0, 100.0, 1.0));
-        ((JSpinner.DefaultEditor) prospectorMinPropSpinner.getEditor()).getTextField().setColumns(6);
-        content.add(prospectorMinPropSpinner, gbc);
+    	gbc.gridx = 1;
+    	gbc.fill = GridBagConstraints.HORIZONTAL;
+    	gbc.weightx = 1.0;
 
-        gbc.gridx = 0;
-        gbc.gridy++;
-        JLabel minAvgValueLabel = new JLabel("Minimum galactic average value (Cr/t):");
-        content.add(minAvgValueLabel, gbc);
+    	prospectorMaterialsField = new JTextField(32);
+    	prospectorMaterialsField.setText(OverlayPreferences.getProspectorMaterialsCsv());
+    	prospectorBox.add(prospectorMaterialsField, gbc);
 
-        gbc.gridx = 1;
-        int currentAvg = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
-        prospectorMinAvgValueSpinner = new JSpinner(new SpinnerNumberModel(currentAvg, 0, 10_000_000, 1000));
-        ((JSpinner.DefaultEditor) prospectorMinAvgValueSpinner.getEditor()).getTextField().setColumns(8);
-        content.add(prospectorMinAvgValueSpinner, gbc);
+    	gbc.weightx = 0.0;
+    	gbc.fill = GridBagConstraints.NONE;
 
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 2;
-        JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the thresholds.");
-        content.add(hint, gbc);
+    	gbc.gridx = 0;
+    	gbc.gridy++;
+    	JLabel minPropLabel = new JLabel("Minimum proportion (%):");
+    	prospectorBox.add(minPropLabel, gbc);
 
-        // --- Estimation settings used by the Mining tab ---
-        gbc.gridy++;
-        gbc.gridwidth = 2;
-        JLabel estHeader = new JLabel("Mining tab value estimation (tons):");
-        content.add(estHeader, gbc);
+    	gbc.gridx = 1;
+    	double currentProp = OverlayPreferences.getProspectorMinProportionPercent();
+    	prospectorMinPropSpinner = new JSpinner(new SpinnerNumberModel(currentProp, 0.0, 100.0, 1.0));
+    	((JSpinner.DefaultEditor) prospectorMinPropSpinner.getEditor()).getTextField().setColumns(6);
+    	prospectorBox.add(prospectorMinPropSpinner, gbc);
 
-        gbc.gridwidth = 1;
-        gbc.gridy++;
-        gbc.gridx = 0;
-        JLabel lowTonsLabel = new JLabel("Content=Low total tons:");
-        content.add(lowTonsLabel, gbc);
+    	gbc.gridx = 0;
+    	gbc.gridy++;
+    	JLabel minAvgValueLabel = new JLabel("Minimum galactic avg value (Cr/t):");
+    	prospectorBox.add(minAvgValueLabel, gbc);
 
-        gbc.gridx = 1;
-        miningTonsLowSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsLow(), 0.0, 200.0, 1.0));
-        ((JSpinner.DefaultEditor) miningTonsLowSpinner.getEditor()).getTextField().setColumns(6);
-        content.add(miningTonsLowSpinner, gbc);
+    	gbc.gridx = 1;
+    	int currentAvg = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
+    	prospectorMinAvgValueSpinner = new JSpinner(new SpinnerNumberModel(currentAvg, 0, 10_000_000, 1000));
+    	((JSpinner.DefaultEditor) prospectorMinAvgValueSpinner.getEditor()).getTextField().setColumns(8);
+    	prospectorBox.add(prospectorMinAvgValueSpinner, gbc);
 
-        gbc.gridy++;
-        gbc.gridx = 0;
-        JLabel medTonsLabel = new JLabel("Content=Medium total tons:");
-        content.add(medTonsLabel, gbc);
+    	gbc.gridx = 0;
+    	gbc.gridy++;
+    	gbc.gridwidth = 2;
+    	JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the thresholds.");
+    	prospectorBox.add(hint, gbc);
 
-        gbc.gridx = 1;
-        miningTonsMediumSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsMedium(), 0.0, 200.0, 1.0));
-        ((JSpinner.DefaultEditor) miningTonsMediumSpinner.getEditor()).getTextField().setColumns(6);
-        content.add(miningTonsMediumSpinner, gbc);
+    	outer.add(prospectorBox);
+    	outer.add(Box.createVerticalStrut(10));
 
-        gbc.gridy++;
-        gbc.gridx = 0;
-        JLabel highTonsLabel = new JLabel("Content=High total tons:");
-        content.add(highTonsLabel, gbc);
+    	// -----------------------------------------------------------------
+    	// Limpet reminder: single line
+    	// -----------------------------------------------------------------
+    	JPanel limpetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+    	limpetRow.setOpaque(false);
 
-        gbc.gridx = 1;
-        miningTonsHighSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsHigh(), 0.0, 200.0, 1.0));
-        ((JSpinner.DefaultEditor) miningTonsHighSpinner.getEditor()).getTextField().setColumns(6);
-        content.add(miningTonsHighSpinner, gbc);
+    	miningLowLimpetReminderEnabledCheckBox = new JCheckBox();
+    	miningLowLimpetReminderEnabledCheckBox.setOpaque(false);
+    	miningLowLimpetReminderEnabledCheckBox.setSelected(OverlayPreferences.isMiningLowLimpetReminderEnabled());
+    	limpetRow.add(miningLowLimpetReminderEnabledCheckBox);
 
-        gbc.gridy++;
-        gbc.gridx = 0;
-        JLabel coreTonsLabel = new JLabel("Core total tons:");
-        content.add(coreTonsLabel, gbc);
+    	limpetRow.add(new JLabel("Low limpet Announcement. Remind if <"));
 
-        gbc.gridx = 1;
-        miningTonsCoreSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsCore(), 0.0, 200.0, 1.0));
-        ((JSpinner.DefaultEditor) miningTonsCoreSpinner.getEditor()).getTextField().setColumns(6);
-        content.add(miningTonsCoreSpinner, gbc);
+    	int currentThreshold = OverlayPreferences.getMiningLowLimpetReminderThreshold();
+    	miningLowLimpetReminderThresholdSpinner = new JSpinner(new SpinnerNumberModel(currentThreshold, 0, 10_000, 100));
+    	((JSpinner.DefaultEditor) miningLowLimpetReminderThresholdSpinner.getEditor()).getTextField().setColumns(6);
+    	limpetRow.add(miningLowLimpetReminderThresholdSpinner);
 
-        panel.add(content, BorderLayout.NORTH);
-        return panel;
+    	Runnable updateLimpetEnabled = () -> {
+    		boolean enabled = miningLowLimpetReminderEnabledCheckBox.isSelected();
+    		miningLowLimpetReminderThresholdSpinner.setEnabled(enabled);
+    	};
+    	miningLowLimpetReminderEnabledCheckBox.addActionListener(e -> updateLimpetEnabled.run());
+    	updateLimpetEnabled.run();
+
+    	outer.add(limpetRow);
+    	outer.add(Box.createVerticalStrut(10));
+
+    	// -----------------------------------------------------------------
+    	// Value estimation box
+    	// -----------------------------------------------------------------
+    	JPanel estBox = new JPanel(new GridBagLayout());
+    	estBox.setOpaque(false);
+    	estBox.setBorder(
+    			BorderFactory.createTitledBorder(
+    				BorderFactory.createLineBorder(new Color(120, 120, 120)),
+    				"Mining tab value estimation (tons)"
+    			)
+    		);
+
+
+    	GridBagConstraints ebc = new GridBagConstraints();
+    	ebc.gridx = 0;
+    	ebc.gridy = 0;
+    	ebc.anchor = GridBagConstraints.WEST;
+    	ebc.insets = new Insets(6, 8, 6, 8);
+
+    	JLabel lowTonsLabel = new JLabel("Content=Low total tons:");
+    	estBox.add(lowTonsLabel, ebc);
+
+    	ebc.gridx = 1;
+    	miningTonsLowSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsLow(), 0.0, 200.0, 1.0));
+    	((JSpinner.DefaultEditor) miningTonsLowSpinner.getEditor()).getTextField().setColumns(6);
+    	estBox.add(miningTonsLowSpinner, ebc);
+
+    	ebc.gridx = 0;
+    	ebc.gridy++;
+    	JLabel medTonsLabel = new JLabel("Content=Medium total tons:");
+    	estBox.add(medTonsLabel, ebc);
+
+    	ebc.gridx = 1;
+    	miningTonsMediumSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsMedium(), 0.0, 200.0, 1.0));
+    	((JSpinner.DefaultEditor) miningTonsMediumSpinner.getEditor()).getTextField().setColumns(6);
+    	estBox.add(miningTonsMediumSpinner, ebc);
+
+    	ebc.gridx = 0;
+    	ebc.gridy++;
+    	JLabel highTonsLabel = new JLabel("Content=High total tons:");
+    	estBox.add(highTonsLabel, ebc);
+
+    	ebc.gridx = 1;
+    	miningTonsHighSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsHigh(), 0.0, 200.0, 1.0));
+    	((JSpinner.DefaultEditor) miningTonsHighSpinner.getEditor()).getTextField().setColumns(6);
+    	estBox.add(miningTonsHighSpinner, ebc);
+
+    	ebc.gridx = 0;
+    	ebc.gridy++;
+    	JLabel coreTonsLabel = new JLabel("Core total tons:");
+    	estBox.add(coreTonsLabel, ebc);
+
+    	ebc.gridx = 1;
+    	miningTonsCoreSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsCore(), 0.0, 200.0, 1.0));
+    	((JSpinner.DefaultEditor) miningTonsCoreSpinner.getEditor()).getTextField().setColumns(6);
+    	estBox.add(miningTonsCoreSpinner, ebc);
+
+    	outer.add(estBox);
+
+    	panel.add(outer, BorderLayout.NORTH);
+    	return panel;
     }
     
     private JPanel createToolsPanel() {
@@ -846,6 +916,19 @@ private JPanel createSpeechPanel() {
                 // ignore
             }
         }
+
+        if (miningLowLimpetReminderEnabledCheckBox != null) {
+            OverlayPreferences.setMiningLowLimpetReminderEnabled(miningLowLimpetReminderEnabledCheckBox.isSelected());
+        }
+        if (miningLowLimpetReminderThresholdSpinner != null) {
+            try {
+                int v = ((Number) miningLowLimpetReminderThresholdSpinner.getValue()).intValue();
+                OverlayPreferences.setMiningLowLimpetReminderThreshold(v);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+
 
         if (miningTonsLowSpinner != null) {
             try {

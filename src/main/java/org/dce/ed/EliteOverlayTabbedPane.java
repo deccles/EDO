@@ -821,6 +821,17 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (now - lastLimpetReminderMs < 60_000L) {
 			return;
 		}
+		if (!OverlayPreferences.isSpeechEnabled()) {
+			return;
+		}
+		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
+			return;
+		}
+
+		int threshold = OverlayPreferences.getMiningLowLimpetReminderThreshold();
+		if (threshold <= 0) {
+			return;
+		}
 
 		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
 		Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
@@ -838,7 +849,9 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (!hasMiningEquipment(modules)) {
 			return;
 		}
-		if (!isCargoEmpty(cargo)) {
+
+		int limpets = getLimpetCount(cargo);
+		if (limpets >= threshold) {
 			return;
 		}
 
@@ -860,6 +873,65 @@ public class EliteOverlayTabbedPane extends JPanel {
 			return null;
 		}
 	}
+	
+	private static int getLimpetCount(JsonObject cargo) {
+		if (cargo == null) {
+			return 0;
+		}
+
+		JsonArray inv = null;
+		if (cargo.has("Inventory") && cargo.get("Inventory").isJsonArray()) {
+			inv = cargo.getAsJsonArray("Inventory");
+		} else if (cargo.has("inventory") && cargo.get("inventory").isJsonArray()) {
+			inv = cargo.getAsJsonArray("inventory");
+		}
+
+		if (inv == null) {
+			return 0;
+		}
+
+		for (JsonElement e : inv) {
+			if (e == null || !e.isJsonObject()) {
+				continue;
+			}
+
+			JsonObject o = e.getAsJsonObject();
+
+			String name = null;
+			if (o.has("Name") && !o.get("Name").isJsonNull()) {
+				try {
+					name = o.get("Name").getAsString();
+				} catch (Exception ignored) {
+				}
+			} else if (o.has("name") && !o.get("name").isJsonNull()) {
+				try {
+					name = o.get("name").getAsString();
+				} catch (Exception ignored) {
+				}
+			}
+
+			if (name == null || !name.equalsIgnoreCase("drones")) {
+				continue;
+			}
+
+			if (o.has("Count") && !o.get("Count").isJsonNull()) {
+				try {
+					return (int) o.get("Count").getAsLong();
+				} catch (Exception ignored) {
+				}
+			} else if (o.has("count") && !o.get("count").isJsonNull()) {
+				try {
+					return (int) o.get("count").getAsLong();
+				} catch (Exception ignored) {
+				}
+			}
+
+			return 0;
+		}
+
+		return 0;
+	}
+
 
 	private static boolean isCargoEmpty(JsonObject cargo) {
 		if (cargo == null) {

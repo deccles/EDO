@@ -51,6 +51,10 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_EST_TONS_MED = "mining.estimate.tons.medium";
     private static final String KEY_MINING_EST_TONS_HIGH = "mining.estimate.tons.high";
     private static final String KEY_MINING_EST_TONS_CORE = "mining.estimate.tons.core";
+    
+    // Mining: low-limpet reminder
+    private static final String KEY_MINING_LIMPET_REMINDER_ENABLED = "mining.limpetReminder.enabled";
+    private static final String KEY_MINING_LIMPET_REMINDER_THRESHOLD = "mining.limpetReminder.threshold";
 
     // Reuse the same prefs node as OverlayFrame so everything is in one place.
     private static final Preferences PREFS = Preferences.userNodeForPackage(OverlayFrame.class);
@@ -431,6 +435,49 @@ public final class OverlayPreferences {
     // ----------------------------
     // Mining value estimation (Mining tab)
     // ----------------------------
+
+    // ----------------------------
+    // Mining: low-limpet reminder
+    // ----------------------------
+
+    /**
+     * If enabled, the overlay will announce when you appear to be in a mining loadout but have
+     * fewer limpets in your hold than the configured threshold.
+     */
+    public static boolean isMiningLowLimpetReminderEnabled() {
+        return PREFS.getBoolean(KEY_MINING_LIMPET_REMINDER_ENABLED, true);
+    }
+
+    public static void setMiningLowLimpetReminderEnabled(boolean enabled) {
+        PREFS.putBoolean(KEY_MINING_LIMPET_REMINDER_ENABLED, enabled);
+    }
+
+    /**
+     * Limpet reminder threshold. The overlay will announce if (limpetCount < threshold).
+     * Default is 1 (announce when you have 0 limpets).
+     */
+    public static int getMiningLowLimpetReminderThreshold() {
+        int v = PREFS.getInt(KEY_MINING_LIMPET_REMINDER_THRESHOLD, 1);
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 10_000) {
+            v = 10_000;
+        }
+        return v;
+    }
+
+    public static void setMiningLowLimpetReminderThreshold(int threshold) {
+        int v = threshold;
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 10_000) {
+            v = 10_000;
+        }
+        PREFS.putInt(KEY_MINING_LIMPET_REMINDER_THRESHOLD, v);
+    }
+
 
     /**
      * Estimated total collectible tons for a prospected asteroid with Content=Low.
