@@ -315,9 +315,22 @@ public class ConsoleMonitor extends JPanel {
 
         String dirProp = System.getProperty(LOG_DIR_PROP);
         File dir = (dirProp != null && !dirProp.isBlank()) ? new File(dirProp) : new File("logs");
-        if (!dir.exists()) dir.mkdirs();
+
+        if (!dir.exists()) {
+        	dir.mkdirs();
+        }
+
+        // If creation failed (or path isn't a directory), fall back to a writable per-user location.
+        if (!dir.exists() || !dir.isDirectory()) {
+        	dir = new File(new File(System.getProperty("user.home"), ".edo"), "logs");
+        	if (!dir.exists()) {
+        		dir.mkdirs();
+        	}
+        }
+
         String stamp = LocalDateTime.now().format(LOG_TS);
         logFile = new File(dir, "console-" + stamp + ".log");
+
         try {
             logStream = new BufferedOutputStream(new FileOutputStream(logFile, true));
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
