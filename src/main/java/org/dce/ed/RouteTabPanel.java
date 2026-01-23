@@ -19,6 +19,11 @@ import java.util.ArrayList;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.swing.Icon;
@@ -98,6 +103,13 @@ public class RouteTabPanel extends JPanel {
 	// Caches coordinates we resolved from EDSM (used for inserting synthetic rows).
 	private final java.util.Map<String, Double[]> resolvedCoordsCache = new java.util.concurrent.ConcurrentHashMap<>();
 	private final java.util.Set<String> edsmCoordsFetchInProgress = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final ExecutorService edsmStatusExecutor = Executors.newFixedThreadPool(3, r -> {
+		Thread t = new Thread(r, "RouteEdsmStatus");
+		t.setDaemon(true);
+		return t;
+	});
+	private final Set<String> edsmStatusInProgress = ConcurrentHashMap.newKeySet();
+	private final ConcurrentHashMap<String, Long> edsmStatusLastAttemptMs = new ConcurrentHashMap<>();
 	private String currentSystemName = null;
 	private long currentSystemAddress = 0L;
 	private double[] currentStarPos = null;
@@ -443,7 +455,6 @@ public class RouteTabPanel extends JPanel {
 
 			if (hyperdriveCharging && !timerRunning) {
 				pendingJumpSystemName = se.getDestinationDisplayName();
-				jumpFlashOn = true;
 				jumpFlashTimer.start();
 			} 
 			if (!hyperdriveCharging && timerRunning ){
@@ -596,14 +607,41 @@ public class RouteTabPanel extends JPanel {
 		applyMarkerKinds(working);
 		tableModel.setEntries(working);
 		// Async EDSM lookups to refine status icons (skip body rows).
+		long now = System.currentTimeMillis();
 		for (int row = 0; row < working.size(); row++) {
 			RouteEntry entry = working.get(row);
 			if (entry == null || entry.isBodyRow) {
 				continue;
 			}
+
+			// If we already know the status, don't hit EDSM.
+			if (entry.status != null && entry.status != ScanStatus.UNKNOWN) {
+				continue;
+			}
+
+			String key = (entry.systemName != null ? entry.systemName : ("addr:" + entry.systemAddress));
+
+			// Throttle retries per system (avoid hammering when rebuilds happen rapidly).
+			Long last = edsmStatusLastAttemptMs.get(key);
+			if (last != null && (now - last.longValue()) < 60_000L) {
+				continue;
+			}
+
+			// Only one in-flight request per system.
+			if (!edsmStatusInProgress.add(key)) {
+				continue;
+			}
+
+			edsmStatusLastAttemptMs.put(key, now);
+
 			final int r = row;
-			new Thread(() -> updateStatusFromEdsm(entry, r),
-					"RouteEdsm-" + entry.systemName).start();
+			edsmStatusExecutor.submit(() -> {
+				try {
+					updateStatusFromEdsm(entry, r);
+				} finally {
+					edsmStatusInProgress.remove(key);
+				}
+			});
 		}
 	}
 	private static List<RouteEntry> deepCopy(List<RouteEntry> entries) {
@@ -858,32 +896,9 @@ public class RouteTabPanel extends JPanel {
 			}
 		}
 
-		// If Status.json is pointing at a SYSTEM destination (not a body),
-		// prefer that as the pending jump marker.
-		RouteEntry pending = null;
-
-		if (destinationBodyId == null) {
-			long destAddr = 0L;
-			if (destinationSystemAddress != null) {
-				destAddr = destinationSystemAddress.longValue();
-			}
-
-			if (destAddr != 0L || (destinationName != null && !destinationName.isBlank())) {
-				int destRow = findSystemRow(entries, destinationName, destAddr);
-				if (destRow >= 0) {
-					RouteEntry e = entries.get(destRow);
-					if (e != null && !e.isBodyRow) {
-						// Avoid marking the current row as pending.
-						if (destRow != currentRow) {
-							pending = e;
-						}
-					}
-				}
-			}
-		}
-
-		// Fallback: next plotted hop (first non-synthetic, non-body row after current).
-		if (pending == null && currentRow >= 0) {
+		// Identify the next plotted hop (first non-synthetic, non-body row after current).
+		RouteEntry nextHop = null;
+		if (currentRow >= 0) {
 			for (int i = currentRow + 1; i < entries.size(); i++) {
 				RouteEntry e = entries.get(i);
 				if (e == null) {
@@ -895,17 +910,51 @@ public class RouteTabPanel extends JPanel {
 				if (e.isSynthetic) {
 					continue;
 				}
-				pending = e;
+				nextHop = e;
 				break;
 			}
 		}
 
-		if (pending != null) {
-			pending.markerKind = MarkerKind.PENDING_JUMP;
+		// Determine whether there is an "explicit destination" that should take precedence over
+		// the normal next-hop hollow triangle.
+		boolean explicitDestination = false;
+
+		// Side-trip target takes precedence only when it differs from the next plotted hop.
+		if (targetSystemName != null && !targetSystemName.isBlank()) {
+			if (nextHop == null) {
+				explicitDestination = true;
+			} else {
+				if (!matchesTarget(nextHop)) {
+					explicitDestination = true;
+				}
+			}
 		}
 
-		// Side-trip target system row (do not override CURRENT / PENDING_JUMP).
-		if (targetSystemName != null && !targetSystemName.isBlank() && targetSystemAddress != 0L) {
+		// A destination BODY always takes precedence.
+		if (!explicitDestination && destinationBodyId != null) {
+			explicitDestination = true;
+		}
+
+		// A destination SYSTEM takes precedence only if it differs from the next plotted hop.
+		if (!explicitDestination && destinationSystemAddress != null && destinationName != null && !destinationName.isBlank()) {
+			if (nextHop == null) {
+				explicitDestination = true;
+			} else {
+				boolean sameByName = (nextHop.systemName != null) && destinationName.equals(nextHop.systemName);
+				boolean sameByAddr = (nextHop.systemAddress != 0L) && (destinationSystemAddress.longValue() == nextHop.systemAddress);
+				if (!sameByName && !sameByAddr) {
+					explicitDestination = true;
+				}
+			}
+		}
+
+		// Mark next hop when there is no explicit destination overriding it.
+		if (!explicitDestination && nextHop != null) {
+			nextHop.markerKind = MarkerKind.PENDING_JUMP;
+		}
+
+		// Mark side-trip target system row (do not override CURRENT / PENDING_JUMP).
+		if (targetSystemName != null && !targetSystemName.isBlank()) {
 			for (RouteEntry e : entries) {
 				if (!matchesTarget(e)) {
 					continue;
@@ -1065,7 +1114,12 @@ public class RouteTabPanel extends JPanel {
 				}
 			}
 
+		} catch (SocketTimeoutException | UnknownHostException e) {
+			// Expected transient network failures; keep '?' and try later via throttle.
+		} catch (IOException e) {
+			// Other I/O failures; keep '?' and try later via throttle.
 		} catch (Exception e) {
+			// Unexpected bug; keep this one visible.
 			e.printStackTrace();
 		}
 	}
