@@ -913,17 +913,23 @@ public class RouteTabPanel extends JPanel {
 			}
 		}
 
-		// Mark side-trip target system row (do not override CURRENT / PENDING_JUMP).
+		// Mark side-trip target system row. If we are charging, blink it as the pending jump.
 		if (hasSideTripTarget) {
 			for (RouteEntry e : entries) {
 				if (!matchesTarget(e)) {
 					continue;
 				}
 				if (e.markerKind == MarkerKind.NONE) {
-					e.markerKind = MarkerKind.TARGET;
+					if (charging) {
+						e.markerKind = MarkerKind.PENDING_JUMP;
+					} else {
+						e.markerKind = MarkerKind.TARGET;
+					}
 				}
+				break;
 			}
 		}
+
 	}
 
 	private boolean matchesTarget(RouteEntry e) {
