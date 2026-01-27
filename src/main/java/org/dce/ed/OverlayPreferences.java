@@ -54,7 +54,9 @@ public final class OverlayPreferences {
     
     // Mining: low-limpet reminder
     private static final String KEY_MINING_LIMPET_REMINDER_ENABLED = "mining.limpetReminder.enabled";
-    private static final String KEY_MINING_LIMPET_REMINDER_THRESHOLD = "mining.limpetReminder.threshold";
+    private static final String KEY_MINING_LIMPET_REMINDER_MODE = "mining.limpetReminder.mode"; // COUNT or PERCENT
+    private static final String KEY_MINING_LIMPET_REMINDER_THRESHOLD = "mining.limpetReminder.threshold"; // COUNT
+    private static final String KEY_MINING_LIMPET_REMINDER_THRESHOLD_PERCENT = "mining.limpetReminder.thresholdPercent"; // PERCENT
 
     // Reuse the same prefs node as OverlayFrame so everything is in one place.
     private static final Preferences PREFS = Preferences.userNodeForPackage(OverlayFrame.class);
@@ -476,6 +478,56 @@ public final class OverlayPreferences {
             v = 10_000;
         }
         PREFS.putInt(KEY_MINING_LIMPET_REMINDER_THRESHOLD, v);
+    }
+
+
+    public enum MiningLimpetReminderMode {
+        COUNT,
+        PERCENT
+    }
+
+    public static MiningLimpetReminderMode getMiningLowLimpetReminderMode() {
+        String v = PREFS.get(KEY_MINING_LIMPET_REMINDER_MODE, MiningLimpetReminderMode.COUNT.name());
+        if (v == null) {
+            return MiningLimpetReminderMode.COUNT;
+        }
+        try {
+            return MiningLimpetReminderMode.valueOf(v.trim().toUpperCase());
+        } catch (Exception e) {
+            return MiningLimpetReminderMode.COUNT;
+        }
+    }
+
+    public static void setMiningLowLimpetReminderMode(MiningLimpetReminderMode mode) {
+        if (mode == null) {
+            mode = MiningLimpetReminderMode.COUNT;
+        }
+        PREFS.put(KEY_MINING_LIMPET_REMINDER_MODE, mode.name());
+    }
+
+    /**
+     * Limpet reminder threshold, stored as a percentage (0..100) of your ship's CargoCapacity.
+     */
+    public static int getMiningLowLimpetReminderThresholdPercent() {
+        int v = PREFS.getInt(KEY_MINING_LIMPET_REMINDER_THRESHOLD_PERCENT, 10);
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 100) {
+            v = 100;
+        }
+        return v;
+    }
+
+    public static void setMiningLowLimpetReminderThresholdPercent(int thresholdPercent) {
+        int v = thresholdPercent;
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 100) {
+            v = 100;
+        }
+        PREFS.putInt(KEY_MINING_LIMPET_REMINDER_THRESHOLD_PERCENT, v);
     }
 
 

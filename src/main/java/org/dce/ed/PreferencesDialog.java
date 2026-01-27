@@ -14,6 +14,7 @@ import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JColorChooser;
@@ -22,6 +23,7 @@ import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JRadioButton;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.JSpinner;
@@ -79,8 +81,10 @@ public class PreferencesDialog extends JDialog {
 
     // Mining tab: limpet reminder
     private JCheckBox miningLowLimpetReminderEnabledCheckBox;
+    private JRadioButton miningLowLimpetReminderCountRadio;
     private JSpinner miningLowLimpetReminderThresholdSpinner;
-
+    private JRadioButton miningLowLimpetReminderPercentRadio;
+    private JSpinner miningLowLimpetReminderPercentSpinner;
 
     // Mining tab: value estimation (used by Mining tab only)
     private JSpinner miningTonsLowSpinner;
@@ -424,33 +428,117 @@ public class PreferencesDialog extends JDialog {
 
     	outer.add(prospectorBox);
     	outer.add(Box.createVerticalStrut(10));
-
+    	
     	// -----------------------------------------------------------------
-    	// Limpet reminder: single line
+    	// Limpet reminder (checkbox + two radio rows)
     	// -----------------------------------------------------------------
-    	JPanel limpetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-    	limpetRow.setOpaque(false);
+    	JPanel limpetPanel = new JPanel();
+    	limpetPanel.setOpaque(false);
+    	limpetPanel.setLayout(new BoxLayout(limpetPanel, BoxLayout.Y_AXIS));
 
-    	miningLowLimpetReminderEnabledCheckBox = new JCheckBox();
+    	JPanel limpetCheckRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+    	limpetCheckRow.setOpaque(false);
+
+    	miningLowLimpetReminderEnabledCheckBox = new JCheckBox("Low limpet announcement");
     	miningLowLimpetReminderEnabledCheckBox.setOpaque(false);
     	miningLowLimpetReminderEnabledCheckBox.setSelected(OverlayPreferences.isMiningLowLimpetReminderEnabled());
-    	limpetRow.add(miningLowLimpetReminderEnabledCheckBox);
 
-    	limpetRow.add(new JLabel("Low limpet Announcement. Remind if <"));
+    	limpetCheckRow.add(miningLowLimpetReminderEnabledCheckBox);
+    	limpetPanel.add(limpetCheckRow);
 
-    	int currentThreshold = OverlayPreferences.getMiningLowLimpetReminderThreshold();
-    	miningLowLimpetReminderThresholdSpinner = new JSpinner(new SpinnerNumberModel(currentThreshold, 0, 10_000, 100));
-    	((JSpinner.DefaultEditor) miningLowLimpetReminderThresholdSpinner.getEditor()).getTextField().setColumns(6);
-    	limpetRow.add(miningLowLimpetReminderThresholdSpinner);
+    	// Row 1: COUNT (indented)
+    	JPanel limpetCountRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+    	limpetCountRow.setOpaque(false);
+    	limpetCountRow.add(Box.createHorizontalStrut(28)); // ~4 spaces indent
+
+    	miningLowLimpetReminderCountRadio = new JRadioButton("Remind if limpets <");
+    	miningLowLimpetReminderCountRadio.setOpaque(false);
+
+    	ButtonGroup limpetModeGroup = new ButtonGroup();
+    	limpetModeGroup.add(miningLowLimpetReminderCountRadio);
+    	limpetCountRow.add(miningLowLimpetReminderCountRadio);
+
+    	int currentCountThreshold = OverlayPreferences.getMiningLowLimpetReminderThreshold();
+    	miningLowLimpetReminderThresholdSpinner =
+    	        new JSpinner(new SpinnerNumberModel(currentCountThreshold, 0, 10_000, 1));
+    	JSpinner.DefaultEditor countEd = (JSpinner.DefaultEditor) miningLowLimpetReminderThresholdSpinner.getEditor();
+    	countEd.getTextField().setColumns(5);
+    	limpetCountRow.add(miningLowLimpetReminderThresholdSpinner);
+
+    	JLabel limpetCountUnitsLabel = new JLabel("limpets");
+    	limpetCountRow.add(limpetCountUnitsLabel);
+
+    	limpetPanel.add(limpetCountRow);
+
+    	// Row 2: PERCENT (indented)
+    	JPanel limpetPercentRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+    	limpetPercentRow.setOpaque(false);
+    	limpetPercentRow.add(Box.createHorizontalStrut(28)); // ~4 spaces indent
+
+    	miningLowLimpetReminderPercentRadio = new JRadioButton("Remind if limpets <");
+    	miningLowLimpetReminderPercentRadio.setOpaque(false);
+    	limpetModeGroup.add(miningLowLimpetReminderPercentRadio);
+    	limpetPercentRow.add(miningLowLimpetReminderPercentRadio);
+
+    	int currentPercentThreshold = OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
+    	miningLowLimpetReminderPercentSpinner =
+    	        new JSpinner(new SpinnerNumberModel(currentPercentThreshold, 0, 100, 1));
+    	JSpinner.DefaultEditor percentEd = (JSpinner.DefaultEditor) miningLowLimpetReminderPercentSpinner.getEditor();
+    	percentEd.getTextField().setColumns(5); // same as count (width consistency)
+    	limpetPercentRow.add(miningLowLimpetReminderPercentSpinner);
+
+    	JLabel limpetPercentUnitsLabel = new JLabel("% of cargo capacity");
+    	limpetPercentRow.add(limpetPercentUnitsLabel);
+
+    	limpetPanel.add(limpetPercentRow);
+
+    	// Force both spinners to the same preferred size (whichever is wider)
+    	Dimension s1 = miningLowLimpetReminderThresholdSpinner.getPreferredSize();
+    	Dimension s2 = miningLowLimpetReminderPercentSpinner.getPreferredSize();
+    	int w = Math.max(s1.width, s2.width);
+    	int h = Math.max(s1.height, s2.height);
+    	Dimension same = new Dimension(w, h);
+    	miningLowLimpetReminderThresholdSpinner.setPreferredSize(same);
+    	miningLowLimpetReminderPercentSpinner.setPreferredSize(same);
+
+    	// Initialize mode selection
+    	OverlayPreferences.MiningLimpetReminderMode mode = OverlayPreferences.getMiningLowLimpetReminderMode();
+    	if (mode == OverlayPreferences.MiningLimpetReminderMode.PERCENT) {
+    	    miningLowLimpetReminderPercentRadio.setSelected(true);
+    	} else {
+    	    miningLowLimpetReminderCountRadio.setSelected(true);
+    	}
 
     	Runnable updateLimpetEnabled = () -> {
-    		boolean enabled = miningLowLimpetReminderEnabledCheckBox.isSelected();
-    		miningLowLimpetReminderThresholdSpinner.setEnabled(enabled);
+    	    boolean enabled = miningLowLimpetReminderEnabledCheckBox.isSelected();
+    	    boolean percentSelected = miningLowLimpetReminderPercentRadio.isSelected();
+    	    boolean countSelected = !percentSelected;
+
+    	    // Radios themselves should remain clickable when enabled
+    	    miningLowLimpetReminderCountRadio.setEnabled(enabled);
+    	    miningLowLimpetReminderPercentRadio.setEnabled(enabled);
+
+    	    // COUNT line: disable everything except the radio when not selected
+    	    miningLowLimpetReminderThresholdSpinner.setEnabled(enabled && countSelected);
+    	    limpetCountUnitsLabel.setEnabled(enabled && countSelected);
+
+    	    // PERCENT line: disable everything except the radio when not selected
+    	    miningLowLimpetReminderPercentSpinner.setEnabled(enabled && percentSelected);
+    	    limpetPercentUnitsLabel.setEnabled(enabled && percentSelected);
     	};
+
     	miningLowLimpetReminderEnabledCheckBox.addActionListener(e -> updateLimpetEnabled.run());
+    	miningLowLimpetReminderCountRadio.addActionListener(e -> updateLimpetEnabled.run());
+    	miningLowLimpetReminderPercentRadio.addActionListener(e -> updateLimpetEnabled.run());
     	updateLimpetEnabled.run();
 
-    	outer.add(limpetRow);
+
+    	limpetPanel.setAlignmentX(JPanel.LEFT_ALIGNMENT);
+    	JPanel limpetWrap = new JPanel(new BorderLayout());
+    	limpetWrap.setOpaque(false);
+    	limpetWrap.add(limpetPanel, BorderLayout.WEST);
+
+    	outer.add(limpetWrap);
     	outer.add(Box.createVerticalStrut(10));
 
     	// -----------------------------------------------------------------
@@ -918,19 +1006,36 @@ private JPanel createSpeechPanel() {
         }
 
         if (miningLowLimpetReminderEnabledCheckBox != null) {
-            OverlayPreferences.setMiningLowLimpetReminderEnabled(miningLowLimpetReminderEnabledCheckBox.isSelected());
-        }
-        if (miningLowLimpetReminderThresholdSpinner != null) {
-            try {
-                int v = ((Number) miningLowLimpetReminderThresholdSpinner.getValue()).intValue();
-                OverlayPreferences.setMiningLowLimpetReminderThreshold(v);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
+			OverlayPreferences.setMiningLowLimpetReminderEnabled(miningLowLimpetReminderEnabledCheckBox.isSelected());
+		}
 
+		if (miningLowLimpetReminderCountRadio != null && miningLowLimpetReminderPercentRadio != null) {
+			if (miningLowLimpetReminderPercentRadio.isSelected()) {
+				OverlayPreferences.setMiningLowLimpetReminderMode(OverlayPreferences.MiningLimpetReminderMode.PERCENT);
+			} else {
+				OverlayPreferences.setMiningLowLimpetReminderMode(OverlayPreferences.MiningLimpetReminderMode.COUNT);
+			}
+		}
 
-        if (miningTonsLowSpinner != null) {
+		if (miningLowLimpetReminderThresholdSpinner != null) {
+			try {
+				int v = ((Number) miningLowLimpetReminderThresholdSpinner.getValue()).intValue();
+				OverlayPreferences.setMiningLowLimpetReminderThreshold(v);
+			} catch (Exception e) {
+				// ignore
+			}
+		}
+
+		if (miningLowLimpetReminderPercentSpinner != null) {
+			try {
+				int v = ((Number) miningLowLimpetReminderPercentSpinner.getValue()).intValue();
+				OverlayPreferences.setMiningLowLimpetReminderThresholdPercent(v);
+			} catch (Exception e) {
+				// ignore
+			}
+		}
+
+if (miningTonsLowSpinner != null) {
             try {
                 double v = ((Number) miningTonsLowSpinner.getValue()).doubleValue();
                 OverlayPreferences.setMiningEstimateTonsLow(v);

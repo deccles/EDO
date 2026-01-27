@@ -18,6 +18,7 @@ import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.event.FssBodySignalsEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.LoadGameEvent;
+import org.dce.ed.logreader.event.LoadoutEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ReceiveTextEvent;
@@ -54,6 +55,8 @@ public class EliteLogParser {
                 return parseCommander(ts, obj);
             case LOAD_GAME:
                 return parseLoadGame(ts, obj);
+            case LOADOUT:
+                return parseLoadout(ts, obj);
             case LOCATION:
                 return parseLocation(ts, obj);
             case START_JUMP:
@@ -200,7 +203,137 @@ default:
         );
     }
 
-    private LocationEvent parseLocation(Instant ts, JsonObject obj) {
+    
+
+    private LoadoutEvent parseLoadout(Instant ts, JsonObject obj) {
+        String ship = getString(obj, "Ship");
+        int shipId = getInt(obj, "ShipID", -1);
+        String shipName = getString(obj, "ShipName");
+        String shipIdent = getString(obj, "ShipIdent");
+
+        long hullValue = getLong(obj, "HullValue", 0L);
+        long modulesValue = getLong(obj, "ModulesValue", 0L);
+        double hullHealth = getDouble(obj, "HullHealth", 0.0);
+        double unladenMass = getDouble(obj, "UnladenMass", 0.0);
+
+        int cargoCapacity = getInt(obj, "CargoCapacity", 0);
+        double maxJumpRange = getDouble(obj, "MaxJumpRange", 0.0);
+
+        long rebuy = getLong(obj, "Rebuy", 0L);
+
+        LoadoutEvent.FuelCapacity fuelCapacity = null;
+        if (obj.has("FuelCapacity") && obj.get("FuelCapacity").isJsonObject()) {
+            JsonObject fc = obj.getAsJsonObject("FuelCapacity");
+            double main = getDouble(fc, "Main", 0.0);
+            double reserve = getDouble(fc, "Reserve", 0.0);
+            fuelCapacity = new LoadoutEvent.FuelCapacity(main, reserve);
+        }
+
+        List<LoadoutEvent.Module> modules = new ArrayList<>();
+        if (obj.has("Modules") && obj.get("Modules").isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray("Modules");
+            for (JsonElement el : arr) {
+                if (el == null || !el.isJsonObject()) {
+                    continue;
+                }
+                modules.add(parseLoadoutModule(el.getAsJsonObject()));
+            }
+        }
+
+        return new LoadoutEvent(
+                ts,
+                obj,
+                ship,
+                shipId,
+                shipName,
+                shipIdent,
+                hullValue,
+                modulesValue,
+                hullHealth,
+                unladenMass,
+                cargoCapacity,
+                maxJumpRange,
+                fuelCapacity,
+                rebuy,
+                modules
+        );
+    }
+
+    private LoadoutEvent.Module parseLoadoutModule(JsonObject m) {
+        String slot = getString(m, "Slot");
+        String item = getString(m, "Item");
+        boolean on = getBoolean(m, "On", false);
+        int priority = getInt(m, "Priority", 0);
+        double health = getDouble(m, "Health", 0.0);
+        long value = getLong(m, "Value", 0L);
+
+        Integer ammoInClip = m.has("AmmoInClip") && !m.get("AmmoInClip").isJsonNull()
+                ? Integer.valueOf(m.get("AmmoInClip").getAsInt())
+                : null;
+        Integer ammoInHopper = m.has("AmmoInHopper") && !m.get("AmmoInHopper").isJsonNull()
+                ? Integer.valueOf(m.get("AmmoInHopper").getAsInt())
+                : null;
+
+        LoadoutEvent.Engineering engineering = null;
+        if (m.has("Engineering") && m.get("Engineering").isJsonObject()) {
+            engineering = parseLoadoutEngineering(m.getAsJsonObject("Engineering"));
+        }
+
+        return new LoadoutEvent.Module(
+                slot,
+                item,
+                on,
+                priority,
+                health,
+                value,
+                ammoInClip,
+                ammoInHopper,
+                engineering,
+                m
+        );
+    }
+
+    private LoadoutEvent.Engineering parseLoadoutEngineering(JsonObject e) {
+        String engineer = getString(e, "Engineer");
+        long engineerId = getLong(e, "EngineerID", 0L);
+        long blueprintId = getLong(e, "BlueprintID", 0L);
+        String blueprintName = getString(e, "BlueprintName");
+        int level = getInt(e, "Level", 0);
+        double quality = getDouble(e, "Quality", 0.0);
+        String experimentalEffect = getString(e, "ExperimentalEffect");
+        String experimentalEffectLocalised = getString(e, "ExperimentalEffect_Localised");
+
+        List<LoadoutEvent.Modifier> modifiers = new ArrayList<>();
+        if (e.has("Modifiers") && e.get("Modifiers").isJsonArray()) {
+            JsonArray arr = e.getAsJsonArray("Modifiers");
+            for (JsonElement el : arr) {
+                if (el == null || !el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject mo = el.getAsJsonObject();
+                String label = getString(mo, "Label");
+                double value = getDouble(mo, "Value", 0.0);
+                double originalValue = getDouble(mo, "OriginalValue", 0.0);
+                int lessIsGood = getInt(mo, "LessIsGood", 0);
+                modifiers.add(new LoadoutEvent.Modifier(label, value, originalValue, lessIsGood, mo));
+            }
+        }
+
+        return new LoadoutEvent.Engineering(
+                engineer,
+                engineerId,
+                blueprintId,
+                blueprintName,
+                level,
+                quality,
+                experimentalEffect,
+                experimentalEffectLocalised,
+                modifiers,
+                e
+        );
+    }
+
+private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         boolean docked = obj.has("Docked") && obj.get("Docked").getAsBoolean();
         boolean taxi = obj.has("Taxi") && obj.get("Taxi").getAsBoolean();
         boolean multicrew = obj.has("Multicrew") && obj.get("Multicrew").getAsBoolean();
@@ -640,7 +773,17 @@ default:
                 : defaultValue;
     }
 
+    private double getDouble(JsonObject obj, String field, double defaultValue) {
+        return obj.has(field) && !obj.get(field).isJsonNull()
+                ? obj.get(field).getAsDouble()
+                : defaultValue;
+    }
+
+    private boolean getBoolean(JsonObject obj, String field, boolean defaultValue) {
+        return obj.has(field) && !obj.get(field).isJsonNull()
+                ? obj.get(field).getAsBoolean()
+                : defaultValue;
+    }
+
 }
-
-
 

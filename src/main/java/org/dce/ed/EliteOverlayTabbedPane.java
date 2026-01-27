@@ -20,12 +20,11 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map.Entry;
+import java.util.Locale;
 import java.util.OptionalInt;
 import java.util.Set;
 
@@ -35,10 +34,13 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
+import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogFileLocator;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.LoadoutEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
@@ -47,13 +49,11 @@ import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import java.util.Locale;
-import org.dce.ed.logreader.EliteEventType;
-import org.dce.ed.logreader.EliteLogFileLocator;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+
 
 /**
  * Custom transparent "tabbed pane" for the overlay.
@@ -99,6 +99,10 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private JButton biologyButton;
 	private JButton miningButton;
 
+	
+    private volatile Integer lastCargoCapacity;
+
+    
 	public EliteOverlayTabbedPane() {
 		super(new BorderLayout());
 
@@ -236,6 +240,13 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 	private void handleLogEvent(EliteLogEvent event) {
+        if (event instanceof LoadoutEvent e) {
+            int cap = e.getCargoCapacity();
+            if (cap >= 0) {
+                lastCargoCapacity = cap;
+            }
+        }
+
 		if (event instanceof FsdJumpEvent e) {
 			if (e.getDocked() == null || e.getDocked()) {
 				showSystemTabFromStatusWatcher();
@@ -827,11 +838,20 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
 			return;
 		}
+        int thresholdPercent = OverlayPreferences.getMiningLowLimpetReminderThreshold();
+        if (thresholdPercent <= 0) {
+            return;
+        }
+        Integer cargoCapacity = lastCargoCapacity;
+        if (cargoCapacity == null || cargoCapacity <= 0) {
+            // Without CargoCapacity, the percent threshold is meaningless.
+            return;
+        }
+        int threshold = (int) Math.ceil(cargoCapacity * (thresholdPercent / 100.0));
+        if (threshold <= 0) {
+            threshold = 1;
+        }
 
-		int threshold = OverlayPreferences.getMiningLowLimpetReminderThreshold();
-		if (threshold <= 0) {
-			return;
-		}
 
 		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
 		Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
