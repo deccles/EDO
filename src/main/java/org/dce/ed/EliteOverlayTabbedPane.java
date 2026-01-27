@@ -34,7 +34,9 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
+import org.dce.ed.OverlayPreferences.MiningLimpetReminderMode;
 import org.dce.ed.logreader.EliteEventType;
+import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogFileLocator;
 import org.dce.ed.logreader.LiveJournalMonitor;
@@ -235,14 +237,23 @@ public class EliteOverlayTabbedPane extends JPanel {
 	public SystemTabPanel getSystemTabPanel() {
 		return systemTab;
 	}
-	LoadoutEvent loadoutEvent = null;
+	static LoadoutEvent loadoutEventx = null;
 
-	public LoadoutEvent getLatestLoadout() {
-		return loadoutEvent;
+	public static LoadoutEvent getLatestLoadout() {
+		if (loadoutEventx == null) {
+			EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+
+			try {
+				loadoutEventx = (LoadoutEvent) r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		return loadoutEventx;
 	}
 	public void handleLogEvent(EliteLogEvent event) {
         if (event instanceof LoadoutEvent e) {
-        	this.loadoutEvent = e;
+        	loadoutEventx = e;
         }
 
 		if (event instanceof FsdJumpEvent e) {
@@ -824,56 +835,57 @@ public class EliteOverlayTabbedPane extends JPanel {
 		revalidate();
 		repaint();
 	}
-	private void maybeRemindAboutLimpets() {
+	public static void maybeRemindAboutLimpets() {
+		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+		Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
+		Path modulesFile = EliteLogFileLocator.findModulesInfoFile(journalDir);
+		
 		// Avoid spamming if multiple events fire close together.
 		long now = System.currentTimeMillis();
-		if (now - lastLimpetReminderMs < 60_000L) {
-			return;
-		}
+//		if (now - lastLimpetReminderMs < 60_000L) {
+//			return;
+//		}
 		if (!OverlayPreferences.isSpeechEnabled()) {
 			return;
 		}
 		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
 			return;
 		}
-        int thresholdPercent = OverlayPreferences.getMiningLowLimpetReminderThreshold();
-        if (thresholdPercent <= 0) {
-            return;
-        }
-        Integer cargoCapacity = (loadoutEvent == null) ? 0 : loadoutEvent.getCargoCapacity();
-        if (cargoCapacity == null || cargoCapacity <= 0) {
-            // Without CargoCapacity, the percent threshold is meaningless.
-            return;
-        }
-        int threshold = (int) Math.ceil(cargoCapacity * (thresholdPercent / 100.0));
-        if (threshold <= 0) {
-            threshold = 1;
-        }
+		JsonObject cargo = readJsonObject(cargoFile);
+		JsonObject modules = readJsonObject(modulesFile);
+		int numLimpets = getLimpetCount(cargo);
+		
+		boolean lowLimpets = false;
+		if (OverlayPreferences.getMiningLowLimpetReminderMode() == MiningLimpetReminderMode.COUNT) {
+			lowLimpets = numLimpets < OverlayPreferences.getMiningLowLimpetReminderThreshold();
+		} else {
+			Integer cargoCapacity = (getLatestLoadout() == null) ? 0 : getLatestLoadout().getCargoCapacity();
+
+			if (cargoCapacity == null || cargoCapacity <= 0) {
+				// Without CargoCapacity, the percent threshold is meaningless.
+				return;
+			}
+			double percentage = (numLimpets*100) / cargoCapacity;
+			
+			lowLimpets = percentage < OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
+		}
 
 
-		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
-		Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
-		Path modulesFile = EliteLogFileLocator.findModulesInfoFile(journalDir);
+
 		if (cargoFile == null || modulesFile == null) {
 			return;
 		}
 
-		JsonObject cargo = readJsonObject(cargoFile);
-		JsonObject modules = readJsonObject(modulesFile);
-		if (cargo == null || modules == null) {
-			return;
-		}
 
 		if (!hasMiningEquipment(modules)) {
 			return;
 		}
 
-		int limpets = getLimpetCount(cargo);
-		if (limpets >= threshold) {
+
+		if (!lowLimpets) {
 			return;
 		}
-
-		lastLimpetReminderMs = now;
+		TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 		tts.speakf("Did you forget your limpets again commander?");
 	}
 
@@ -987,7 +999,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 		return total <= 0;
 	}
-
 	private static boolean hasMiningEquipment(JsonObject modulesInfo) {
 		if (modulesInfo == null) {
 			return false;

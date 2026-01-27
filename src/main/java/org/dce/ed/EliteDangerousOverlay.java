@@ -76,12 +76,12 @@ public class EliteDangerousOverlay implements NativeKeyListener {
             app.start();
         });
         
-        EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-        EliteLogEvent lastLoadout = r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
-        if (lastLoadout != null) {
-			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
-			monitor.dispatch(lastLoadout);
-        }
+//        EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+//        EliteLogEvent lastLoadout = r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
+//        if (lastLoadout != null) {
+//			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
+//			monitor.dispatch(lastLoadout);
+//        }
     }
 
     private static String getAppVersion() {
