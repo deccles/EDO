@@ -163,6 +163,33 @@
 					</execution>
 				</executions>
 			</plugin>
+			
+			<plugin>
+	<groupId>org.apache.maven.plugins</groupId>
+	<artifactId>maven-assembly-plugin</artifactId>
+	<version>3.7.1</version>
+	<executions>
+		<execution>
+			<id>build-src-zip</id>
+			<phase>package</phase>
+			<goals>
+				<goal>single</goal>
+			</goals>
+			<configuration>
+				<finalName>src</finalName>
+				<appendAssemblyId>false</appendAssemblyId>
+				<formats>
+					<format>zip</format>
+				</formats>
+				<descriptorRefs>
+					<descriptorRef>src</descriptorRef>
+				</descriptorRefs>
+			</configuration>
+		</execution>
+	</executions>
+</plugin>
+
+
 		</plugins>
 	</build>
 	<profiles>
