@@ -2,6 +2,7 @@ package org.dce.ed;
 
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 import java.util.logging.Level;
@@ -10,6 +11,11 @@ import java.util.prefs.Preferences;
 
 import javax.swing.SwingUtilities;
 
+import org.dce.ed.logreader.EliteEventType;
+import org.dce.ed.logreader.EliteJournalReader;
+import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogParser;
+import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.RescanJournalsMain;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
@@ -44,7 +50,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         GithubMsiUpdater.checkForUpdatesOnStartup(overlayFrame);
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
 
         System.out.println("EDO Overlay version: " + getAppVersion());
 
@@ -69,6 +75,13 @@ public class EliteDangerousOverlay implements NativeKeyListener {
             EliteDangerousOverlay app = new EliteDangerousOverlay();
             app.start();
         });
+        
+        EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+        EliteLogEvent lastLoadout = r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
+        if (lastLoadout != null) {
+			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
+			monitor.dispatch(lastLoadout);
+        }
     }
 
     private static String getAppVersion() {

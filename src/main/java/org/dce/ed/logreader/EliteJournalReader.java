@@ -344,5 +344,53 @@ public class EliteJournalReader {
         readEventsFromFile(journalFile, sink);
         return sink;
    }
+    /**
+     * Find the most recent parsed event matching the given journal event name
+     * (e.g. "Loadout", "Location", "FSDJump") by reading only the last N journal files.
+     *
+     * This reuses the existing parser and forward reader (no custom JSON parsing),
+     * then walks the result list backwards to find the most recent match.
+     *
+     * @param journalEventName the literal journal "event" string (case-sensitive per EliteEventType)
+     * @param maxJournalFilesToSearch number of most recent Journal.*.log files to scan (e.g., 4 or 8)
+     * @return the most recent matching event, or null if none found
+     */
+    public EliteLogEvent findMostRecentEvent(String journalEventName, int maxJournalFilesToSearch) throws IOException {
+        if (journalEventName == null || journalEventName.isBlank()) {
+            return null;
+        }
+        if (maxJournalFilesToSearch <= 0) {
+            return null;
+        }
+
+        EliteEventType type = EliteEventType.fromJournalName(journalEventName.trim());
+        if (type == EliteEventType.UNKNOWN) {
+            return null;
+        }
+
+        return findMostRecentEvent(type, maxJournalFilesToSearch);
+    }
+
+    /**
+     * Find the most recent parsed event matching the given type by reading only the last N journal files,
+     * then scanning the parsed list backwards.
+     */
+    public EliteLogEvent findMostRecentEvent(EliteEventType type, int maxJournalFilesToSearch) throws IOException {
+        if (type == null) {
+            return null;
+        }
+        if (maxJournalFilesToSearch <= 0) {
+            return null;
+        }
+
+        List<EliteLogEvent> events = readEventsFromLastNJournalFiles(maxJournalFilesToSearch);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            EliteLogEvent e = events.get(i);
+            if (e != null && e.getType() == type) {
+                return e;
+            }
+        }
+        return null;
+    }
 
 }

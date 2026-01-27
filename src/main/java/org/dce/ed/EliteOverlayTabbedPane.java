@@ -100,9 +100,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private JButton miningButton;
 
 	
-    private volatile Integer lastCargoCapacity;
-
-    
 	public EliteOverlayTabbedPane() {
 		super(new BorderLayout());
 
@@ -238,13 +235,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 	public SystemTabPanel getSystemTabPanel() {
 		return systemTab;
 	}
+	LoadoutEvent loadoutEvent = null;
 
-	private void handleLogEvent(EliteLogEvent event) {
+	public LoadoutEvent getLatestLoadout() {
+		return loadoutEvent;
+	}
+	public void handleLogEvent(EliteLogEvent event) {
         if (event instanceof LoadoutEvent e) {
-            int cap = e.getCargoCapacity();
-            if (cap >= 0) {
-                lastCargoCapacity = cap;
-            }
+        	this.loadoutEvent = e;
         }
 
 		if (event instanceof FsdJumpEvent e) {
@@ -842,7 +840,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         if (thresholdPercent <= 0) {
             return;
         }
-        Integer cargoCapacity = lastCargoCapacity;
+        Integer cargoCapacity = (loadoutEvent == null) ? 0 : loadoutEvent.getCargoCapacity();
         if (cargoCapacity == null || cargoCapacity <= 0) {
             // Without CargoCapacity, the percent threshold is meaningless.
             return;
