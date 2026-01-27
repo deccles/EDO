@@ -987,10 +987,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		// Conservative keyword match on module item names.
 		String[] miningKeywords = new String[] {
-				"prospector",
-				"refinery",
 				"mining",
-				"mininglaser",
 				"abrasion",
 				"seismic",
 				"subsurf",

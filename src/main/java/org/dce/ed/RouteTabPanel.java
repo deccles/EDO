@@ -396,7 +396,10 @@ public class RouteTabPanel extends JPanel {
 		if (event instanceof StatusEvent sj) {
 			StatusEvent se = (StatusEvent)sj;
 			boolean hyperdriveCharging = se.isFsdHyperdriveCharging();
+			boolean inHyperspace = se.isFsdJump();
+			boolean preJumpCharging = hyperdriveCharging && !inHyperspace;
 			boolean timerRunning = jumpFlashTimer.isRunning();
+			
 			// Remember destination fields (they may refer to either a target system or a body).
 			destinationSystemAddress = se.getDestinationSystem();
 			destinationBodyId = se.getDestinationBody();
@@ -441,17 +444,20 @@ public class RouteTabPanel extends JPanel {
 				return;
 			}
 
-			if (hyperdriveCharging && !timerRunning) {
-				pendingJumpSystemName = se.getDestinationDisplayName();
-				jumpFlashOn = true;
-				jumpFlashTimer.start();
-			} 
-			if (!hyperdriveCharging && timerRunning ){
-				// Jump finished charging / canceled. Stop blinking and show the hollow triangle steadily.
-				jumpFlashTimer.stop();
-				pendingJumpSystemName = null;
-				jumpFlashOn = true;
+			if (preJumpCharging && !timerRunning) {
+			    pendingJumpSystemName = se.getDestinationDisplayName();
+			    jumpFlashOn = true;
+			    jumpFlashTimer.start();
 			}
+			if (!preJumpCharging && timerRunning ) {
+			    // We either entered hyperspace or canceled charging.
+			    // Stop blinking; during hyperspace we fall back to the plotted next hop,
+			    // which remains stable until the FSDJump event updates the current system.
+			    jumpFlashTimer.stop();
+			    pendingJumpSystemName = null;
+			    jumpFlashOn = true;
+			}
+
 			rebuildDisplayedEntries();
 		}
 	}
@@ -1827,4 +1833,5 @@ public class RouteTabPanel extends JPanel {
 		}
 		return f;
 	}
+	
 }

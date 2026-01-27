@@ -250,6 +250,14 @@ public class StatusEvent extends EliteLogEvent {
     public boolean isFsdCharging() {
         return decodedFlags.fsdCharging;
     }
+    /**
+     * True while the ship is in an FSD jump (hyperspace).
+     *
+     * In Status.json this corresponds to the 'FsdJump' flag.
+     */
+    public boolean isFsdJump() {
+        return decodedFlags.fsdJump;
+    }
 
     public boolean isFsdHyperdriveCharging() {
         return decodedFlags.fsdHyperdriveCharging;
