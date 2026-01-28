@@ -102,6 +102,10 @@ public class RouteTabPanel extends JPanel {
 	private long currentSystemAddress = 0L;
 	private double[] currentStarPos = null;
 	private String pendingJumpSystemName = null;
+	// Latched pending-jump destination (so Status destination changes during hyperspace don't move the marker).
+	private String pendingJumpLockedName = null;
+	private long pendingJumpLockedAddress = 0L;
+	private boolean inHyperspace = false;
 	private String targetSystemName = null;
 	private long targetSystemAddress = 0L;
 	// Destination can be either a system (FSD target), or a body in the current system.
@@ -341,6 +345,9 @@ public class RouteTabPanel extends JPanel {
 			destinationName = null;
 			baseRouteEntries.clear();
 			pendingJumpSystemName = null;
+			pendingJumpLockedName = null;
+			pendingJumpLockedAddress = 0L;
+			inHyperspace = false;
 			if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
 				jumpFlashTimer.stop();
 			}
@@ -349,6 +356,12 @@ public class RouteTabPanel extends JPanel {
 			table.repaint();
 		}
 		if (event instanceof FsdTargetEvent target) {
+			// Elite can emit FSDTarget updates during the hyperspace animation (often for the *next* hop).
+			// We must not let that override the blinking pending-jump marker or shift the hollow triangle.
+			if (inHyperspace || jumpFlashTimer.isRunning()) {
+				return;
+			}
+
 			// FSD target selected or cleared: remember (or clear) the target system for the crosshair
 			String newName = target.getName();
 			long newAddr = target.getSystemAddress();
@@ -369,6 +382,9 @@ public class RouteTabPanel extends JPanel {
 			currentSystemAddress = loc.getSystemAddress();
 			currentStarPos = loc.getStarPos();
 			pendingJumpSystemName = null;
+			pendingJumpLockedName = null;
+			pendingJumpLockedAddress = 0L;
+			inHyperspace = false;
 			rebuildDisplayedEntries();
 		}
 		if (event instanceof FsdJumpEvent jump) {
@@ -378,6 +394,9 @@ public class RouteTabPanel extends JPanel {
 			this.currentStarPos = jump.getStarPos();
 
 			pendingJumpSystemName = null;
+			pendingJumpLockedName = null;
+			pendingJumpLockedAddress = 0L;
+			inHyperspace = false;
 
 			if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
 				jumpFlashTimer.stop();
@@ -396,8 +415,9 @@ public class RouteTabPanel extends JPanel {
 		if (event instanceof StatusEvent sj) {
 			StatusEvent se = (StatusEvent)sj;
 			boolean hyperdriveCharging = se.isFsdHyperdriveCharging();
-			boolean inHyperspace = se.isFsdJump();
-			boolean preJumpCharging = hyperdriveCharging && !inHyperspace;
+			boolean inHyperspaceNow = se.isFsdJump();
+			inHyperspace = inHyperspaceNow;
+			boolean preJumpCharging = hyperdriveCharging && !inHyperspaceNow;
 			boolean timerRunning = jumpFlashTimer.isRunning();
 			
 			// Remember destination fields (they may refer to either a target system or a body).
@@ -445,17 +465,20 @@ public class RouteTabPanel extends JPanel {
 			}
 
 			if (preJumpCharging && !timerRunning) {
-			    pendingJumpSystemName = se.getDestinationDisplayName();
-			    jumpFlashOn = true;
-			    jumpFlashTimer.start();
+				// Latch the destination at the moment charging begins. Status destination can change mid-jump.
+				pendingJumpLockedName = destinationName;
+				pendingJumpLockedAddress = (destinationSystemAddress != null) ? destinationSystemAddress.longValue() : 0L;
+				pendingJumpSystemName = se.getDestinationDisplayName();
+				jumpFlashOn = true;
+				jumpFlashTimer.start();
 			}
-			if (!preJumpCharging && timerRunning ) {
-			    // We either entered hyperspace or canceled charging.
-			    // Stop blinking; during hyperspace we fall back to the plotted next hop,
-			    // which remains stable until the FSDJump event updates the current system.
-			    jumpFlashTimer.stop();
-			    pendingJumpSystemName = null;
-			    jumpFlashOn = true;
+			if (!preJumpCharging && !inHyperspaceNow && timerRunning) {
+				// Charging was canceled (or we returned to normal space without an FSDJump).
+				jumpFlashTimer.stop();
+				pendingJumpSystemName = null;
+				pendingJumpLockedName = null;
+				pendingJumpLockedAddress = 0L;
+				jumpFlashOn = true;
 			}
 
 			rebuildDisplayedEntries();
@@ -892,14 +915,19 @@ public class RouteTabPanel extends JPanel {
 
 		if (!hasSideTripTarget) {
 			if (charging && destinationBodyId == null) {
-				long destAddr = 0L;
-				if (destinationSystemAddress != null) {
-					destAddr = destinationSystemAddress.longValue();
+				String destNameForPending = pendingJumpLockedName;
+				long destAddrForPending = pendingJumpLockedAddress;
+
+				if (destNameForPending == null || destNameForPending.isBlank()) {
+					destNameForPending = destinationName;
+				}
+				if (destAddrForPending == 0L && destinationSystemAddress != null) {
+					destAddrForPending = destinationSystemAddress.longValue();
 				}
 
 				// Only try to use the Status destination if it looks like a real system target.
-				if (destAddr != 0L || (destinationName != null && !destinationName.isBlank())) {
-					int destRow = findSystemRow(entries, destinationName, destAddr);
+				if (destAddrForPending != 0L || (destNameForPending != null && !destNameForPending.isBlank())) {
+					int destRow = findSystemRow(entries, destNameForPending, destAddrForPending);
 					if (destRow >= 0 && destRow != currentRow) {
 						RouteEntry e = entries.get(destRow);
 						if (e != null && !e.isBodyRow) {
