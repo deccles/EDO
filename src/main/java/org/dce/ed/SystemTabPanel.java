@@ -100,6 +100,10 @@ public class SystemTabPanel extends JPanel {
     // When a body is actively targeted (Status.json Destination.Body), we outline that body block.
     private volatile Integer targetBodyId;
     private volatile String targetBodyName;
+
+    // When a station/carrier is targeted, Destination.Body is the parent body and Destination.DisplayName is the station/carrier.
+    private volatile Integer targetDestinationParentBodyId;
+    private volatile String targetDestinationName;
 	private JLabel headerSummaryLabel;
     
     public SystemTabPanel() {
@@ -450,39 +454,128 @@ public class SystemTabPanel extends JPanel {
 
     private void updateTargetBodyFromStatus(StatusEvent e) {
         // Called from handleLogEvent; may be on a background thread.
-        final Long destSystem = (e != null) ? e.getDestinationSystem() : null;
         final Integer destBody = (e != null) ? e.getDestinationBody() : null;
-        final String destName = (e != null) ? e.getDestinationDisplayName() : null;
+        final String destNameRaw = (e != null) ? e.getDestinationDisplayName() : null;
 
-        // Only treat Destination.Body as a body-target when it is in the current system.
-        // Status.json may also use Destination.* for system/station targets.
-        final long currentSystem = state.getSystemAddress();
-        final boolean matchesCurrentSystem = (destSystem != null && destSystem.longValue() != 0L && destSystem.longValue() == currentSystem);
-
-        final Integer newBodyId;
-        final String newBodyName;
-        if (matchesCurrentSystem && destBody != null) {
-            newBodyId = destBody;
-            newBodyName = (destName != null && !destName.isBlank()) ? destName.trim() : null;
+        final String destName;
+        if (destNameRaw != null && !destNameRaw.isBlank()) {
+            destName = destNameRaw.trim();
         } else {
-            newBodyId = null;
-            newBodyName = null;
+            destName = null;
+        }
+
+        // Body highlighting:
+        // - For planet/body targets, DestinationDisplayName matches a body name and we can map it to a stable bodyId.
+        // - For station/fleet carrier targets, DestinationDisplayName is the station/carrier name; Destination.Body is
+        //   the parent body id (so we highlight the parent body block).
+        Integer highlightBodyId = null;
+        if (destName != null) {
+            highlightBodyId = findBodyIdByName(destName);
+        }
+        if (highlightBodyId == null && destBody != null) {
+            for (BodyInfo bi : state.getBodies().values()) {
+                if (bi == null) {
+                    continue;
+                }
+                if (bi.getBodyId() == destBody.intValue()) {
+                    highlightBodyId = bi.getBodyId();
+                    break;
+                }
+            }
+        }
+
+        final Integer newBodyId = highlightBodyId;
+        final String newBodyName = null;
+
+        // Intermediate destination (station/fleet carrier):
+        // Show an indented row under the parent body when DestinationDisplayName is NOT a body name.
+        final Integer newDestParentBodyId;
+        final String newDestName;
+
+        boolean destNameIsBody = false;
+        if (destName != null) {
+            Integer bodyId = findBodyIdByName(destName);
+            if (bodyId != null) {
+                destNameIsBody = true;
+            }
+        }
+
+        if (!destNameIsBody && destBody != null && destName != null) {
+            BodyInfo parent = null;
+            for (BodyInfo bi : state.getBodies().values()) {
+                if (bi == null) {
+                    continue;
+                }
+                if (bi.getBodyId() == destBody.intValue()) {
+                    parent = bi;
+                    break;
+                }
+            }
+
+            boolean sameAsBody = false;
+            if (parent != null) {
+                String bodyName = parent.getBodyName();
+                String shortName = parent.getShortName();
+                if (bodyName != null && destName.equalsIgnoreCase(bodyName)) {
+                    sameAsBody = true;
+                }
+                if (!sameAsBody && shortName != null && destName.equalsIgnoreCase(shortName)) {
+                    sameAsBody = true;
+                }
+            }
+
+            if (!sameAsBody) {
+                newDestParentBodyId = destBody;
+                newDestName = destName;
+            } else {
+                newDestParentBodyId = null;
+                newDestName = null;
+            }
+        } else {
+            newDestParentBodyId = null;
+            newDestName = null;
         }
 
         SwingUtilities.invokeLater(() -> {
-            // No change
-            if (newBodyId == null && targetBodyId == null) {
-                return;
-            }
-            if (newBodyId != null && targetBodyId != null && newBodyId.intValue() == targetBodyId.intValue()) {
-                // Body id is stable; avoid repaints if the id didn't change.
-                return;
+            boolean changed = false;
+
+            if (newBodyId == null) {
+                if (targetBodyId != null) {
+                    targetBodyId = null;
+                    targetBodyName = null;
+                    changed = true;
+                }
+            } else {
+                if (targetBodyId == null || newBodyId.intValue() != targetBodyId.intValue()) {
+                    targetBodyId = newBodyId;
+                    targetBodyName = newBodyName;
+                    changed = true;
+                }
             }
 
-            targetBodyId = newBodyId;
-            targetBodyName = newBodyName;
+            if (newDestParentBodyId == null) {
+                if (targetDestinationParentBodyId != null || targetDestinationName != null) {
+                    targetDestinationParentBodyId = null;
+                    targetDestinationName = null;
+                    changed = true;
+                }
+            } else {
+                if (targetDestinationParentBodyId == null
+                        || !newDestParentBodyId.equals(targetDestinationParentBodyId)
+                        || (targetDestinationName == null && newDestName != null)
+                        || (targetDestinationName != null && newDestName == null)
+                        || (targetDestinationName != null && newDestName != null && !targetDestinationName.equals(newDestName))) {
+                    targetDestinationParentBodyId = newDestParentBodyId;
+                    targetDestinationName = newDestName;
+                    changed = true;
+                }
+            }
 
-            table.repaint();
+            if (changed) {
+                requestRebuild();
+            } else {
+                table.repaint();
+            }
         });
     }
 
@@ -597,6 +690,7 @@ public class SystemTabPanel extends JPanel {
         updateHeaderLabel();
 
         List<Row> rows = BioTableBuilder.buildRows(state.getBodies().values());
+        injectIntermediateDestinationRow(rows);
         tableModel.setRows(rows);
 
         // Debug only:
@@ -1033,6 +1127,7 @@ return c;
 static class Row {
         final BodyInfo body;
         final boolean detail;
+        final boolean destinationRow;
         final int parentId;
         final String bioText;
         final String bioValue;
@@ -1049,11 +1144,13 @@ static class Row {
         }
         private Row(BodyInfo body,
                     boolean detail,
+                    boolean destinationRow,
                     int parentId,
                     String bioText,
                     String bioValue) {
             this.body = body;
             this.detail = detail;
+            this.destinationRow = destinationRow;
             this.parentId = parentId;
             this.bioText = bioText;
             this.bioValue = bioValue;
@@ -1068,16 +1165,21 @@ static class Row {
         }
 
         static Row bio(int parentId, String text, String val, int bioSampleCount) {
-            Row r = new Row(null, true, parentId, text, val);
+            Row r = new Row(null, true, false, parentId, text, val);
             r.setBioSampleCount(bioSampleCount);
             return r;
         }
         static Row body(BodyInfo b) {
-            return new Row(b, false, -1, null, null);
+            return new Row(b, false, false, -1, null, null);
         }
 
         static Row bio(int parentId, String text, String val) {
-            return new Row(null, true, parentId, text, val);
+            return new Row(null, true, false, parentId, text, val);
+        }
+
+        static Row destination(int parentId, String destinationName) {
+            String name = (destinationName != null) ? destinationName : "";
+            return new Row(null, true, true, parentId, name, null);
         }
     }
 
@@ -1332,6 +1434,12 @@ static class Row {
             Row r = rows.get(rowIndex);
 
             if (r.detail) {
+                if (r.destinationRow) {
+                    switch (col) {
+                        case 2: return r.bioText != null ? r.bioText : "";
+                        default: return "";
+                    }
+                }
                 switch (col) {
                     case 3: return r.bioText != null ? r.bioText : "";
                     case 4: return r.bioValue != null ? r.bioValue : "";
@@ -1580,6 +1688,32 @@ static class Row {
 
     public SystemState getState() {
         return state;
+    }
+
+
+    private void injectIntermediateDestinationRow(List<Row> rows) {
+        Integer parentId = targetDestinationParentBodyId;
+        String name = targetDestinationName;
+
+        if (parentId == null || name == null || name.isBlank()) {
+            return;
+        }
+
+        int insertAt = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            Row r = rows.get(i);
+            if (!r.detail && r.body != null && r.body.getBodyId() == parentId.intValue()) {
+                insertAt = i + 1;
+                while (insertAt < rows.size() && rows.get(insertAt).detail) {
+                    insertAt++;
+                }
+                break;
+            }
+        }
+
+        if (insertAt >= 0) {
+            rows.add(insertAt, Row.destination(parentId.intValue(), "  -> " + name));
+        }
     }
 
 }
