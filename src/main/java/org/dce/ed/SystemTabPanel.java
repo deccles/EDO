@@ -96,6 +96,10 @@ public class SystemTabPanel extends JPanel {
     private volatile Integer nearBodyId;
     private volatile String nearBodyName;
 
+
+    // When a body is actively targeted (Status.json Destination.Body), we outline that body block.
+    private volatile Integer targetBodyId;
+    private volatile String targetBodyName;
 	private JLabel headerSummaryLabel;
     
     public SystemTabPanel() {
@@ -347,9 +351,10 @@ public class SystemTabPanel extends JPanel {
         processor.handleEvent(event);
 
         // StatusEvent is very high frequency; avoid table rebuilds.
-        // We only use it to track which body the player is currently near.
+        // We only use it to track which body the player is currently near, and which body is currently targeted.
         if (event instanceof StatusEvent) {
             StatusEvent e = (StatusEvent) event;
+            updateTargetBodyFromStatus(e);
             updateNearBodyFromStatus(e);
             return;
         }
@@ -441,6 +446,44 @@ public class SystemTabPanel extends JPanel {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+    }
+
+    private void updateTargetBodyFromStatus(StatusEvent e) {
+        // Called from handleLogEvent; may be on a background thread.
+        final Long destSystem = (e != null) ? e.getDestinationSystem() : null;
+        final Integer destBody = (e != null) ? e.getDestinationBody() : null;
+        final String destName = (e != null) ? e.getDestinationDisplayName() : null;
+
+        // Only treat Destination.Body as a body-target when it is in the current system.
+        // Status.json may also use Destination.* for system/station targets.
+        final long currentSystem = state.getSystemAddress();
+        final boolean matchesCurrentSystem = (destSystem != null && destSystem.longValue() != 0L && destSystem.longValue() == currentSystem);
+
+        final Integer newBodyId;
+        final String newBodyName;
+        if (matchesCurrentSystem && destBody != null) {
+            newBodyId = destBody;
+            newBodyName = (destName != null && !destName.isBlank()) ? destName.trim() : null;
+        } else {
+            newBodyId = null;
+            newBodyName = null;
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            // No change
+            if (newBodyId == null && targetBodyId == null) {
+                return;
+            }
+            if (newBodyId != null && targetBodyId != null && newBodyId.intValue() == targetBodyId.intValue()) {
+                // Body id is stable; avoid repaints if the id didn't change.
+                return;
+            }
+
+            targetBodyId = newBodyId;
+            targetBodyName = newBodyName;
+
+            table.repaint();
+        });
     }
 
     private void updateNearBodyFromStatus(StatusEvent e) {
@@ -1086,10 +1129,86 @@ static class Row {
                     }
                 }
 
+                paintTargetBodyOutline(g2);
                 paintNearBodyOutline(g2);
             } finally {
                 g2.dispose();
             }
+        }
+
+        private void paintTargetBodyOutline(Graphics2D g2) {
+            Integer targetBodyId = SystemTabPanel.this.targetBodyId;
+            if (targetBodyId == null) {
+                return;
+            }
+
+            int rowCount = tableModel.getRowCount();
+            int first = -1;
+            int last = -1;
+
+            for (int row = 0; row < rowCount; row++) {
+                Row r = tableModel.getRowAt(row);
+                if (r == null) {
+                    continue;
+                }
+
+                boolean match = false;
+                if (!r.detail) {
+                    if (r.body != null && r.body.getBodyId() == targetBodyId.intValue()) {
+                        match = true;
+                    }
+                } else {
+                    if (r.parentId == targetBodyId.intValue()) {
+                        match = true;
+                    }
+                }
+
+                if (match) {
+                    if (first < 0) {
+                        first = row;
+                    }
+                    last = row;
+                } else if (first >= 0) {
+                    // Rows for a body are contiguous; once we leave the block we can stop.
+                    break;
+                }
+            }
+
+            if (first < 0 || last < 0) {
+                return;
+            }
+
+            Rectangle top = getCellRect(first, 0, true);
+            Rectangle bottom = getCellRect(last, getColumnCount() - 1, true);
+
+            int y = top.y;
+            int h = (bottom.y + bottom.height) - y;
+
+            Rectangle block = new Rectangle(0, y, getWidth(), h);
+            Rectangle clip = g2.getClipBounds();
+            if (clip != null && !clip.intersects(block)) {
+                return;
+            }
+
+            Object oldAA = g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // Gray dashed outline for the currently targeted body.
+            Color outline = new Color(180, 180, 180, 140);
+            g2.setColor(outline);
+            float[] dash = new float[] { 6.0f, 6.0f };
+            g2.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND, 10.0f, dash, 0.0f));
+
+            int inset = 2;
+            int arc = 12;
+            g2.drawRoundRect(inset,
+                    y + inset,
+                    getWidth() - (inset * 2) - 1,
+                    h - (inset * 2) - 1,
+                    arc,
+                    arc);
+
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, oldAA);
         }
 
         private void paintNearBodyOutline(Graphics2D g2) {
