@@ -134,14 +134,9 @@ public final class LiveJournalMonitor {
     }
 
     private void runLoop() {
-        Path journalDir = null;
+        Path journalDir = OverlayPreferences.resolveJournalDirectory(clientKey);
 
-        if (OverlayPreferences.isAutoLogDir(clientKey)) {
-            journalDir = EliteLogFileLocator.findDefaultJournalDirectory();
-        } else {
-            journalDir = Path.of(OverlayPreferences.getCustomLogDir(clientKey));
-        }
-        if (journalDir == null || !Files.isDirectory(journalDir)) {
+        if (journalDir == null || !Files.isDirectory(journalDir) || !EliteLogFileLocator.looksLikeJournalDirectory(journalDir)) {
             System.err.println("[EDO] LiveJournalMonitor: journal directory not found. clientKey=" + clientKey
                     + " autoLogDir=" + OverlayPreferences.isAutoLogDir(clientKey)
                     + " customDir=\"" + OverlayPreferences.getCustomLogDir(clientKey) + "\"");
