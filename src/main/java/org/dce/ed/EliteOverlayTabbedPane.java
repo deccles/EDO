@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -81,6 +82,9 @@ public class EliteOverlayTabbedPane extends JPanel {
 	// Restores the original "bigger" tab look (padding inside the outline)
 	private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
 
+	
+	private final BooleanSupplier hoverSwitchEnabled;
+	
 	private final CardLayout cardLayout;
 	private final JPanel cardPanel;
 	private final JPanel tabBar;
@@ -101,10 +105,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private JButton biologyButton;
 	private JButton miningButton;
 
-	
 	public EliteOverlayTabbedPane() {
+		this(() -> true);
+	}
+	public EliteOverlayTabbedPane(BooleanSupplier hoverSwitchEnabled) {
 		super(new BorderLayout());
 
+		this.hoverSwitchEnabled = hoverSwitchEnabled;
+		
 		boolean opaque = !OverlayPreferences.isOverlayTransparent();
 
 		setOpaque(opaque);
@@ -186,10 +194,11 @@ public class EliteOverlayTabbedPane extends JPanel {
 		});
 
 		// Hover-to-switch: resting over a tab for a short time activates it
-		installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick());
-		installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick());
-		installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick());
-		installHoverSwitch(miningButton, TAB_HOVER_DELAY_MS, () -> miningButton.doClick());
+		installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick(), hoverSwitchEnabled);
+		installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick(), hoverSwitchEnabled);
+		installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick(), hoverSwitchEnabled);
+		installHoverSwitch(miningButton, TAB_HOVER_DELAY_MS, () -> miningButton.doClick(), hoverSwitchEnabled);
+
 
 		// Select Route tab by default
 		systemButton.doClick();
@@ -524,8 +533,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 	 * Attach a generic hover handler to a button; when the mouse rests over
 	 * the button for the given delay, the action is invoked on the EDT.
 	 */
-	private static void installHoverSwitch(JButton button, int delayMs, Runnable action) {
-		TabHoverPoller.register(button, delayMs, action);
+	private static void installHoverSwitch(JButton button, int delayMs, Runnable action, BooleanSupplier enabled) {
+		TabHoverPoller.register(button, delayMs, action, enabled);
 	}
 
 	/**
@@ -553,20 +562,23 @@ public class EliteOverlayTabbedPane extends JPanel {
 			final JButton button;
 			final int delayMs;
 			final Runnable action;
+			final BooleanSupplier enabled;
 
 			long hoverStartMs = -1L;
 			boolean firedForCurrentHover = false;
 
-			Entry(JButton button, int delayMs, Runnable action) {
+			Entry(JButton button, int delayMs, Runnable action, BooleanSupplier enabled) {
 				this.button = button;
 				this.delayMs = delayMs;
 				this.action = action;
+				this.enabled = enabled;
 			}
 		}
 
-		static void register(JButton button, int delayMs, Runnable action) {
-			entries.add(new Entry(button, delayMs, action));
+		static void register(JButton button, int delayMs, Runnable action, BooleanSupplier enabled) {
+			entries.add(new Entry(button, delayMs, action, enabled));
 		}
+
 
 		@Override
 		public void actionPerformed(ActionEvent e) {
@@ -584,6 +596,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 			long now = System.currentTimeMillis();
 
 			for (Entry entry : entries) {
+				if (entry.enabled != null && !entry.enabled.getAsBoolean()) {
+					entry.hoverStartMs = -1L;
+					entry.firedForCurrentHover = false;
+					continue;
+				}
+
 				JButton button = entry.button;
 				if (button == null || !button.isShowing()) {
 					entry.hoverStartMs = -1L;

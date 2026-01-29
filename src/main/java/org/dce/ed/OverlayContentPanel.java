@@ -17,7 +17,8 @@ public class OverlayContentPanel extends JPanel {
         setOpaque(false);
         setLayout(new BorderLayout());
 
-        tabbedPane = new EliteOverlayTabbedPane();
+        tabbedPane = new EliteOverlayTabbedPane(() -> this.overlayFrame.isPassThroughEnabled());
+
         add(tabbedPane, BorderLayout.CENTER);
     }
 
