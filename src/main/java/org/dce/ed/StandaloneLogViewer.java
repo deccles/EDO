@@ -4,27 +4,21 @@ import java.awt.Dimension;
 import java.awt.EventQueue;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.JournalImportCursor;
 import org.dce.ed.logreader.LiveJournalMonitor;
 
-/**
- * Standalone runner for {@link LogTabPanel}.
- *
- * Drop this class into the same project as LogTabPanel + logreader classes and run the main().
- */
 public class StandaloneLogViewer {
 
     public static String clientKey = "LOG";
 
-	public static void main(String[] args) {
-		OverlayPreferences.setAutoLogDir(clientKey, false);
-		OverlayPreferences.setCustomLogDir(clientKey, "C:/Users/17036/git-EliteDangerousOverlay/EDO/Elite Dangerous");
-		
+    public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
             LogTabPanel panel = new LogTabPanel();
 
