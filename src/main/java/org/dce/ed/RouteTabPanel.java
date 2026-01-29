@@ -929,6 +929,24 @@ public class RouteTabPanel extends JPanel {
 		// Side-trip target overrides the normal next-hop marker.
 		boolean hasSideTripTarget = (targetSystemName != null && !targetSystemName.isBlank());
 
+		long resolvedCurrentAddress = 0L;
+		if (currentRow >= 0) {
+			RouteEntry cur = entries.get(currentRow);
+			if (cur != null) {
+				resolvedCurrentAddress = cur.systemAddress;
+			}
+		}
+		if (resolvedCurrentAddress == 0L) {
+			resolvedCurrentAddress = currentSystemAddress;
+		}
+
+		boolean hasLocalBodyDestination = false;
+		if (destinationBodyId != null && destinationSystemAddress != null && resolvedCurrentAddress != 0L) {
+			if (destinationSystemAddress.longValue() == resolvedCurrentAddress) {
+				hasLocalBodyDestination = true;
+			}
+		}
+
 		// While charging, the most reliable "next jump" is Status.json's destination system (if any).
 		boolean charging = jumpFlashTimer.isRunning();
 		RouteEntry pending = null;
@@ -958,7 +976,8 @@ public class RouteTabPanel extends JPanel {
 			}
 
 			// Fallback to the plotted route's next hop.
-			if (pending == null && nextHop != null) {
+			// If we have a LOCAL body destination selected, the empty triangle belongs ONLY to that body row.
+			if (pending == null && nextHop != null && !hasLocalBodyDestination) {
 				pending = nextHop;
 			}
 
