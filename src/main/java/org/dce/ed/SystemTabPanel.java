@@ -1247,11 +1247,68 @@ static class Row {
 
                 paintTargetBodyOutline(g2);
                 paintNearBodyOutline(g2);
+                paintDestinationRowText(g2);
             } finally {
                 g2.dispose();
             }
         }
+        private void paintDestinationRowText(Graphics2D g2) {
+            Integer parentId = SystemTabPanel.this.targetDestinationParentBodyId;
+            String destName = SystemTabPanel.this.targetDestinationName;
 
+            if (parentId == null || destName == null || destName.isBlank()) {
+                return;
+            }
+
+            int rowCount = tableModel.getRowCount();
+            for (int row = 0; row < rowCount; row++) {
+                Row r = tableModel.getRowAt(row);
+                if (r == null || !r.detail || !r.destinationRow) {
+                    continue;
+                }
+                if (r.parentId != parentId.intValue()) {
+                    continue;
+                }
+
+                String text = r.bioText;
+                if (text == null || text.isBlank()) {
+                    return;
+                }
+
+                // Destination text is displayed in column 2 in the model.
+                Rectangle cellRect = getCellRect(row, 2, true);
+
+                // Extend drawing across the whole row (so it can spill into later columns).
+                Rectangle rowRect = getCellRect(row, 0, true);
+                rowRect.width = getWidth();
+
+                Rectangle clip = g2.getClipBounds();
+                if (clip != null && !clip.intersects(rowRect)) {
+                    return;
+                }
+
+                Graphics2D g = (Graphics2D) g2.create();
+                try {
+                    g.setClip(rowRect);
+
+                    g.setFont(getFont());
+                    FontMetrics fm = g.getFontMetrics();
+
+                    // Use the same gray tone as the target outline so it looks intentional.
+                    g.setColor(new Color(180, 180, 180, 200));
+
+                    int x = cellRect.x + 6;
+                    int y = rowRect.y + (rowRect.height + fm.getAscent()) / 2 - 2;
+
+                    g.drawString(text, x, y);
+                } finally {
+                    g.dispose();
+                }
+
+                // Only one destination row is injected, so we can stop.
+                return;
+            }
+        }
         private void paintTargetBodyOutline(Graphics2D g2) {
             Integer targetBodyId = SystemTabPanel.this.targetBodyId;
             if (targetBodyId == null) {
@@ -1449,10 +1506,7 @@ static class Row {
 
             if (r.detail) {
                 if (r.destinationRow) {
-                    switch (col) {
-                        case 2: return r.bioText != null ? r.bioText : "";
-                        default: return "";
-                    }
+                	return "";
                 }
                 switch (col) {
                     case 3: return r.bioText != null ? r.bioText : "";
@@ -1726,8 +1780,7 @@ static class Row {
         }
 
         if (insertAt >= 0) {
-            rows.add(insertAt, Row.destination(parentId.intValue(), "  -> " + name));
+            rows.add(insertAt, Row.destination(parentId.intValue(), "> " + name));
         }
     }
-
 }
