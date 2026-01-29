@@ -440,18 +440,39 @@ public class RouteTabPanel extends JPanel {
 				}
 			} else {
 				boolean statusDestIsOnRoute = false;
+				boolean targetIsOnRoute = false;
+
 				if (baseRouteEntries != null && !baseRouteEntries.isEmpty()) {
 					for (RouteEntry e : baseRouteEntries) {
-						if (e == null)
+						if (e == null) {
 							continue;
+						}
+
 						if (statusDestName.equals(e.systemName)) {
 							statusDestIsOnRoute = true;
+						}
+
+						if (targetSystemName != null && !targetSystemName.isBlank()) {
+							if (targetSystemName.equals(e.systemName)) {
+								targetIsOnRoute = true;
+							}
+						}
+
+						if (targetSystemAddress != 0L && e.systemAddress != 0L) {
+							if (e.systemAddress == targetSystemAddress) {
+								targetIsOnRoute = true;
+							}
+						}
+
+						if (statusDestIsOnRoute && targetIsOnRoute) {
 							break;
 						}
 					}
 				}
+
 				if (statusDestIsOnRoute) {
-					if (targetSystemName != null) {
+					// Only clear the latched target if it was an *off-route* side-trip target.
+					if (targetSystemName != null && !targetIsOnRoute) {
 						targetSystemName = null;
 						targetSystemAddress = 0L;
 						clearedSideTrip = true;
@@ -463,7 +484,6 @@ public class RouteTabPanel extends JPanel {
 				rebuildDisplayedEntries();
 				return;
 			}
-
 			if (preJumpCharging && !timerRunning) {
 				// Latch the destination at the moment charging begins. Status destination can change mid-jump.
 				pendingJumpLockedName = destinationName;
