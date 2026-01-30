@@ -27,6 +27,8 @@ import java.util.regex.Pattern;
  */
 public class TtsSprintf {
 
+    private static final String CACHEKEY_LETTER_PREFIX = "L|";
+
     /**
      * Resolve a {tag} placeholder into one or more utterance chunks.
      * Each returned chunk is spoken separately (and therefore cached separately by PollyTtsCached).
@@ -58,6 +60,11 @@ public class TtsSprintf {
         registerResolver("n", TtsSprintf::resolveNumberDefault);
         registerResolver("num", TtsSprintf::resolveNumberDefault);
         registerResolver("number", TtsSprintf::resolveNumberDefault);
+
+        // Large numeric expansions (caller still writes the unit word in the template)
+        // Example: "... value of {credits} credits" -> ["one", "million", "five", "hundred", "thousand"]
+        registerResolver("credits", TtsSprintf::resolveCreditsDefault);
+        registerResolver("meters", TtsSprintf::resolveMetersDefault);
     }
 
     public void registerResolver(String tag, TagResolver resolver) {
@@ -72,9 +79,10 @@ public class TtsSprintf {
      * Non-blocking: queues speech (delegates to PollyTtsCached.speak()).
      */
     public void speakf(String template, Object... args) {
-        List<String> chunks = formatToUtteranceChunks(template, args);
+        SpeechPlan plan = formatToSpeechPlan(template, args);
+        List<String> chunks = plan.chunkTexts;
         for (String s : chunks) {
-        	System.out.print(s + " ");
+            System.out.print(s + " ");
         }
         if (chunks.isEmpty()) {
             return;
@@ -82,23 +90,28 @@ public class TtsSprintf {
 
         tts.getPlaybackQueue().submit(() -> {
             try {
-                speakAssembledBlocking(chunks);
+                speakAssembledBlocking(plan);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         });
     }
 
-    private void speakAssembledBlocking(List<String> chunks) throws Exception {
-        if (chunks == null || chunks.isEmpty()) {
+    private void speakAssembledBlocking(SpeechPlan plan) throws Exception {
+        if (plan == null || plan.chunkTexts.isEmpty()) {
             return;
         }
 
         // Build SSML with explicit <mark/> boundaries so Polly returns precise timestamps.
-        SsmlPlan plan = buildSsmlWithMarks(chunks);
+        SsmlWithMarks ssmlPlan = buildSsmlWithMarks(plan);
 
         // Ensure cached WAVs, preferring context-derived chunks when missing.
-        List<Path> wavs = tts.ensureCachedWavsFromSsmlMarks(plan.chunkTexts, plan.cacheKeys, plan.ssml, plan.markNames);
+        List<Path> wavs = tts.ensureCachedWavsFromSsmlMarks(
+                ssmlPlan.chunkTexts,
+                ssmlPlan.cacheKeys,
+                ssmlPlan.ssml,
+                ssmlPlan.markNames
+        );
 
         // Filter nulls (blank chunks) and play as a single continuous stream.
         List<Path> toPlay = new ArrayList<>();
@@ -113,13 +126,23 @@ public class TtsSprintf {
         }
     }
 
-    private static final class SsmlPlan {
+    private static final class SpeechPlan {
+        private final List<String> chunkTexts;
+        private final List<String> cacheKeys;
+
+        private SpeechPlan(List<String> chunkTexts, List<String> cacheKeys) {
+            this.chunkTexts = chunkTexts;
+            this.cacheKeys = cacheKeys;
+        }
+    }
+
+    private static final class SsmlWithMarks {
         private final String ssml;
         private final List<String> markNames;
         private final List<String> chunkTexts;
         private final List<String> cacheKeys;
 
-        private SsmlPlan(String ssml, List<String> markNames, List<String> chunkTexts, List<String> cacheKeys) {
+        private SsmlWithMarks(String ssml, List<String> markNames, List<String> chunkTexts, List<String> cacheKeys) {
             this.ssml = ssml;
             this.markNames = markNames;
             this.chunkTexts = chunkTexts;
@@ -127,14 +150,14 @@ public class TtsSprintf {
         }
     }
 
-    private SsmlPlan buildSsmlWithMarks(List<String> chunks) {
-        List<String> markNames = new ArrayList<>(chunks.size());
-        List<String> chunkTexts = new ArrayList<>(chunks.size());
-        List<String> cacheKeys = new ArrayList<>(chunks.size());
+    private SsmlWithMarks buildSsmlWithMarks(SpeechPlan plan) {
+        List<String> markNames = new ArrayList<>(plan.chunkTexts.size());
+        List<String> chunkTexts = new ArrayList<>(plan.chunkTexts.size());
+        List<String> cacheKeys = new ArrayList<>(plan.chunkTexts.size());
 
         int lastNonBlankIdx = -1;
-        for (int i = 0; i < chunks.size(); i++) {
-            String c = chunks.get(i);
+        for (int i = 0; i < plan.chunkTexts.size(); i++) {
+            String c = plan.chunkTexts.get(i);
             if (c != null && !c.isBlank()) {
                 lastNonBlankIdx = i;
             }
@@ -143,8 +166,8 @@ public class TtsSprintf {
         StringBuilder ssml = new StringBuilder();
         ssml.append("<speak>");
 
-        for (int i = 0; i < chunks.size(); i++) {
-            String c = chunks.get(i);
+        for (int i = 0; i < plan.chunkTexts.size(); i++) {
+            String c = plan.chunkTexts.get(i);
             if (c == null || c.isBlank()) {
                 continue;
             }
@@ -152,7 +175,15 @@ public class TtsSprintf {
             String mark = "C" + i;
             markNames.add(mark);
             chunkTexts.add(c);
-            cacheKeys.add(computeCacheKey(c, i, lastNonBlankIdx));
+
+            String key = null;
+            if (plan.cacheKeys != null && i < plan.cacheKeys.size()) {
+                key = plan.cacheKeys.get(i);
+            }
+            if (key == null || key.isBlank()) {
+                key = computeCacheKey(c, i, lastNonBlankIdx);
+            }
+            cacheKeys.add(key);
 
             ssml.append("<mark name=\"").append(mark).append("\"/>");
             ssml.append(escapeForSsml(c));
@@ -160,7 +191,7 @@ public class TtsSprintf {
         }
 
         ssml.append("</speak>");
-        return new SsmlPlan(ssml.toString(), markNames, chunkTexts, cacheKeys);
+        return new SsmlWithMarks(ssml.toString(), markNames, chunkTexts, cacheKeys);
     }
 
     private static String computeCacheKey(String chunkText, int idx, int lastNonBlankIdx) {
@@ -168,13 +199,30 @@ public class TtsSprintf {
             return null;
         }
 
-        // Numbers sound different at the end of a sentence vs. leading into a phrase.
+        String pos = (idx == lastNonBlankIdx) ? "END" : "MID";
+
+        // Numbers sound different at the end of a sentence vs. mid-phrase.
         if (isAllDigits(chunkText)) {
-            String pos = (idx == lastNonBlankIdx) ? "END" : "MID";
             return "N|" + chunkText + "|" + pos;
         }
 
-        return chunkText;
+        // Single letters also can differ (useful for body names).
+        if (isSingleLetter(chunkText)) {
+            return "L|" + chunkText.toUpperCase(Locale.ROOT) + "|" + pos;
+        }
+
+        // Everything else: position-aware cache key, but keep spoken text identical.
+        // We only use this for caching, so a delimiter-safe normalization is fine.
+        String safe = chunkText.replace('|', ' ').trim();
+        return "T|" + safe + "|" + pos;
+    }
+
+    private static boolean isSingleLetter(String s) {
+        if (s == null) {
+            return false;
+        }
+        String t = s.trim();
+        return t.length() == 1 && Character.isLetter(t.charAt(0));
     }
 
     private static boolean isAllDigits(String s) {
@@ -203,32 +251,35 @@ public class TtsSprintf {
         return t;
     }
 
-    
     /**
-     * Blocking: speaks the fully expanded chunks sequentially (delegates to PollyTtsCached.speakBlocking()).
+     * Blocking: speaks the fully expanded chunks using the SSML mark/slice path (so cache keys apply).
      */
     public void speakfBlocking(String template, Object... args) throws Exception {
-        List<String> chunks = formatToUtteranceChunks(template, args);
-        for (String chunk : chunks) {
-            tts.speakBlocking(chunk);
-        }
+        SpeechPlan plan = formatToSpeechPlan(template, args);
+        speakAssembledBlocking(plan);
     }
 
     /**
      * Named-arg version (lets you call with a map instead of positional arguments).
      */
     public void speakf(String template, Map<String, ?> argsByTag) {
-        List<String> chunks = formatToUtteranceChunks(template, argsByTag);
-        for (String chunk : chunks) {
-            tts.speak(chunk);
+        SpeechPlan plan = formatToSpeechPlan(template, argsByTag);
+        if (plan.chunkTexts.isEmpty()) {
+            return;
         }
+
+        tts.getPlaybackQueue().submit(() -> {
+            try {
+                speakAssembledBlocking(plan);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
 
     public void speakfBlocking(String template, Map<String, ?> argsByTag) throws Exception {
-        List<String> chunks = formatToUtteranceChunks(template, argsByTag);
-        for (String chunk : chunks) {
-            tts.speakBlocking(chunk);
-        }
+        SpeechPlan plan = formatToSpeechPlan(template, argsByTag);
+        speakAssembledBlocking(plan);
     }
 
     /**
@@ -236,9 +287,14 @@ public class TtsSprintf {
      * Args are matched to placeholders in order of appearance.
      */
     public List<String> formatToUtteranceChunks(String template, Object... args) {
+        return formatToSpeechPlan(template, args).chunkTexts;
+    }
+
+    private SpeechPlan formatToSpeechPlan(String template, Object... args) {
         Objects.requireNonNull(template, "template");
 
         List<String> out = new ArrayList<>();
+        List<String> cacheKeys = new ArrayList<>();
         Matcher m = PLACEHOLDER.matcher(template);
 
         int last = 0;
@@ -246,7 +302,7 @@ public class TtsSprintf {
 
         while (m.find()) {
             String literal = template.substring(last, m.start());
-            addLiteralChunk(out, literal);
+            addLiteralChunk(out, cacheKeys, literal);
 
             String tag = m.group(1);
 
@@ -256,16 +312,13 @@ public class TtsSprintf {
             }
             argIndex++;
 
-            addResolvedChunks(out, tag, value);
+            addResolvedChunks(out, cacheKeys, tag, value);
 
             last = m.end();
         }
 
-        addLiteralChunk(out, template.substring(last));
-
-        // Optional: you can enforce "all placeholders must have args"
-        // by throwing if argIndex != countPlaceholders(template).
-        return compact(out);
+        addLiteralChunk(out, cacheKeys, template.substring(last));
+        return finalizeSpeechPlan(out, cacheKeys);
     }
 
     /**
@@ -273,31 +326,36 @@ public class TtsSprintf {
      * Each placeholder pulls its value from the map by tag name.
      */
     public List<String> formatToUtteranceChunks(String template, Map<String, ?> argsByTag) {
+        return formatToSpeechPlan(template, argsByTag).chunkTexts;
+    }
+
+    private SpeechPlan formatToSpeechPlan(String template, Map<String, ?> argsByTag) {
         Objects.requireNonNull(template, "template");
 
         Map<String, ?> map = (argsByTag == null) ? Collections.emptyMap() : argsByTag;
 
         List<String> out = new ArrayList<>();
+        List<String> cacheKeys = new ArrayList<>();
         Matcher m = PLACEHOLDER.matcher(template);
 
         int last = 0;
         while (m.find()) {
             String literal = template.substring(last, m.start());
-            addLiteralChunk(out, literal);
+            addLiteralChunk(out, cacheKeys, literal);
 
             String tag = m.group(1);
             Object value = map.get(tag);
 
-            addResolvedChunks(out, tag, value);
+            addResolvedChunks(out, cacheKeys, tag, value);
 
             last = m.end();
         }
 
-        addLiteralChunk(out, template.substring(last));
-        return compact(out);
+        addLiteralChunk(out, cacheKeys, template.substring(last));
+        return finalizeSpeechPlan(out, cacheKeys);
     }
 
-    private void addLiteralChunk(List<String> out, String literal) {
+    private void addLiteralChunk(List<String> out, List<String> cacheKeys, String literal) {
         if (literal == null || literal.isBlank()) {
             return;
         }
@@ -310,10 +368,11 @@ public class TtsSprintf {
         normalized = normalized.trim();
         if (!normalized.isEmpty()) {
             out.add(normalized);
+            cacheKeys.add(normalized);
         }
     }
 
-    private void addResolvedChunks(List<String> out, String tag, Object value) {
+    private void addResolvedChunks(List<String> out, List<String> cacheKeys, String tag, Object value) {
         TagResolver resolver = resolvers.get(tag);
         List<String> chunks;
 
@@ -328,15 +387,60 @@ public class TtsSprintf {
             return;
         }
 
+        List<String> normalizedChunks = new ArrayList<>();
         for (String c : chunks) {
             if (c == null) {
                 continue;
             }
             String s = normalizeSpaces(c).trim();
             if (!s.isEmpty()) {
-                out.add(s);
+                normalizedChunks.add(s);
             }
         }
+
+        if (normalizedChunks.isEmpty()) {
+            return;
+        }
+
+        // Tag-aware cache keys (lets us keep spoken text clean while still caching context-specific variants).
+        // Example: body names: "A 3 A" -> cache keys: ["L|A|MID", "N|3|MID", "L|A|END"]
+        int lastIdx = normalizedChunks.size() - 1;
+        for (int i = 0; i < normalizedChunks.size(); i++) {
+            String s = normalizedChunks.get(i);
+            out.add(s);
+            cacheKeys.add(computeCacheKeyForTag(tag, s, i, lastIdx));
+        }
+    }
+
+    private static String computeCacheKeyForTag(String tag, String chunkText, int idxInTag, int lastIdxInTag) {
+        if (chunkText == null || chunkText.isBlank()) {
+            return null;
+        }
+
+        if (tag != null) {
+            if (tag.equals("body") || tag.equals("bodyId")) {
+                if (isAllDigits(chunkText)) {
+                    String pos = (idxInTag == lastIdxInTag) ? "END" : "MID";
+                    return "N|" + chunkText + "|" + pos;
+                }
+                if (isSingleLetter(chunkText)) {
+                    String pos = (idxInTag == lastIdxInTag) ? "END" : "MID";
+                    return CACHEKEY_LETTER_PREFIX + chunkText.toUpperCase(Locale.ROOT) + "|" + pos;
+                }
+
+                // Default: cache body tokens by literal text (e.g., "IV" or "A1" if caller passes it that way)
+                return chunkText;
+            }
+
+            // Credits/meters are already expanded to word tokens; cache each token as-is.
+            if (tag.equals("credits") || tag.equals("meters")) {
+                return chunkText;
+            }
+        }
+
+        // Fallback: allow global sentence-position rules (digits/letters at end) to decide.
+        // We return null so buildSsmlWithMarks() can compute a cache key later with full-sentence context.
+        return null;
     }
 
     // -----------------------
@@ -381,6 +485,92 @@ public class TtsSprintf {
             return List.of("zero");
         }
         return List.of(s);
+    }
+
+    private static List<String> resolveCreditsDefault(String tag, Object value) {
+        Long n = coerceLong(value);
+        if (n == null) {
+            return List.of("0");
+        }
+
+        if (n < 0) {
+            List<String> out = new ArrayList<>();
+            out.add("minus");
+            out.addAll(expandCreditsCompact(Math.abs(n)));
+            return out;
+        }
+
+        return expandCreditsCompact(n);
+    }
+    private static List<String> expandCreditsCompact(long n) {
+        if (n == 0) {
+            return List.of("0");
+        }
+
+        // Prefer compact "X point Y million/billion" when it’s clean to do so:
+        // - exactly one decimal digit (remainder aligns to 0.1 units)
+        // - no rounding (deterministic, cache-friendly)
+        // Examples:
+        //  1,500,000 -> ["1","point","5","million"]
+        //  2,000,000 -> ["2","million"]
+        //  12,300,000 -> ["12","point","3","million"]
+        if (n >= 1_000_000_000L) {
+            return compactWithOneDecimal(n, 1_000_000_000L, "billion");
+        }
+
+        if (n >= 1_000_000L) {
+            return compactWithOneDecimal(n, 1_000_000L, "million");
+        }
+
+        // Below a million: keep your existing word expansion so small numbers don’t sound weird
+        // (and you don’t need digit audio for everything).
+        return expandNumberToWords(n);
+    }
+
+    private static List<String> compactWithOneDecimal(long n, long scale, String scaleWord) {
+        long whole = n / scale;
+        long rem = n % scale;
+
+        // If exact scale, just "whole scaleWord"
+        if (rem == 0) {
+            return List.of(Long.toString(whole), scaleWord);
+        }
+
+        // We only emit one decimal digit when rem is exactly a tenth of the scale (no rounding).
+        long tenth = scale / 10;
+        if (rem % tenth != 0) {
+            return expandNumberToWords(n);
+        }
+
+        long decimalDigit = rem / tenth;
+        if (decimalDigit < 0 || decimalDigit > 9) {
+            return expandNumberToWords(n);
+        }
+
+        return List.of(
+                Long.toString(whole),
+                "point",
+                Long.toString(decimalDigit),
+                scaleWord
+        );
+    }
+
+    private static List<String> resolveMetersDefault(String tag, Object value) {
+        Long n = coerceLong(value);
+        if (n == null) {
+            // If someone passed a floating distance string, just let Polly handle it.
+            if (value != null) {
+                return List.of(value.toString().trim());
+            }
+            return List.of("zero");
+        }
+        if (n < 0) {
+            List<String> out = new ArrayList<>();
+            out.add("minus");
+            out.addAll(expandNumberToWords(Math.abs(n)));
+            return out;
+        }
+        return expandNumberToWords(n);
     }
 
     private static List<String> resolveBodyDefault(String tag, Object value) {
@@ -439,6 +629,181 @@ public class TtsSprintf {
         return s;
     }
 
+    private static Long coerceLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        String s = value.toString();
+        if (s == null) {
+            return null;
+        }
+        s = s.trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        try {
+            if (s.contains(".")) {
+                // Avoid surprising truncation for non-integers; caller can pass a long if they want.
+                double d = Double.parseDouble(s);
+                return (long) d;
+            }
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Expands a non-negative integer into spoken English word tokens (US locale by default).
+     *
+     * Examples:
+     *  0 -> ["zero"]
+     *  1500000 -> ["one","million","five","hundred","thousand"]
+     */
+    private static List<String> expandNumberToWords(long n) {
+        if (n == 0) {
+            return List.of("zero");
+        }
+
+        List<String> out = new ArrayList<>();
+        if (n >= 1_000_000_000L) {
+            long billions = n / 1_000_000_000L;
+            out.addAll(expandNumberToWords(billions));
+            out.add("billion");
+            n = n % 1_000_000_000L;
+        }
+        if (n >= 1_000_000L) {
+            long millions = n / 1_000_000L;
+            out.addAll(expandNumberToWords(millions));
+            out.add("million");
+            n = n % 1_000_000L;
+        }
+        if (n >= 1_000L) {
+            long thousands = n / 1_000L;
+            out.addAll(expandNumberToWords(thousands));
+            out.add("thousand");
+            n = n % 1_000L;
+        }
+        if (n > 0) {
+            out.addAll(expandBelowThousand((int) n));
+        }
+        return out;
+    }
+
+    private static List<String> expandBelowThousand(int n) {
+        if (n == 0) {
+            return List.of();
+        }
+
+        List<String> out = new ArrayList<>();
+
+        int hundreds = n / 100;
+        int rem = n % 100;
+
+        if (hundreds > 0) {
+            out.add(basicNumberWord(hundreds));
+            out.add("hundred");
+        }
+
+        if (rem > 0) {
+            out.addAll(expandBelowHundred(rem));
+        }
+
+        return out;
+    }
+
+    private static List<String> expandBelowHundred(int n) {
+        if (n == 0) {
+            return List.of();
+        }
+        if (n < 20) {
+            return List.of(basicNumberWord(n));
+        }
+
+        List<String> out = new ArrayList<>();
+        int tens = n / 10;
+        int ones = n % 10;
+
+        out.add(tensWord(tens));
+        if (ones > 0) {
+            out.add(basicNumberWord(ones));
+        }
+        return out;
+    }
+
+    private static String tensWord(int tens) {
+        switch (tens) {
+            case 2:
+                return "twenty";
+            case 3:
+                return "thirty";
+            case 4:
+                return "forty";
+            case 5:
+                return "fifty";
+            case 6:
+                return "sixty";
+            case 7:
+                return "seventy";
+            case 8:
+                return "eighty";
+            case 9:
+                return "ninety";
+            default:
+                return Integer.toString(tens * 10);
+        }
+    }
+
+    private static String basicNumberWord(int n) {
+        switch (n) {
+            case 0:
+                return "zero";
+            case 1:
+                return "one";
+            case 2:
+                return "two";
+            case 3:
+                return "three";
+            case 4:
+                return "four";
+            case 5:
+                return "five";
+            case 6:
+                return "six";
+            case 7:
+                return "seven";
+            case 8:
+                return "eight";
+            case 9:
+                return "nine";
+            case 10:
+                return "ten";
+            case 11:
+                return "eleven";
+            case 12:
+                return "twelve";
+            case 13:
+                return "thirteen";
+            case 14:
+                return "fourteen";
+            case 15:
+                return "fifteen";
+            case 16:
+                return "sixteen";
+            case 17:
+                return "seventeen";
+            case 18:
+                return "eighteen";
+            case 19:
+                return "nineteen";
+            default:
+                return Integer.toString(n);
+        }
+    }
+
     private static List<String> splitAlphaNumericTransitions(String s) {
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
@@ -492,20 +857,38 @@ public class TtsSprintf {
         return cleaned.isEmpty() ? List.of(s) : cleaned;
     }
 
-    private static List<String> compact(List<String> chunks) {
-        // Remove exact duplicates that occur from weird spacing edge cases, but preserve order.
-        // (You can delete this if you *want* duplicates.)
+    private static SpeechPlan finalizeSpeechPlan(List<String> chunks, List<String> cacheKeys) {
         List<String> out = new ArrayList<>();
-        for (String c : chunks) {
+        List<String> keys = new ArrayList<>();
+
+        for (int i = 0; i < chunks.size(); i++) {
+            String c = chunks.get(i);
             if (c == null) {
                 continue;
             }
             String t = c.trim();
-            if (!t.isEmpty()) {
-                out.add(t);
+            if (t.isEmpty()) {
+                continue;
+            }
+            out.add(t);
+
+            String k = null;
+            if (cacheKeys != null && i < cacheKeys.size()) {
+                k = cacheKeys.get(i);
+            }
+            keys.add((k == null || k.isBlank()) ? null : k.trim());
+        }
+
+        // Any cache keys we couldn't decide during expansion get computed with full-sentence context.
+        int lastNonBlankIdx = out.size() - 1;
+        for (int i = 0; i < out.size(); i++) {
+            String k = keys.get(i);
+            if (k == null || k.isBlank()) {
+                keys.set(i, computeCacheKey(out.get(i), i, lastNonBlankIdx));
             }
         }
-        return out;
+
+        return new SpeechPlan(out, keys);
     }
 
     /**

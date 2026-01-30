@@ -388,15 +388,22 @@ public class PollyTtsCached implements Closeable {
     }
 
     
+    private volatile boolean cacheDirLogged = false;
+
     private Path getVoiceCacheDir(String voiceName, Engine engine, int sampleRate) {
         Path root = OverlayPreferences.getSpeechCacheDir();
-        if (root == null) {
-            root = Path.of(System.getProperty("user.home"), ".edo", "tts-cache");
+
+        // Separate directories per voice
+        String safeVoice = voiceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+        Path voiceDir = root.resolve(safeVoice);
+
+        if (!cacheDirLogged) {
+            cacheDirLogged = true;
+            System.out.println("TTS cache root = " + root.toAbsolutePath());
+            System.out.println("TTS voice dir  = " + voiceDir.toAbsolutePath());
         }
 
-        // Separate directories per voice (you can re-add engine + sample rate if you want)
-        String safeVoice = voiceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
-        return root.resolve(safeVoice);
+        return voiceDir;
     }
 
     private void appendToManifest(Path voiceDir, String fileName, String text) {
