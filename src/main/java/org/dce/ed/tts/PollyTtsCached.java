@@ -231,7 +231,8 @@ public class PollyTtsCached implements Closeable {
             writePcmBytesAsWav(slice, wavOut, s.sampleRate);
 
             // Manifest uses what was spoken, not the cache key.
-            writeManifestLine(voiceDir, wavOut.getFileName().toString(), chunkTexts.get(idx));
+            writeManifestLine(voiceDir, voiceDir.relativize(wavOut).toString(), chunkTexts.get(idx));
+
         }
 
         return paths;
@@ -321,10 +322,14 @@ public class PollyTtsCached implements Closeable {
         Path voiceDir = getVoiceCacheDir(voiceName, engine, sampleRate);
         Files.createDirectories(voiceDir);
 
+        // Preferred location (new structure)
         Path wav = getCachedWavPath(voiceDir, s, text);
         if (Files.exists(wav)) {
             return wav;
         }
+
+        // Make sure the subdir exists (end/ or mid/)
+        Files.createDirectories(wav.getParent());
 
         // Generate PCM with Polly (TEXT) and cache it.
         VoiceId voiceId = VoiceId.fromValue(voiceName);
@@ -338,7 +343,8 @@ public class PollyTtsCached implements Closeable {
                 .text(text)
                 .build();
 
-        Path tmp = voiceDir.resolve(wav.getFileName().toString() + ".tmp");
+        // tmp in the SAME directory as final target (atomic move works on more filesystems)
+        Path tmp = wav.getParent().resolve(wav.getFileName().toString() + ".tmp");
         try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
             writePcmAsWav(audio, tmp, sampleRate);
         }
@@ -350,20 +356,31 @@ public class PollyTtsCached implements Closeable {
             Files.deleteIfExists(tmp);
         }
 
-        appendToManifest(voiceDir, wav.getFileName().toString(), text);
+        appendToManifest(voiceDir, voiceDir.relativize(wav).toString(), text);
         return wav;
     }
 
     private Path getCachedWavPath(Path voiceDir, VoiceSettings s, String text) {
+        Path bucketDir = voiceDir.resolve(isEndOfSentenceKey(text) ? "end" : "mid");
+
         String key = sha256(
                 "v=" + s.voiceName
                         + "|e=" + s.engine.toString()
                         + "|sr=" + s.sampleRate
                         + "|t=" + normalize(text)
         );
-        return voiceDir.resolve(key + ".wav");
+
+        return bucketDir.resolve(key + ".wav");
+    }
+    private static boolean isEndOfSentenceKey(String keyText) {
+        if (keyText == null) {
+            return false;
+        }
+        String t = keyText.trim();
+        return t.endsWith("|END");
     }
 
+    
     private Path getVoiceCacheDir(String voiceName, Engine engine, int sampleRate) {
         Path root = OverlayPreferences.getSpeechCacheDir();
         if (root == null) {
@@ -596,6 +613,8 @@ public class PollyTtsCached implements Closeable {
             pcmBytes = new byte[0];
         }
 
+        Files.createDirectories(wavOut.getParent());
+        
         pcmBytes = trimSilencePcm16leMono(pcmBytes, sampleRate, TRIM_ABS_THRESHOLD, TRIM_KEEP_MS);
 
         int numChannels = 1;
