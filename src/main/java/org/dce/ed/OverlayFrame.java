@@ -88,9 +88,13 @@ public class OverlayFrame extends JFrame {
 
     private long exoCreditsTotal;
     
+    public static OverlayFrame overlayFrame = null;
+    
     public OverlayFrame() {
         super("Elite Dangerous Overlay");
 
+        overlayFrame = this;
+        
         // Need transparency -> undecorated
         setUndecorated(true);
 

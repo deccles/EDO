@@ -1,12 +1,14 @@
 package org.dce.ed.tts;
 
+import java.awt.Desktop;
+import java.awt.Window;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,13 +27,18 @@ import java.util.Vector;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
 import javax.sound.sampled.LineEvent;
+import javax.swing.JEditorPane;
+import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.SwingUtilities;
+import javax.swing.event.HyperlinkEvent;
+import javax.swing.event.HyperlinkListener;
 
 import org.dce.ed.OverlayPreferences;
 
@@ -433,10 +440,96 @@ public class PollyTtsCached implements Closeable {
                 .text(ssml)
                 .build();
 
-        try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
-            return audio.readAllBytes();
+        try {
+        	ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req);
+        	return audio.readAllBytes();
+        } catch (Exception e) {
+        	showMissingAwsTtsKeyPopup(s.voiceName + " " + ssml);
         }
+        return null;
     }
+
+    public static void showMissingAwsTtsKeyPopup(String voiceName) {
+        String url = "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html";
+
+        String html =
+                "<html>"
+              + "<body style='font-family:sans-serif; font-size:12px;'>"
+              + "Could not generate text-to-speech for <b>" + escapeHtml(voiceName) + "</b> because no AWS access key is configured.<br><br>"
+              + "This will be fixed in a future update so an AWS key is not required.<br><br>"
+              + "If you'd like to configure your own AWS key now, see:<br>"
+              + "<a href='" + url + "'>" + url + "</a>"
+              + "</body>"
+              + "</html>";
+
+        JEditorPane pane = new JEditorPane("text/html", html);
+        pane.setEditable(false);
+        pane.setOpaque(false);
+        pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+
+        pane.addHyperlinkListener(new HyperlinkListener() {
+            @Override
+            public void hyperlinkUpdate(HyperlinkEvent e) {
+                if (e.getEventType() != HyperlinkEvent.EventType.ACTIVATED)
+                {
+                    return;
+                }
+
+                URI uri = e.getURL() != null ? URI.create(e.getURL().toString()) : null;
+                if (uri == null)
+                {
+                    return;
+                }
+
+                if (!Desktop.isDesktopSupported())
+                {
+                    return;
+                }
+
+                try {
+                    Desktop.getDesktop().browse(uri);
+                    Window window = SwingUtilities.getWindowAncestor(pane);
+                    if (window != null)
+                    {
+                        window.dispose();
+                    }
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(
+                            null,
+                            "Could not open your browser.\n\n" + url,
+                            "Open Link Failed",
+                            JOptionPane.WARNING_MESSAGE
+                    );
+                }
+            }
+        });
+
+        JScrollPane scroll = new JScrollPane(pane);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+
+        JOptionPane.showMessageDialog(
+                null,
+                scroll,
+                "Text-to-Speech Unavailable",
+                JOptionPane.WARNING_MESSAGE
+        );
+    }
+
+    private static String escapeHtml(String s) {
+        if (s == null)
+        {
+            return "";
+        }
+
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
 
     private Map<String, Integer> synthesizeSsmlMarkTimes(String ssml, VoiceSettings s) throws IOException {
         VoiceId voiceId = VoiceId.fromValue(s.voiceName);

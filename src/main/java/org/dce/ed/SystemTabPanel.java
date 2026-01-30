@@ -379,7 +379,7 @@ public class SystemTabPanel extends JPanel {
         	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
         	
         	if (highestPayout > 20000000) {
-            	ttsSprintf.speakf("{n} species discovered on planetary body {body} with estimated value of {credits}",
+            	ttsSprintf.speakf("{n} species discovered on planetary body {body} with estimated value of {credits} credits",
             			candidates.size(),
             			e.getBodyName(),
             			highestPayout);
