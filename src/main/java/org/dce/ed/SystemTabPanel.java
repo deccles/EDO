@@ -886,13 +886,14 @@ public class SystemTabPanel extends JPanel {
             // If we are showing the $ indicator, also show the bio signal count as "(n)" after the icons.
             // This is populated from FSSBodySignals / SAASignalsFound.
             Integer bioSignals = b.getNumberOfBioSignals();
-            if (showDollar && bioSignals != null && bioSignals.intValue() > 0) {
-                if (text.isEmpty()) {
-                    text = "(" + bioSignals + ")";
-                } else {
-                    text = text + " (" + bioSignals + ")";
-                }
+            if (hasBio && bioSignals != null && bioSignals.intValue() > 0) {
+            	if (text.isEmpty()) {
+            		text = "(" + bioSignals + ")";
+            	} else {
+            		text = text + " (" + bioSignals + ")";
+            	}
             }
+
 
             c.setText(text);
             c.setHorizontalTextPosition(SwingConstants.RIGHT);
