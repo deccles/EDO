@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import javax.swing.Icon;
 import javax.swing.JLabel;
@@ -95,8 +96,8 @@ public class SystemTabPanel extends JPanel {
     // Stored as bodyId so it remains stable even if the display name changes slightly.
     private volatile Integer nearBodyId;
     private volatile String nearBodyName;
-
-
+    private volatile Consumer<BodyInfo> nearBodyChangedListener;
+    
     // When a body is actively targeted (Status.json Destination.Body), we outline that body block.
     private volatile Integer targetBodyId;
     private volatile String targetBodyName;
@@ -106,6 +107,10 @@ public class SystemTabPanel extends JPanel {
     private volatile String targetDestinationName;
 	private JLabel headerSummaryLabel;
     
+	public void setNearBodyChangedListener(Consumer<BodyInfo> listener) {
+	    this.nearBodyChangedListener = listener;
+	}
+	
     public SystemTabPanel() {
         super(new BorderLayout());
         setOpaque(false);
@@ -378,7 +383,7 @@ public class SystemTabPanel extends JPanel {
         	}
         	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
         	
-        	if (highestPayout > 20000000) {
+        	if (highestPayout >= BIO_DOLLAR_THRESHOLD) {
             	ttsSprintf.speakf("{n} species discovered on planetary body {body} with estimated value of {credits} credits",
             			candidates.size(),
             			e.getBodyName(),
@@ -614,11 +619,18 @@ public class SystemTabPanel extends JPanel {
             nearBodyName = trimmed;
             nearBodyId = findBodyIdByName(trimmed);
 
+            Consumer<BodyInfo> listener = nearBodyChangedListener;
+            if (listener != null) {
+                BodyInfo nearBody = (nearBodyId != null) ? state.getBodies().get(nearBodyId) : null;
+                listener.accept(nearBody);
+            }
+
             // Just repaint; no need to rebuild the model.
             table.repaint();
         });
     }
 
+    
     private Integer findBodyIdByName(String bodyName) {
         if (bodyName == null || bodyName.isBlank()) {
             return null;

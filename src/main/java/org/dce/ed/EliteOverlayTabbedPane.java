@@ -48,6 +48,7 @@ import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.market.GalacticAveragePrices;
+import org.dce.ed.state.BodyInfo;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 
@@ -66,6 +67,8 @@ import com.google.gson.JsonParser;
  */
 public class EliteOverlayTabbedPane extends JPanel {
 
+	private volatile Integer lastAutoBiologyBodyId;
+	
 	private static final long VALUABLE_MATERIAL_THRESHOLD_CREDITS = 2_000_000L;
 
 	private static final String CARD_ROUTE = "ROUTE";
@@ -148,6 +151,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 		// Create tab content panels
 		this.routeTab = new RouteTabPanel();
 		this.systemTab = new SystemTabPanel();
+		this.systemTab.setNearBodyChangedListener(this::handleNearBodyChanged);
+		
 		this.biologyTab = new BiologyTabPanel();
 		this.biologyTab.setSystemTabPanel(systemTab);
 		this.miningTab = new MiningTabPanel(galacticAvgPrices);
@@ -717,6 +722,50 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 	private void showSystemTabFromStatusWatcher() {
 		SwingUtilities.invokeLater(() -> selectTab(CARD_SYSTEM, systemButton));
+	}
+
+	private void handleNearBodyChanged(BodyInfo nearBody) {
+	    if (nearBody == null) {
+	        lastAutoBiologyBodyId = null;
+	        return;
+	    }
+
+	    int bodyId = nearBody.getBodyId();
+	    if (lastAutoBiologyBodyId != null && lastAutoBiologyBodyId.intValue() == bodyId) {
+	        return;
+	    }
+
+	    if (!nearBody.isLandable()) {
+	        return;
+	    }
+
+	    if (!hasAtmosphere(nearBody.getAtmosphere())) {
+	        return;
+	    }
+
+	    lastAutoBiologyBodyId = bodyId;
+	    SwingUtilities.invokeLater(() -> selectTab(CARD_BIOLOGY, biologyButton));
+	}
+
+	private boolean hasAtmosphere(String atmosphere) {
+	    if (atmosphere == null) {
+	        return false;
+	    }
+
+	    String a = atmosphere.trim();
+	    if (a.isEmpty()) {
+	        return false;
+	    }
+
+	    String l = a.toLowerCase(Locale.ROOT);
+	    if (l.equals("none") || l.equals("no atmosphere") || l.contains("no atmosphere")) {
+	        return false;
+	    }
+	    if (l.equals("unknown")) {
+	        return false;
+	    }
+
+	    return true;
 	}
 
 	/**

@@ -633,13 +633,16 @@ public class SystemEventProcessor {
                 // Publish first (so UI can render immediately), then return.
                 info.setPredictions(filtered);
 
+                Boolean wasFootfalled = info.getWasFootfalled();
+                boolean bonusApplies = !Boolean.TRUE.equals(wasFootfalled);
+
                 BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
                         Instant.now(),
                         null,
                         info.getBodyName(),
                         info.getBodyId(),
                         info.getStarSystem(),
-                        info.getWasFootfalled(),
+                        bonusApplies,
                         filtered);
 
                 LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
@@ -649,6 +652,8 @@ public class SystemEventProcessor {
 
         // *** FIX: publish to BodyInfo BEFORE dispatching the event ***
         info.setPredictions(candidates);
+        Boolean wasFootfalled = info.getWasFootfalled();
+        boolean bonusApplies = !Boolean.TRUE.equals(wasFootfalled);
 
         BioScanPredictionEvent bioScanPredictionEvent = new BioScanPredictionEvent(
                 Instant.now(),
@@ -656,7 +661,7 @@ public class SystemEventProcessor {
                 info.getBodyName(),
                 info.getBodyId(),
                 info.getStarSystem(),
-                info.getWasFootfalled(),
+                bonusApplies,
                 candidates);
 
         LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
