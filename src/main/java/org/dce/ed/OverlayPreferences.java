@@ -41,6 +41,35 @@ public final class OverlayPreferences {
     private static final String KEY_SPEECH_CACHE_DIR = "speech.cacheDir";
     private static final String KEY_SPEECH_SAMPLE_RATE = "speech.sampleRate"; // PCM sample rate in Hz (as string)
 
+
+    // --- Text notifications (email-to-SMS gateways like vtext.com) ---
+    private static final String KEY_TEXT_NOTIFICATIONS_ENABLED = "textNotifications.enabled";
+    private static final String KEY_TEXT_NOTIFICATIONS_ADDRESS = "textNotifications.address"; // e.g. 5551234567@vtext.com
+
+
+    // ----------------------------
+    // Text notifications (email-to-SMS)
+    // ----------------------------
+
+    public static boolean isTextNotificationsEnabled() {
+        return PREFS.getBoolean(KEY_TEXT_NOTIFICATIONS_ENABLED, false);
+    }
+
+    public static void setTextNotificationsEnabled(boolean enabled) {
+        PREFS.putBoolean(KEY_TEXT_NOTIFICATIONS_ENABLED, enabled);
+    }
+
+    public static String getTextNotificationAddress() {
+        return PREFS.get(KEY_TEXT_NOTIFICATIONS_ADDRESS, "");
+    }
+
+    public static void setTextNotificationAddress(String address) {
+        if (address == null) {
+            address = "";
+        }
+        PREFS.put(KEY_TEXT_NOTIFICATIONS_ADDRESS, address.trim());
+    }
+
     // --- Mining / Prospector ---
     private static final String KEY_MINING_PROSPECTOR_MATERIALS = "mining.prospector.materials"; // comma-separated
     private static final String KEY_MINING_PROSPECTOR_MIN_PROP = "mining.prospector.minProportion"; // percent

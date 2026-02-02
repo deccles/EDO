@@ -23,8 +23,8 @@ import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
-import javax.swing.JRadioButton;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JSlider;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
@@ -35,6 +35,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
+import org.dce.ed.StandaloneLogViewer;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
 import org.dce.ed.util.GithubMsiUpdater;
@@ -91,6 +92,10 @@ public class PreferencesDialog extends JDialog {
     private JSpinner miningTonsMediumSpinner;
     private JSpinner miningTonsHighSpinner;
     private JSpinner miningTonsCoreSpinner;
+
+    // Text notifications
+    private JCheckBox textNotificationsEnabledCheckBox;
+    private JTextField textNotificationAddressField;
 
     private boolean okPressed;
     private final Font originalUiFont;
@@ -626,9 +631,46 @@ public class PreferencesDialog extends JDialog {
 
         JButton showConsole = new JButton("Show console");
         showConsole.addActionListener(new ShowConsoleAction());
-        
+
         JButton checkForUpdatesButton = new JButton("Check for Updates");
         checkForUpdatesButton.addActionListener(e -> GithubMsiUpdater.checkAndUpdate(this));
+
+        // --- Text notifications (email-to-SMS gateways like vtext.com) ---
+        JPanel textNotifPanel = new JPanel(new GridBagLayout());
+        textNotifPanel.setOpaque(false);
+        textNotifPanel.setBorder(BorderFactory.createTitledBorder("Text notifications"));
+
+        GridBagConstraints tgbc = new GridBagConstraints();
+        tgbc.gridx = 0;
+        tgbc.gridy = 0;
+        tgbc.anchor = GridBagConstraints.WEST;
+        tgbc.insets = new Insets(4, 4, 4, 4);
+
+        JLabel enableTextLabel = new JLabel("Enable text notifications:");
+        textNotifPanel.add(enableTextLabel, tgbc);
+
+        tgbc.gridx = 1;
+        textNotificationsEnabledCheckBox = new JCheckBox();
+        textNotificationsEnabledCheckBox.setOpaque(false);
+        textNotificationsEnabledCheckBox.setSelected(OverlayPreferences.isTextNotificationsEnabled());
+        textNotifPanel.add(textNotificationsEnabledCheckBox, tgbc);
+
+        tgbc.gridx = 0;
+        tgbc.gridy++;
+        JLabel addressLabel = new JLabel("Text address:");
+        textNotifPanel.add(addressLabel, tgbc);
+
+        tgbc.gridx = 1;
+        textNotificationAddressField = new JTextField(24);
+        textNotificationAddressField.setText(OverlayPreferences.getTextNotificationAddress());
+        textNotifPanel.add(textNotificationAddressField, tgbc);
+
+        Runnable updateTextEnabled = () -> {
+            boolean enabled = textNotificationsEnabledCheckBox.isSelected();
+            textNotificationAddressField.setEnabled(enabled);
+        };
+        textNotificationsEnabledCheckBox.addActionListener(e -> updateTextEnabled.run());
+        updateTextEnabled.run();
 
         content.add(launchLogMonitorButton, gbc);
 
@@ -637,9 +679,12 @@ public class PreferencesDialog extends JDialog {
 
         gbc.gridy++;
         content.add(showConsole, gbc);
-        
+
         gbc.gridy++;
         content.add(checkForUpdatesButton, gbc);
+
+        gbc.gridy++;
+        content.add(textNotifPanel, gbc);
 
         gbc.gridy++;
         gbc.weighty = 1.0;
@@ -1066,6 +1111,16 @@ if (miningTonsLowSpinner != null) {
             } catch (Exception e) {
                 // ignore
             }
+        }
+
+
+
+        // Text notifications
+        if (textNotificationsEnabledCheckBox != null) {
+            OverlayPreferences.setTextNotificationsEnabled(textNotificationsEnabledCheckBox.isSelected());
+        }
+        if (textNotificationAddressField != null) {
+            OverlayPreferences.setTextNotificationAddress(textNotificationAddressField.getText());
         }
 
 // Other tabs can be wired into OverlayPreferences later as needed.

@@ -19,8 +19,8 @@ import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.time.Instant;
 import java.text.NumberFormat;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.prefs.Preferences;
 
@@ -30,11 +30,12 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.LineBorder;
 
+import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
-import org.dce.ed.exobiology.ExobiologyData;
+import org.dce.ed.notifications.TextNotificationSender;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 
@@ -44,6 +45,8 @@ import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.User32;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser;
+
+import jakarta.mail.MessagingException;
 
 public class OverlayFrame extends JFrame {
 
@@ -85,6 +88,7 @@ public class OverlayFrame extends JFrame {
     private javax.swing.Timer carrierJumpCountdownTimer;
     private Instant carrierJumpDepartureTime;
     private String carrierJumpTargetSystem;
+    private boolean carrierJumpTextNotificationSent;
 
     private long exoCreditsTotal;
     
@@ -187,6 +191,18 @@ private void installCarrierJumpTitleUpdater() {
                 if (e.getDepartureTime() != null) {
                     startCarrierJumpCountdown(e.getDepartureTime(), e.getSystemName());
                 }
+                if (OverlayPreferences.isTextNotificationsEnabled()) {
+					try {
+						TextNotificationSender.sendText(
+						        OverlayPreferences.getTextNotificationAddress(),
+						        "EDO",
+						        "Fleet Carrier " + e.getCarrierId()  + " jumping to " + e.getSystemName() + " in 15 minutes"
+						);
+					} catch (MessagingException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+                }
                 return;
             }
 
@@ -197,6 +213,18 @@ private void installCarrierJumpTitleUpdater() {
 
             if (event.getType() == EliteEventType.CARRIER_JUMP) {
                 clearCarrierJumpCountdown();
+                if (OverlayPreferences.isTextNotificationsEnabled()) {
+					try {
+						TextNotificationSender.sendText(
+						        OverlayPreferences.getTextNotificationAddress(),
+						        "EDO",
+						        "Fleet Carrier arrived"
+						);
+					} catch (MessagingException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+                }
             }
         });
     } catch (Exception ex) {
@@ -207,6 +235,7 @@ private void installCarrierJumpTitleUpdater() {
 private void startCarrierJumpCountdown(Instant departureTime, String targetSystem) {
     carrierJumpDepartureTime = departureTime;
     carrierJumpTargetSystem = targetSystem;
+    carrierJumpTextNotificationSent = false;
 
     if (carrierJumpCountdownTimer != null) {
         carrierJumpCountdownTimer.stop();
@@ -253,6 +282,7 @@ private void updateCarrierJumpCountdown() {
     titleBar.setRightStatusText(countdown);
 
     if (Instant.now().isAfter(carrierJumpDepartureTime.plusSeconds(5))) {
+        maybeSendCarrierJumpTextNotification();
         clearCarrierJumpCountdown();
     }
 }
@@ -260,6 +290,7 @@ private void updateCarrierJumpCountdown() {
 private void clearCarrierJumpCountdown() {
     carrierJumpDepartureTime = null;
     carrierJumpTargetSystem = null;
+    carrierJumpTextNotificationSent = false;
 
     if (carrierJumpCountdownTimer != null) {
         carrierJumpCountdownTimer.stop();
@@ -891,6 +922,31 @@ private void installExoCreditsTracker() {
                 g2.dispose();
             }
         }
+    }
+    private void maybeSendCarrierJumpTextNotification() {
+        if (!OverlayPreferences.isTextNotificationsEnabled()) {
+            return;
+        }
+
+        String address = OverlayPreferences.getTextNotificationAddress();
+        if (address == null || address.isBlank()) {
+            return;
+        }
+
+        Thread t = new Thread(() -> {
+            try {
+                TextNotificationSender.sendText(
+                        address.trim(),
+                        "EDO",
+                        "fleet carrier jumping"
+                );
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        }, "edo-text-notify");
+
+        t.setDaemon(true);
+        t.start();
     }
 
 }
