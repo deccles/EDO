@@ -10,6 +10,9 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.File;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -35,7 +38,6 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
-import org.dce.ed.StandaloneLogViewer;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
 import org.dce.ed.util.GithubMsiUpdater;
@@ -662,7 +664,12 @@ public class PreferencesDialog extends JDialog {
 
         tgbc.gridx = 1;
         textNotificationAddressField = new JTextField(24);
-        textNotificationAddressField.setText(OverlayPreferences.getTextNotificationAddress());
+        
+        List<String> textNotificationAddress = OverlayPreferences.getTextNotificationAddress();
+        textNotificationAddressField.setText(textNotificationAddress 
+        		.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", ")));
         textNotifPanel.add(textNotificationAddressField, tgbc);
 
         Runnable updateTextEnabled = () -> {

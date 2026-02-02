@@ -21,6 +21,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.NumberFormat;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.prefs.Preferences;
 
@@ -33,6 +34,7 @@ import javax.swing.border.LineBorder;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.LiveJournalMonitor;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.notifications.TextNotificationSender;
@@ -213,12 +215,15 @@ private void installCarrierJumpTitleUpdater() {
 
             if (event.getType() == EliteEventType.CARRIER_JUMP) {
                 clearCarrierJumpCountdown();
+                
+                CarrierJumpEvent e = (CarrierJumpEvent) event;
+                
                 if (OverlayPreferences.isTextNotificationsEnabled()) {
 					try {
 						TextNotificationSender.sendText(
 						        OverlayPreferences.getTextNotificationAddress(),
 						        "EDO",
-						        "Fleet Carrier arrived"
+						        "Fleet Carrier " + e.getStationName() + " arriving at " + e.getBody()
 						);
 					} catch (MessagingException e1) {
 						// TODO Auto-generated catch block
@@ -928,15 +933,12 @@ private void installExoCreditsTracker() {
             return;
         }
 
-        String address = OverlayPreferences.getTextNotificationAddress();
-        if (address == null || address.isBlank()) {
-            return;
-        }
+        List<String> address = OverlayPreferences.getTextNotificationAddress();
 
         Thread t = new Thread(() -> {
             try {
                 TextNotificationSender.sendText(
-                        address.trim(),
+                        address,
                         "EDO",
                         "fleet carrier jumping"
                 );

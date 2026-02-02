@@ -4,11 +4,13 @@ import java.awt.Color;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
 import java.util.prefs.Preferences;
 
-import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
-
 import org.dce.ed.logreader.EliteLogFileLocator;
+
+import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 
 import software.amazon.awssdk.services.polly.model.Engine;
 
@@ -59,8 +61,11 @@ public final class OverlayPreferences {
         PREFS.putBoolean(KEY_TEXT_NOTIFICATIONS_ENABLED, enabled);
     }
 
-    public static String getTextNotificationAddress() {
-        return PREFS.get(KEY_TEXT_NOTIFICATIONS_ADDRESS, "");
+    public static List<String> getTextNotificationAddress() {
+        String names = PREFS.get(KEY_TEXT_NOTIFICATIONS_ADDRESS, "");
+        String[] split = names.split(",");
+        List<String> namesList = Arrays.asList(split);
+        return namesList;
     }
 
     public static void setTextNotificationAddress(String address) {

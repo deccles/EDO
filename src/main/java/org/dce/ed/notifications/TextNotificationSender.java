@@ -1,5 +1,6 @@
 package org.dce.ed.notifications;
 
+import java.util.List;
 import java.util.Properties;
 
 import jakarta.mail.Authenticator;
@@ -29,11 +30,24 @@ public class TextNotificationSender {
      *   - edo.smtp.starttls (true/false, default true)
      *   - edo.smtp.ssl (true/false, default false)
      */
-    public static void sendText(String toAddress, String subject, String body) throws MessagingException {
+    public static void sendText(List<String> toAddress, String subject, String body) throws MessagingException {
+    	for (String name : toAddress) {
+    		System.out.println("Texting " + name + ": (" + subject + ") " +body);
+    		sendText(name.trim(), subject,body);
+    		
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+    	}
+    }
+    private static void sendText(String toAddress, String subject, String body) throws MessagingException {
+
         if (toAddress == null || toAddress.isBlank()) {
             return;
         }
-
+        
         String host = require("edo.smtp.host");
         int port = Integer.parseInt(require("edo.smtp.port"));
         String username = require("edo.smtp.username");
