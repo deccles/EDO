@@ -7,7 +7,7 @@ import org.dce.ed.logreader.EliteLogEvent;
 
 import com.google.gson.JsonObject;
 
-public class FsdJumpEvent extends EliteLogEvent {
+public class FsdJumpEvent extends EliteLogEvent implements IFsdJump {
     private final String starSystem;
     private final long systemAddress;
     private final double[] starPos;
@@ -60,11 +60,13 @@ public class FsdJumpEvent extends EliteLogEvent {
         return starPos;
     }
 
-    public String getBody() {
+    @Override
+	public String getBody() {
         return body;
     }
 
-    public int getBodyId() {
+    @Override
+	public int getBodyId() {
         return bodyId;
     }
 

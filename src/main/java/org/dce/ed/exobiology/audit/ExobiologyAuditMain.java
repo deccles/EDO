@@ -16,21 +16,23 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.dce.ed.EliteDangerousOverlay;
+import org.dce.ed.cache.CachedBody;
+import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.cache.SystemCache;
 import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData.AtmosphereType;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.IFsdJump;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.state.BodyInfo;
-import org.dce.ed.cache.CachedBody;
-import org.dce.ed.cache.CachedSystem;
-import org.dce.ed.cache.SystemCache;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -90,15 +92,15 @@ public class ExobiologyAuditMain {
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyLocation(le);
 
-            } else if (event instanceof FsdJumpEvent) {
-                FsdJumpEvent je = (FsdJumpEvent) event;
+            } else if (event instanceof IFsdJump) {
+            	// carrierJumpEvent and fsdJumpEvent
+                IFsdJump je = (IFsdJump) event;
                 currentSystemName = je.getStarSystem();
                 currentSystemAddress = je.getSystemAddress();
                 SystemKey key = new SystemKey(currentSystemAddress, currentSystemName);
                 SystemAccumulator acc = systems.computeIfAbsent(
                         key, k -> new SystemAccumulator(k.systemName, k.systemAddress));
                 acc.applyFsdJump(je);
-
             } else if (event instanceof FssDiscoveryScanEvent) {
                 FssDiscoveryScanEvent fds = (FssDiscoveryScanEvent) event;
                 String name = fds.getSystemName();
@@ -272,7 +274,7 @@ public class ExobiologyAuditMain {
             }
         }
 
-        void applyFsdJump(FsdJumpEvent e) {
+        void applyFsdJump(IFsdJump e) {
             if (e.getStarSystem() != null) {
                 systemName = e.getStarSystem();
             }

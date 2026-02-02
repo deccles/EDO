@@ -9,6 +9,7 @@ import java.util.Map;
 import org.dce.ed.logreader.EliteLogEvent.GenericEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 import org.dce.ed.logreader.event.CommanderEvent;
 import org.dce.ed.logreader.event.FileheaderEvent;
@@ -101,7 +102,7 @@ public class EliteLogParser {
             	return new GenericEvent(ts, type, obj);
 
             case CARRIER_JUMP:
-                return parseFsdJump(ts, obj);
+                return parseCarrierJump(ts, obj);
                 
             case CARRIER_JUMP_REQUEST:
                 return parseCarrierJumpRequest(ts, obj);
@@ -409,6 +410,122 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         );
     }
 
+    private CarrierJumpEvent parseCarrierJump(Instant ts, JsonObject obj) {
+        boolean docked = getBoolean(obj, "Docked", false);
+        String stationName = getString(obj, "StationName");
+        String stationType = getString(obj, "StationType");
+        long marketId = getLong(obj, "MarketID");
+
+        String stationFaction = null;
+        if (obj.has("StationFaction") && obj.get("StationFaction").isJsonObject()) {
+            stationFaction = getString(obj.getAsJsonObject("StationFaction"), "Name");
+        }
+
+        String stationGovernment = getString(obj, "StationGovernment");
+        String stationGovernmentLocalised = getString(obj, "StationGovernment_Localised");
+
+        List<String> stationServices = Collections.emptyList();
+        if (obj.has("StationServices") && obj.get("StationServices").isJsonArray()) {
+            List<String> tmp = new ArrayList<>();
+            for (JsonElement e : obj.getAsJsonArray("StationServices")) {
+                if (e != null && !e.isJsonNull()) {
+                    tmp.add(e.getAsString());
+                }
+            }
+            stationServices = Collections.unmodifiableList(tmp);
+        }
+
+        String stationEconomy = getString(obj, "StationEconomy");
+        String stationEconomyLocalised = getString(obj, "StationEconomy_Localised");
+
+        List<CarrierJumpEvent.StationEconomy> stationEconomies = Collections.emptyList();
+        if (obj.has("StationEconomies") && obj.get("StationEconomies").isJsonArray()) {
+            List<CarrierJumpEvent.StationEconomy> tmp = new ArrayList<>();
+            for (JsonElement e : obj.getAsJsonArray("StationEconomies")) {
+                if (e == null || e.isJsonNull() || !e.isJsonObject()) {
+                    continue;
+                }
+                JsonObject eo = e.getAsJsonObject();
+                tmp.add(new CarrierJumpEvent.StationEconomy(
+                        getString(eo, "Name"),
+                        getString(eo, "Name_Localised"),
+                        eo.has("Proportion") && !eo.get("Proportion").isJsonNull()
+                                ? eo.get("Proportion").getAsDouble()
+                                : 0.0
+                ));
+            }
+            stationEconomies = Collections.unmodifiableList(tmp);
+        }
+
+        boolean taxi = getBoolean(obj, "Taxi", false);
+        boolean multicrew = getBoolean(obj, "Multicrew", false);
+
+        String starSystem = getString(obj, "StarSystem");
+        long systemAddress = getLong(obj, "SystemAddress");
+
+        double[] starPos = null;
+        if (obj.has("StarPos") && obj.get("StarPos").isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray("StarPos");
+            if (arr.size() >= 3) {
+                starPos = new double[] {
+                        arr.get(0).getAsDouble(),
+                        arr.get(1).getAsDouble(),
+                        arr.get(2).getAsDouble()
+                };
+            }
+        }
+
+        String systemAllegiance = getString(obj, "SystemAllegiance");
+        String systemEconomy = getString(obj, "SystemEconomy");
+        String systemEconomyLocalised = getString(obj, "SystemEconomy_Localised");
+        String systemSecondEconomy = getString(obj, "SystemSecondEconomy");
+        String systemSecondEconomyLocalised = getString(obj, "SystemSecondEconomy_Localised");
+        String systemGovernment = getString(obj, "SystemGovernment");
+        String systemGovernmentLocalised = getString(obj, "SystemGovernment_Localised");
+        String systemSecurity = getString(obj, "SystemSecurity");
+        String systemSecurityLocalised = getString(obj, "SystemSecurity_Localised");
+        long population = getLong(obj, "Population");
+
+        String body = getString(obj, "Body");
+        int bodyId = getInt(obj, "BodyID", -1);
+        String bodyType = getString(obj, "BodyType");
+
+        return new CarrierJumpEvent(
+                ts,
+                obj,
+                docked,
+                stationName,
+                stationType,
+                marketId,
+                stationFaction,
+                stationGovernment,
+                stationGovernmentLocalised,
+                stationServices,
+                stationEconomy,
+                stationEconomyLocalised,
+                stationEconomies,
+                taxi,
+                multicrew,
+                starSystem,
+                systemAddress,
+                starPos,
+                systemAllegiance,
+                systemEconomy,
+                systemEconomyLocalised,
+                systemSecondEconomy,
+                systemSecondEconomyLocalised,
+                systemGovernment,
+                systemGovernmentLocalised,
+                systemSecurity,
+                systemSecurityLocalised,
+                population,
+                body,
+                bodyId,
+                bodyType
+        );
+    }
+
+    
     private FsdTargetEvent parseFsdTarget(Instant ts, JsonObject obj) {
         String name = getString(obj, "Name");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
