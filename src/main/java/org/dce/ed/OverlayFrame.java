@@ -196,7 +196,7 @@ private void installCarrierJumpTitleUpdater() {
 						TextNotificationSender.sendText(
 						        OverlayPreferences.getTextNotificationAddress(),
 						        "EDO",
-						        "Fleet Carrier " + e.getCarrierId()  + " jumping to " + e.getSystemName() + " in 15 minutes"
+						        "Fleet Carrier jumping to " + e.getBody() + " in 15 minutes"
 						);
 					} catch (MessagingException e1) {
 						// TODO Auto-generated catch block
