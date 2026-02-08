@@ -905,7 +905,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 	public static void maybeRemindAboutLimpets() {
 		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
 		Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
-		Path modulesFile = EliteLogFileLocator.findModulesInfoFile(journalDir);
 		
 		// Avoid spamming if multiple events fire close together.
 		long now = System.currentTimeMillis();
@@ -919,7 +918,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 			return;
 		}
 		JsonObject cargo = readJsonObject(cargoFile);
-		JsonObject modules = readJsonObject(modulesFile);
 		int numLimpets = getLimpetCount(cargo);
 		
 		boolean lowLimpets = false;
@@ -939,12 +937,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 
 
-		if (cargoFile == null || modulesFile == null) {
+		if (cargoFile == null) {
 			return;
 		}
 
 
-		if (!hasMiningEquipment(modules)) {
+		if (!hasMiningEquipment(loadoutEventx)) {
 			return;
 		}
 
@@ -1030,99 +1028,46 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 
-	private static boolean isCargoEmpty(JsonObject cargo) {
-		if (cargo == null) {
-			return true;
-		}
-
-		// Typical format: { "Inventory": [ { "Name": "drones", "Count": 32, ... }, ... ] }
-		JsonArray inv = null;
-		if (cargo.has("Inventory") && cargo.get("Inventory").isJsonArray()) {
-			inv = cargo.getAsJsonArray("Inventory");
-		} else if (cargo.has("inventory") && cargo.get("inventory").isJsonArray()) {
-			inv = cargo.getAsJsonArray("inventory");
-		}
-		if (inv == null) {
-			return true;
-		}
-
-		long total = 0;
-		for (JsonElement e : inv) {
-			if (e == null || !e.isJsonObject()) {
-				continue;
-			}
-			JsonObject o = e.getAsJsonObject();
-			if (o.has("Count") && !o.get("Count").isJsonNull()) {
-				try {
-					total += o.get("Count").getAsLong();
-				} catch (Exception ignored) {
-				}
-			} else if (o.has("count") && !o.get("count").isJsonNull()) {
-				try {
-					total += o.get("count").getAsLong();
-				} catch (Exception ignored) {
-				}
-			}
-		}
-		return total <= 0;
-	}
-	private static boolean hasMiningEquipment(JsonObject modulesInfo) {
-		if (modulesInfo == null) {
-			return false;
-		}
-
-		JsonArray mods = null;
-		if (modulesInfo.has("Modules") && modulesInfo.get("Modules").isJsonArray()) {
-			mods = modulesInfo.getAsJsonArray("Modules");
-		} else if (modulesInfo.has("modules") && modulesInfo.get("modules").isJsonArray()) {
-			mods = modulesInfo.getAsJsonArray("modules");
-		}
-		if (mods == null) {
-			return false;
-		}
-
-		// Conservative keyword match on module item names.
-		String[] miningKeywords = new String[] {
-				"mining",
-				"abrasion",
-				"seismic",
-				"subsurf",
-				"displacement",
-		};
-
-		for (JsonElement e : mods) {
-			if (e == null || !e.isJsonObject()) {
-				continue;
-			}
-			JsonObject m = e.getAsJsonObject();
-
-			String item = null;
-			if (m.has("Item") && !m.get("Item").isJsonNull()) {
-				try {
-					item = m.get("Item").getAsString();
-				} catch (Exception ignored) {
-				}
-			} else if (m.has("item") && !m.get("item").isJsonNull()) {
-				try {
-					item = m.get("item").getAsString();
-				} catch (Exception ignored) {
-				}
-			}
-
-			if (item == null || item.isBlank()) {
-				continue;
-			}
-
-			String norm = item.toLowerCase(Locale.US);
-			for (String kw : miningKeywords) {
-				if (norm.contains(kw)) {
-					return true;
-				}
-			}
-		}
+private static boolean hasMiningEquipment(LoadoutEvent loadout) {
+	if (loadout == null) {
 		return false;
 	}
 
+	List<LoadoutEvent.Module> modules = loadout.getModules();
+	if (modules == null || modules.isEmpty()) {
+		return false;
+	}
+
+	// Conservative keyword match on module item names.
+	String[] miningKeywords = new String[] {
+			"mining",
+			"abrasion",
+			"seismic",
+			"subsurf",
+			"displacement",
+	};
+
+	for (LoadoutEvent.Module m : modules) {
+		if (m == null) {
+			continue;
+		}
+
+		String item = m.getItem();
+		if (item == null || item.isBlank()) {
+			continue;
+		}
+
+		String norm = item.toLowerCase(Locale.US);
+		for (String kw : miningKeywords) {
+			if (norm.contains(kw)) {
+				System.out.println("is mining ship because it has " + norm);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
 
 	public void applyUiFontPreferences() {
 		systemTab.applyUiFontPreferences();
