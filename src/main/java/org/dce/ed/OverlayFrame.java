@@ -929,26 +929,26 @@ private void installExoCreditsTracker() {
         }
     }
     private void maybeSendCarrierJumpTextNotification() {
-        if (!OverlayPreferences.isTextNotificationsEnabled()) {
-            return;
-        }
-
-        List<String> address = OverlayPreferences.getTextNotificationAddress();
-
-        Thread t = new Thread(() -> {
-            try {
-                TextNotificationSender.sendText(
-                        address,
-                        "EDO",
-                        "fleet carrier jumping"
-                );
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
-        }, "edo-text-notify");
-
-        t.setDaemon(true);
-        t.start();
+//        if (!OverlayPreferences.isTextNotificationsEnabled()) {
+//            return;
+//        }
+//
+//        List<String> address = OverlayPreferences.getTextNotificationAddress();
+//
+//        Thread t = new Thread(() -> {
+//            try {
+//                TextNotificationSender.sendText(
+//                        address,
+//                        "EDO",
+//                        "Fleet Carrier jumping"
+//                );
+//            } catch (Exception ex) {
+//                ex.printStackTrace();
+//            }
+//        }, "edo-text-notify");
+//
+//        t.setDaemon(true);
+//        t.start();
     }
 
 }
