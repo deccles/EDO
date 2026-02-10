@@ -132,7 +132,7 @@ jobs:
 
           gh release create "$TAG" --title "$NAME" --notes "$BODY"
 
-      - name: Upload release assets
+      - name: Upload jar + src.zip
         if: steps.decide.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -144,3 +144,64 @@ jobs:
             "${{ steps.artifacts.outputs.jar }}#${{ steps.artifacts.outputs.jar_name }}" \
             "${{ steps.artifacts.outputs.src }}#${{ steps.artifacts.outputs.src_name }}" \
             --clobber
+
+  installer:
+    needs: release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java (includes jpackage)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Read project version from pom.xml
+        id: ver
+        shell: pwsh
+        run: |
+          $version = (mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Skip if SNAPSHOT
+        id: decide
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          if ($version -like "*-SNAPSHOT") {
+            "release=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            "release=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "tag=v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Build MSI (installer profile)
+        if: steps.decide.outputs.release == 'true'
+        shell: pwsh
+        run: |
+          # Override jdk.home so your pom's exec plugin finds jpackage.exe on the runner.
+          mvn -B -DskipTests -Pinstaller -Djdk.home="$env:JAVA_HOME" clean package
+
+      - name: Upload MSI to GitHub Release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $tag = "${{ steps.decide.outputs.tag }}"
+
+          $msi = Get-ChildItem -Path . -Recurse -Filter "EDO Overlay-$version.msi" | Select-Object -First 1
+          if (-not $msi) {
+            Write-Error "MSI not found. Searched for: EDO Overlay-$version.msi"
+            Get-ChildItem -Path . -Recurse -Filter "*.msi" | ForEach-Object { $_.FullName }
+            exit 1
+          }
+
+          gh release upload $tag "$($msi.FullName)#EDO Overlay-$version.msi" --clobber
