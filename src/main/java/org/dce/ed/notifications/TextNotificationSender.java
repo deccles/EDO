@@ -31,16 +31,16 @@ public class TextNotificationSender {
      *   - edo.smtp.ssl (true/false, default false)
      */
     public static void sendText(List<String> toAddress, String subject, String body) throws MessagingException {
-    	for (String name : toAddress) {
-    		System.out.println("Texting " + name + ": (" + subject + ") " +body);
-    		sendText(name.trim(), subject,body);
-    		
-            try {
-                Thread.sleep(1500);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-            }
-    	}
+//    	for (String name : toAddress) {
+//    		System.out.println("Texting " + name + ": (" + subject + ") " +body);
+//    		sendText(name.trim(), subject,body);
+//    		
+//            try {
+//                Thread.sleep(1500);
+//            } catch (InterruptedException ie) {
+//                Thread.currentThread().interrupt();
+//            }
+//    	}
     }
     private static void sendText(String toAddress, String subject, String body) throws MessagingException {
 
