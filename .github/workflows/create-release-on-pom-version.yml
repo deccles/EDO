@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   release:
@@ -18,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # we need tags/history
+          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -66,21 +65,35 @@ jobs:
           echo "release=true" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Build + test
+      - name: Build (creates jar + src.zip)
         if: steps.decide.outputs.release == 'true'
-        run: mvn -B -U clean verify
+        run: mvn -B -U clean package
 
-      # ---- Publish step ----
-      # Option A: GitHub Packages (works well if you want packages in GitHub).
-      # Requires distributionManagement in pom.xml and auth using GITHUB_TOKEN.
-      - name: Publish to GitHub Packages
+      - name: Locate release artifacts
         if: steps.decide.outputs.release == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mvn -B deploy -DskipTests
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          JAR="target/EDO-Overlay.jar"
+          SRC="target/src.zip"
 
-      # Option B: If you publish elsewhere (Artifactory/OSSRH/etc), replace the step above
-      # with mvn deploy -s settings.xml and required secrets.
+          if [[ ! -f "$JAR" ]]; then
+            echo "Expected jar not found: $JAR"
+            ls -la target || true
+            exit 1
+          fi
+          if [[ ! -f "$SRC" ]]; then
+            echo "Expected src.zip not found: $SRC"
+            ls -la target || true
+            exit 1
+          fi
+
+          echo "jar=$JAR" >> "$GITHUB_OUTPUT"
+          echo "src=$SRC" >> "$GITHUB_OUTPUT"
+          echo "jar_name=EliteDangerousOverlay-$VERSION.jar" >> "$GITHUB_OUTPUT"
+          echo "src_name=EliteDangerousOverlay-$VERSION-src.zip" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         if: steps.decide.outputs.release == 'true'
@@ -93,7 +106,7 @@ jobs:
           git tag -a "$TAG" -m "$TAG"
           git push origin "$TAG"
 
-      - name: Generate release notes (since previous tag) + create GitHub Release
+      - name: Create GitHub Release (auto notes)
         if: steps.decide.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -103,8 +116,6 @@ jobs:
           TAG="${{ steps.decide.outputs.tag }}"
           PREV="${{ steps.prev.outputs.prev_tag }}"
 
-          # Ask GitHub to generate the release name/body.
-          # This API generates notes including "changes since last release". :contentReference[oaicite:3]{index=3}
           if [[ -n "$PREV" ]]; then
             NOTES_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
               -f tag_name="$TAG" \
@@ -119,5 +130,17 @@ jobs:
           NAME="$(echo "$NOTES_JSON" | jq -r .name)"
           BODY="$(echo "$NOTES_JSON" | jq -r .body)"
 
-          # Create the release using the generated notes.
           gh release create "$TAG" --title "$NAME" --notes "$BODY"
+
+      - name: Upload release assets
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.decide.outputs.tag }}"
+          gh release upload "$TAG" \
+            "${{ steps.artifacts.outputs.jar }}#${{ steps.artifacts.outputs.jar_name }}" \
+            "${{ steps.artifacts.outputs.src }}#${{ steps.artifacts.outputs.src_name }}" \
+            --clobber
