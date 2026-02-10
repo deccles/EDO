@@ -34,9 +34,6 @@ jobs:
           VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-
-
-
       - name: Find latest release tag
         id: prev
         shell: bash
@@ -167,10 +164,11 @@ jobs:
 
       - name: Read project version from pom.xml
         id: ver
-        shell: pwsh
+        shell: bash
         run: |
-          $version = (mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          set -euo pipefail
+          VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Skip if SNAPSHOT
         id: decide
