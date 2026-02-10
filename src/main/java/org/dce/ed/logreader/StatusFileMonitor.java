@@ -472,6 +472,9 @@ public final class StatusFileMonitor implements Closeable {
                     } catch (Exception ignored) {
                     }
                 }
+                if (destBody != null && destBody.intValue() == 0) {
+                    destBody = null;
+                }
                 if (dest.has("Name") && !dest.get("Name").isJsonNull()) {
                     destName = dest.get("Name").getAsString();
                 }

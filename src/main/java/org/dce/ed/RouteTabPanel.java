@@ -42,9 +42,12 @@ import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
+import org.dce.ed.logreader.event.CarrierLocationEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FsdTargetEvent;
 import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
+import org.dce.ed.logreader.event.IFsdJump;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
@@ -407,6 +410,36 @@ public class RouteTabPanel extends JPanel {
 			setCurrentSystemIfEmpty(getCurrentSystemName(), currentSystemAddress);
 			rebuildDisplayedEntries();
 		}
+		if (event instanceof CarrierJumpEvent jump) {
+		    setCurrentSystemName(jump.getStarSystem());
+		    this.currentSystemAddress = jump.getSystemAddress();
+		    this.currentStarPos = jump.getStarPos();
+
+		    pendingJumpSystemName = null;
+		    pendingJumpLockedName = null;
+		    pendingJumpLockedAddress = 0L;
+		    inHyperspace = false;
+
+		    if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
+		        jumpFlashTimer.stop();
+		    }
+		    jumpFlashOn = true;
+
+		    rebuildDisplayedEntries();
+		}
+		if (event instanceof CarrierLocationEvent loc) {
+		    // Some sessions (especially when docked/on-foot in a carrier) may emit CarrierLocation but not Location.
+		    setCurrentSystemName(loc.getStarSystem());
+		    this.currentSystemAddress = loc.getSystemAddress();
+
+		    pendingJumpSystemName = null;
+		    pendingJumpLockedName = null;
+		    pendingJumpLockedAddress = 0L;
+		    inHyperspace = false;
+
+		    rebuildDisplayedEntries();
+		}
+
 		if (event instanceof FssAllBodiesFoundEvent) {
 			FssAllBodiesFoundEvent fss = (FssAllBodiesFoundEvent)event;
 
@@ -423,6 +456,9 @@ public class RouteTabPanel extends JPanel {
 			// Remember destination fields (they may refer to either a target system or a body).
 			destinationSystemAddress = se.getDestinationSystem();
 			destinationBodyId = se.getDestinationBody();
+			if (destinationBodyId != null && destinationBodyId.intValue() == 0) {
+			    destinationBodyId = null;
+			}
 			destinationName = se.getDestinationDisplayName();
 
 			// Side-trip clearing:
@@ -1294,22 +1330,22 @@ public class RouteTabPanel extends JPanel {
 		return "";
 	}
 	private String resolveCurrentSystemNameFromJournal() {
-		try {
-			EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-			String systemName = null;
-			List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(3);
-			for (EliteLogEvent event : events) {
-				if (event instanceof LocationEvent e) {
-					systemName = e.getStarSystem();
-				} else if (event instanceof FsdJumpEvent e) {
-					systemName = e.getStarSystem();
-				}
-			}
-			return systemName;
-		} catch (Exception e) {
-			e.printStackTrace();
-			return null;
-		}
+	    try {
+	        EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+	        String systemName = null;
+	        List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(3);
+	        for (EliteLogEvent event : events) {
+	            if (event instanceof LocationEvent e) {
+	                systemName = e.getStarSystem();
+	            } else if (event instanceof IFsdJump e) {
+	                systemName = e.getStarSystem();
+	            }
+	        }
+	        return systemName;
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return null;
+	    }
 	}
 	private void setCurrentSystemName(String currentSystemName) {
 		if (currentSystemName == null) {

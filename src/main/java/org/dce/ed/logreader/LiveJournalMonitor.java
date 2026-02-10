@@ -444,6 +444,9 @@ public final class LiveJournalMonitor {
                     } catch (Exception ignored) {
                     }
                 }
+                if (destBody != null && destBody.intValue() == 0) {
+                    destBody = null;
+                }
 
                 JsonElement nameEl = dest.get("Name");
                 if (nameEl != null && !nameEl.isJsonNull()) {

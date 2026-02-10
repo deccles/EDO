@@ -11,6 +11,7 @@ import org.dce.ed.logreader.EliteLogEvent.NavRouteClearEvent;
 import org.dce.ed.logreader.EliteLogEvent.NavRouteEvent;
 import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
+import org.dce.ed.logreader.event.CarrierLocationEvent;
 import org.dce.ed.logreader.event.CommanderEvent;
 import org.dce.ed.logreader.event.FileheaderEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
@@ -99,7 +100,7 @@ public class EliteLogParser {
                 return parseStatus(ts, obj);
                 
             case CARRIER_LOCATION:
-            	return new GenericEvent(ts, type, obj);
+                return parseCarrierLocation(ts, obj);
 
             case CARRIER_JUMP:
                 return parseCarrierJump(ts, obj);
@@ -525,7 +526,19 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         );
     }
 
-    
+    private CarrierLocationEvent parseCarrierLocation(Instant ts, JsonObject obj) {
+        String starSystem = obj.has("StarSystem") && !obj.get("StarSystem").isJsonNull()
+                ? obj.get("StarSystem").getAsString()
+                : null;
+        long systemAddress = obj.has("SystemAddress") && !obj.get("SystemAddress").isJsonNull()
+                ? obj.get("SystemAddress").getAsLong()
+                : 0L;
+        int bodyId = obj.has("BodyID") && !obj.get("BodyID").isJsonNull()
+                ? obj.get("BodyID").getAsInt()
+                : 0;
+        return new CarrierLocationEvent(ts, obj, starSystem, systemAddress, bodyId);
+    }
+
     private FsdTargetEvent parseFsdTarget(Instant ts, JsonObject obj) {
         String name = getString(obj, "Name");
         long systemAddress = obj.has("SystemAddress") ? obj.get("SystemAddress").getAsLong() : 0L;
