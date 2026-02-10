@@ -213,7 +213,7 @@
 			<properties>
 				<!-- IMPORTANT: set this to a real JDK home that contains
 				bin\jpackage.exe -->
-				<jdk.home>${project.basedir}/dist/EDO/jdk21.0.9_10</jdk.home>
+				<jdk.home>${env.JAVA_HOME}</jdk.home>
 
 				<app.name>EDO Overlay</app.name>
 				<app.version>${project.version}</app.version>
