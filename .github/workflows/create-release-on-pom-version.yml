@@ -28,13 +28,12 @@ jobs:
 
       - name: Read project version from pom.xml
         id: ver
-        shell: pwsh
+        shell: bash
         run: |
-          mvn -v
-          mvn "-Dexpression=project.version" "-DforceStdout" help:evaluate -q -e
-          $version = mvn "-Dexpression=project.version" "-DforceStdout" help:evaluate -q
-          $version = $version.Trim()
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          set -euo pipefail
+          VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
 
 
 
