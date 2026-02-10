@@ -38,6 +38,10 @@ public class TtsSprintf {
         List<String> resolve(String tag, Object value);
     }
 
+    public static void main(String args[]) {
+    	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
+    	ttsSprintf.speakf("Hello McFly!");
+    }
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([a-zA-Z0-9_]+)\\}");
 
     private final PollyTtsCached tts;
@@ -889,6 +893,49 @@ public class TtsSprintf {
         }
 
         return new SpeechPlan(out, keys);
+    }
+    /**
+     * Blocking cache-warm: expands a template and ensures all resulting speech chunks
+     * are cached (MID vs END variants included via cache keys), but does not play audio.
+     */
+    public List<Path> ensureCachedfBlocking(String template, Object... args) throws Exception {
+        SpeechPlan plan = formatToSpeechPlan(template, args);
+        return ensureCachedBlocking(plan);
+    }
+
+    /**
+     * Blocking cache-warm: expands a template and ensures all resulting speech chunks
+     * are cached (MID vs END variants included via cache keys), but does not play audio.
+     */
+    public List<Path> ensureCachedfBlocking(String template, Map<String, ?> argsByTag) throws Exception {
+        SpeechPlan plan = formatToSpeechPlan(template, argsByTag);
+        return ensureCachedBlocking(plan);
+    }
+
+    /**
+     * Blocking cache-warm: ensures the given chunks are cached using the same
+     * SSML mark/slice path as speakfBlocking(), but does not play audio.
+     */
+    public List<Path> ensureCachedChunksBlocking(List<String> chunks) throws Exception {
+        if (chunks == null || chunks.isEmpty()) {
+            return List.of();
+        }
+        SpeechPlan plan = new SpeechPlan(new ArrayList<>(chunks), null);
+        return ensureCachedBlocking(plan);
+    }
+
+    private List<Path> ensureCachedBlocking(SpeechPlan plan) throws Exception {
+        if (plan == null || plan.chunkTexts == null || plan.chunkTexts.isEmpty()) {
+            return List.of();
+        }
+
+        SsmlWithMarks ssmlPlan = buildSsmlWithMarks(plan);
+        return tts.ensureCachedWavsFromSsmlMarks(
+                ssmlPlan.chunkTexts,
+                ssmlPlan.cacheKeys,
+                ssmlPlan.ssml,
+                ssmlPlan.markNames
+        );
     }
 
     /**

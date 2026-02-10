@@ -88,6 +88,7 @@ public class EdsmClient {
             conn.setRequestProperty("Accept", "application/json");
 
             int code = conn.getResponseCode();
+            String contentType = conn.getContentType();
 
             InputStream in;
             if (code >= 200 && code < 300) {
@@ -107,6 +108,13 @@ public class EdsmClient {
                 throw new IOException("EDSM returned empty response (HTTP " + code + "): " + urlString);
             }
 
+            // If EDSM (or a proxy in front of it) is having a bad day, we can get an HTML error page.
+            // Don't try to feed that into Gson, or you'll get MalformedJsonException spam.
+            if (!looksLikeJson(body, contentType)) {
+                throw new IOException("EDSM returned non-JSON response (HTTP " + code + ") from "
+                        + urlString + ": " + summarize(body));
+            }
+
             JsonElement el;
             try {
                 el = gson.fromJson(body, JsonElement.class);
@@ -114,14 +122,13 @@ public class EdsmClient {
                 throw new IOException("EDSM returned invalid JSON (HTTP " + code + "): " + summarize(body), ex);
             }
 
-            // Your current failure mode: top-level JSON string, e.g. "API call limit exceeded"
+            // Top-level JSON string, e.g. "API call limit exceeded"
             if (el != null && el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
                 String msg = el.getAsString();
                 throw new IOException("EDSM returned JSON string instead of object (HTTP " + code + "): " + msg);
             }
 
-            // Another failure mode: some endpoints sometimes return a top-level array.
-            // Most of our DTOs expect a JSON object, so adapt where we can.
+            // Some endpoints sometimes return a top-level array.
             if (el != null && el.isJsonArray() && !clazz.isArray()) {
                 if (clazz == BodiesResponse.class) {
                     BodiesResponse br = new BodiesResponse();
@@ -145,6 +152,39 @@ public class EdsmClient {
                 conn.disconnect();
             }
         }
+    }
+
+    private static boolean looksLikeJson(String body, String contentType) {
+        if (body == null) {
+            return false;
+        }
+
+        String s = body.trim();
+        if (s.isEmpty()) {
+            return false;
+        }
+
+        // Quick body sniff (works even when Content-Type is wrong/missing)
+        char c = s.charAt(0);
+        if (c == '{' || c == '[' || c == '"') {
+            return true;
+        }
+
+        // Common HTML starts
+        if (c == '<') {
+            return false;
+        }
+
+        // If content-type explicitly claims JSON, allow it.
+        if (contentType != null) {
+            String ct = contentType.toLowerCase(Locale.ROOT);
+            // Examples: application/json; charset=utf-8
+            if (ct.contains("application/json") || ct.contains("text/json") || ct.contains("+json")) {
+                return true;
+            }
+        }
+
+        return false;
     }
     private static String readAll(InputStream in) throws IOException {
         StringBuilder sb = new StringBuilder();

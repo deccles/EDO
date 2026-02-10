@@ -436,25 +436,52 @@ public class PollyTtsCached implements Closeable {
     // ------------------------------
 
     private byte[] synthesizePcmSsml(String ssml, VoiceSettings s) throws IOException {
-        VoiceId voiceId = VoiceId.fromValue(s.voiceName);
+    	VoiceId voiceId = VoiceId.fromValue(s.voiceName);
 
-        SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
-                .engine(s.engine)
-                .voiceId(voiceId)
-                .outputFormat(OutputFormat.PCM)
-                .sampleRate(Integer.toString(s.sampleRate))
-                .textType(TextType.SSML)
-                .text(ssml)
-                .build();
+    	SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
+    			.engine(s.engine)
+    			.voiceId(voiceId)
+    			.outputFormat(OutputFormat.PCM)
+    			.sampleRate(Integer.toString(s.sampleRate))
+    			.textType(TextType.SSML)
+    			.text(ssml)
+    			.build();
 
-        try {
-        	ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req);
-        	return audio.readAllBytes();
-        } catch (Exception e) {
-        	showMissingAwsTtsKeyPopup(s.voiceName + " " + ssml);
-        }
-        return null;
+    	try {
+    		ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req);
+    		return audio.readAllBytes();
+    	} catch (Exception e) {
+    		if (isMissingAwsCredentials(e)) {
+    			showMissingAwsTtsKeyPopup(s.voiceName + " " + ssml);
+    			return null;
+    		}
+
+    		// This was not a credentials issue; let caller see the real cause.
+    		throw e;
+    	}
     }
+    
+    private static boolean isMissingAwsCredentials(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            String msg = cur.getMessage();
+            if (msg != null) {
+                String m = msg.toLowerCase(Locale.ROOT);
+                if (m.contains("unable to load credentials")
+                        || m.contains("no aws access key")
+                        || m.contains("access key id")
+                        || m.contains("security token")
+                        || m.contains("credential")
+                        || m.contains("profile file")
+                        || m.contains("default credentials")) {
+                    return true;
+                }
+            }
+            cur = cur.getCause();
+        }
+        return false;
+    }
+
 
     public static void showMissingAwsTtsKeyPopup(String voiceName) {
         String url = "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html";
