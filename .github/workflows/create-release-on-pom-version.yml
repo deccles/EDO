@@ -30,9 +30,12 @@ jobs:
         id: ver
         shell: pwsh
         run: |
+          mvn -v
+          mvn "-Dexpression=project.version" "-DforceStdout" help:evaluate -q -e
           $version = mvn "-Dexpression=project.version" "-DforceStdout" help:evaluate -q
           $version = $version.Trim()
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
 
 
       - name: Find latest release tag
