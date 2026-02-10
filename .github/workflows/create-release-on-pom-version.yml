@@ -185,9 +185,11 @@ jobs:
       - name: Build MSI (installer profile)
         if: steps.decide.outputs.release == 'true'
         shell: pwsh
+        env:
+          MAVEN_OPTS: -Djdk.home=${{ env.JAVA_HOME }}
         run: |
-          # Override jdk.home so your pom's exec plugin finds jpackage.exe on the runner.
-          mvn -B -DskipTests -Pinstaller -Djdk.home="$env:JAVA_HOME" clean package
+          mvn -B -DskipTests -Pinstaller clean package
+
 
       - name: Upload MSI to GitHub Release
         if: steps.decide.outputs.release == 'true'
