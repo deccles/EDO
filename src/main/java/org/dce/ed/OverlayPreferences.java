@@ -36,6 +36,7 @@ public final class OverlayPreferences {
 
     // --- Speech / Polly (new) ---
     private static final String KEY_SPEECH_ENABLED = "speech.enabled";
+    private static final String KEY_SPEECH_USE_AWS = "speech.useAwsSynthesis"; // allow AWS to generate missing speech
     private static final String KEY_SPEECH_ENGINE = "speech.engine"; // "standard" or "neural" (we'll default to standard)
     private static final String KEY_SPEECH_VOICE = "speech.voiceId"; // e.g. "Joanna"
     private static final String KEY_SPEECH_REGION = "speech.awsRegion"; // e.g. "us-east-1"
@@ -257,7 +258,18 @@ public final class OverlayPreferences {
         PREFS.putBoolean(KEY_SPEECH_ENABLED, enabled);
     }
 
-    public static Engine getSpeechEngine() {
+    
+
+public static boolean isSpeechUseAwsSynthesis() {
+    // Default: enabled (for now)
+    return PREFS.getBoolean(KEY_SPEECH_USE_AWS, true);
+}
+
+public static void setSpeechUseAwsSynthesis(boolean useAws) {
+    PREFS.putBoolean(KEY_SPEECH_USE_AWS, useAws);
+}
+
+public static Engine getSpeechEngine() {
         // Defaults: as you requested, keep sane hardcoded defaults.
         // Start with "standard" to avoid Neural costs.
         return Engine.fromValue(PREFS.get(KEY_SPEECH_ENGINE, "standard"));

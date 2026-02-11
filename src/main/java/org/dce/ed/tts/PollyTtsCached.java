@@ -36,6 +36,7 @@ import javax.sound.sampled.LineEvent;
 import javax.swing.JEditorPane;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
@@ -102,6 +103,9 @@ public class PollyTtsCached implements Closeable {
 
         VoiceSettings s = resolveVoiceSettings();
         Path wavFile = getOrCreateCachedWav(text, s.voiceName, s.engine, s.sampleRate);
+        if (wavFile == null) {
+            return;
+        }
         playWavBlockingInternal(wavFile);
     }
 
@@ -193,7 +197,26 @@ public class PollyTtsCached implements Closeable {
             return paths;
         }
 
-        // Synthesize full sentence audio once, and SSML mark times once.
+        
+
+if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
+    List<String> missing = new ArrayList<>();
+    for (int idx : missingIdx) {
+        String spoken = chunkTexts.get(idx);
+        String keyText = cacheKeys.get(idx);
+        boolean end = isEndOfSentenceKey(keyText);
+        String label = end ? "END" : "MID";
+        if (spoken == null || spoken.isBlank()) {
+            missing.add(label + ": <blank>");
+        } else {
+            missing.add(label + ": " + spoken);
+        }
+    }
+    showMissingSpeechCachePopup(s.voiceName, voiceDir, missing);
+    return paths;
+}
+
+// Synthesize full sentence audio once, and SSML mark times once.
         byte[] fullPcm = synthesizePcmSsml(ssml, s);
         Map<String, Integer> markTimesMs = synthesizeSsmlMarkTimes(ssml, s);
 
@@ -337,9 +360,20 @@ public class PollyTtsCached implements Closeable {
 
         // Make sure the subdir exists (end/ or mid/)
         Files.createDirectories(wav.getParent());
+if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
+    List<String> missing = new ArrayList<>();
+    String label = isEndOfSentenceKey(text) ? "END" : "MID";
+    missing.add(label + ": " + text);
+    showMissingSpeechCachePopup(voiceName, voiceDir, missing);
+    return null;
+}
+
 
         // Generate PCM with Polly (TEXT) and cache it.
-        VoiceId voiceId = VoiceId.fromValue(voiceName);
+        VoiceId voiceId = resolveVoiceId(voiceName);
+        if (voiceId == null) {
+            throw new IllegalArgumentException("Unknown Polly voice: " + voiceName);
+        }
 
         SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
                 .engine(engine)
@@ -436,52 +470,33 @@ public class PollyTtsCached implements Closeable {
     // ------------------------------
 
     private byte[] synthesizePcmSsml(String ssml, VoiceSettings s) throws IOException {
-    	VoiceId voiceId = VoiceId.fromValue(s.voiceName);
-
-    	SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
-    			.engine(s.engine)
-    			.voiceId(voiceId)
-    			.outputFormat(OutputFormat.PCM)
-    			.sampleRate(Integer.toString(s.sampleRate))
-    			.textType(TextType.SSML)
-    			.text(ssml)
-    			.build();
-
-    	try {
-    		ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req);
-    		return audio.readAllBytes();
-    	} catch (Exception e) {
-    		if (isMissingAwsCredentials(e)) {
-    			showMissingAwsTtsKeyPopup(s.voiceName + " " + ssml);
-    			return null;
-    		}
-
-    		// This was not a credentials issue; let caller see the real cause.
-    		throw e;
-    	}
-    }
-    
-    private static boolean isMissingAwsCredentials(Throwable t) {
-        Throwable cur = t;
-        while (cur != null) {
-            String msg = cur.getMessage();
-            if (msg != null) {
-                String m = msg.toLowerCase(Locale.ROOT);
-                if (m.contains("unable to load credentials")
-                        || m.contains("no aws access key")
-                        || m.contains("access key id")
-                        || m.contains("security token")
-                        || m.contains("credential")
-                        || m.contains("profile file")
-                        || m.contains("default credentials")) {
-                    return true;
-                }
-            }
-            cur = cur.getCause();
+        VoiceId voiceId = resolveVoiceId(s.voiceName);
+        if (voiceId == null) {
+            throw new IllegalArgumentException("Unknown Polly voice: " + s.voiceName);
         }
-        return false;
-    }
 
+        if (voiceId == null) {
+            throw new IllegalArgumentException("Unknown Polly voice: " + s.voiceName);
+        }
+
+
+        SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
+                .engine(s.engine)
+                .voiceId(voiceId)
+                .outputFormat(OutputFormat.PCM)
+                .sampleRate(Integer.toString(s.sampleRate))
+                .textType(TextType.SSML)
+                .text(ssml)
+                .build();
+
+        try {
+        	ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req);
+        	return audio.readAllBytes();
+        } catch (Exception e) {
+        	showMissingAwsTtsKeyPopup(s.voiceName + " " + ssml);
+        }
+        return null;
+    }
 
     public static void showMissingAwsTtsKeyPopup(String voiceName) {
         String url = "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html";
@@ -551,6 +566,52 @@ public class PollyTtsCached implements Closeable {
         );
     }
 
+private static void showMissingSpeechCachePopup(String voiceName, Path voiceDir, List<String> missing) {
+    if (missing == null || missing.isEmpty()) {
+        return;
+    }
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("AWS TTS generation is disabled, and the following speech clips were not found in the cache.\n\n");
+    if (voiceName != null && !voiceName.isBlank()) {
+        sb.append("Voice: ").append(voiceName).append("\n");
+    }
+    if (voiceDir != null) {
+        sb.append("Cache dir: ").append(voiceDir.toAbsolutePath()).append("\n");
+    }
+    sb.append("\nMissing clips:\n");
+    for (String m : missing) {
+        if (m == null || m.isBlank()) {
+            continue;
+        }
+        sb.append(" - ").append(m).append("\n");
+    }
+
+    JTextArea area = new JTextArea(sb.toString(), 18, 70);
+    area.setEditable(false);
+    area.setLineWrap(true);
+    area.setWrapStyleWord(true);
+
+    Runnable show = () -> JOptionPane.showMessageDialog(
+            null,
+            new JScrollPane(area),
+            "Speech Cache Miss",
+            JOptionPane.WARNING_MESSAGE
+    );
+
+    if (SwingUtilities.isEventDispatchThread()) {
+        show.run();
+        return;
+    }
+
+    try {
+        SwingUtilities.invokeAndWait(show);
+    } catch (Exception ignored) {
+    }
+}
+
+
+
     private static String escapeHtml(String s) {
         if (s == null)
         {
@@ -566,7 +627,7 @@ public class PollyTtsCached implements Closeable {
 
 
     private Map<String, Integer> synthesizeSsmlMarkTimes(String ssml, VoiceSettings s) throws IOException {
-        VoiceId voiceId = VoiceId.fromValue(s.voiceName);
+        VoiceId voiceId = resolveVoiceId(s.voiceName);
 
         SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
                 .engine(s.engine)
@@ -876,6 +937,33 @@ public class PollyTtsCached implements Closeable {
 
         return new VoiceSettings(voiceName, engine, sampleRate);
     }
+
+
+private static VoiceId resolveVoiceId(String voiceName) {
+    if (voiceName == null) {
+        return null;
+    }
+
+    String v = voiceName.trim();
+    if (v.isEmpty()) {
+        return null;
+    }
+
+    try {
+        return VoiceId.fromValue(v);
+    } catch (Exception ignored) {
+    }
+
+    String normalized = v.toLowerCase(Locale.ROOT);
+    for (VoiceId id : VoiceId.values()) {
+        if (id.toString().toLowerCase(Locale.ROOT).equals(normalized)) {
+            return id;
+        }
+    }
+
+    return null;
+}
+
 
     private static String normalize(String s) {
         if (s == null) {

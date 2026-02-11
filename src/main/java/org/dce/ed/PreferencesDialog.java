@@ -66,6 +66,7 @@ public class PreferencesDialog extends JDialog {
 
     // Speech-tab fields so OK can read them
     private JCheckBox speechEnabledCheckBox;
+    private JCheckBox speechUseAwsCheckBox;
     private JComboBox<String> speechEngineCombo;
     private JComboBox<String> speechVoiceCombo;
     private JTextField speechRegionField;
@@ -819,6 +820,20 @@ private JPanel createSpeechPanel() {
         gbc.gridx = 1;
         content.add(speechEnabledCheckBox, gbc);
 
+
+// Use AWS to generate missing speech
+gbc.gridx = 0;
+gbc.gridy++;
+JLabel useAwsLabel = new JLabel("Use AWS to generate speech:");
+content.add(useAwsLabel, gbc);
+
+gbc.gridx = 1;
+speechUseAwsCheckBox = new JCheckBox();
+speechUseAwsCheckBox.setOpaque(false);
+speechUseAwsCheckBox.setSelected(OverlayPreferences.isSpeechUseAwsSynthesis());
+content.add(speechUseAwsCheckBox, gbc);
+
+
         // Engine (Standard only by default)
         gbc.gridx = 0;
         gbc.gridy++;
@@ -919,6 +934,7 @@ private JPanel createSpeechPanel() {
             speechCacheDirField.setEnabled(enabled);
             browseCacheButton.setEnabled(enabled);
             speechSampleRateField.setEnabled(enabled);
+            speechUseAwsCheckBox.setEnabled(enabled);
         };
         speechEnabledCheckBox.addActionListener(e -> updateEnabled.run());
         updateEnabled.run();
@@ -987,6 +1003,10 @@ private JPanel createSpeechPanel() {
         // Speech tab
         if (speechEnabledCheckBox != null) {
             OverlayPreferences.setSpeechEnabled(speechEnabledCheckBox.isSelected());
+        }
+
+        if (speechUseAwsCheckBox != null) {
+            OverlayPreferences.setSpeechUseAwsSynthesis(speechUseAwsCheckBox.isSelected());
         }
 
         if (speechEngineCombo != null && speechEngineCombo.getSelectedItem() != null) {
