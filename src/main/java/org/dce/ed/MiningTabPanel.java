@@ -67,7 +67,7 @@ public class MiningTabPanel extends JPanel {
 
 	private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 	private String lastProspectorAnnouncementSig;
-	private String prospectorHighlightName;
+	private Set<String> prospectorHighlightNames = new HashSet<>();
 
 	private final GalacticAveragePrices prices;
 	private final MaterialNameMatcher matcher;
@@ -401,15 +401,15 @@ private final JLayer<JTable> cargoLayer;
 	}
 
 	
-private boolean isHighlightedProspectorRow(Row r) {
-	if (r == null) {
-		return false;
+	private boolean isHighlightedProspectorRow(Row r) {
+		if (r == null) {
+			return false;
+		}
+		return prospectorHighlightNames.contains(r.getName());
 	}
-	if (prospectorHighlightName == null || prospectorHighlightName.isBlank()) {
-		return false;
-	}
-	return prospectorHighlightName.equals(r.getName());
-}
+
+
+
 
 private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
 	private Color resolveRowForeground(JTable tbl, int viewRow) {
@@ -808,6 +808,171 @@ return EdoUi.ED_ORANGE;
         applyOverlayBackground(bg);
     }
 
+    private static final class ProspectorAnnouncement {
+    	private final boolean single;
+    	private final String material;
+    	private final int pct;
+
+    	private final String listText;
+    	private final int minPct;
+    	private final int maxPct;
+
+    	private final String sig;
+
+    	private ProspectorAnnouncement(String material, int pct, String sig) {
+    		this.single = true;
+    		this.material = material;
+    		this.pct = pct;
+
+    		this.listText = null;
+    		this.minPct = 0;
+    		this.maxPct = 0;
+
+    		this.sig = sig;
+    	}
+
+    	private ProspectorAnnouncement(String listText, int minPct, int maxPct, String sig) {
+    		this.single = false;
+    		this.material = null;
+    		this.pct = 0;
+
+    		this.listText = listText;
+    		this.minPct = minPct;
+    		this.maxPct = maxPct;
+
+    		this.sig = sig;
+    	}
+    }
+
+
+
+    private ProspectorAnnouncement buildProspectorAnnouncement(ProspectedAsteroidEvent event, List<Row> rows) {
+    	if (event == null || rows == null || rows.isEmpty()) {
+    		prospectorHighlightNames.clear();
+    		return null;
+    	}
+
+    	double minProp = OverlayPreferences.getProspectorMinProportionPercent();
+    	if (minProp <= 0.0) {
+    		prospectorHighlightNames.clear();
+    		return null;
+    	}
+
+    	String materialsCsv = OverlayPreferences.getProspectorMaterialsCsv();
+    	Set<String> allowed = new HashSet<>();
+    	if (materialsCsv != null && !materialsCsv.isBlank()) {
+    		for (String s : materialsCsv.split(",")) {
+    			if (s == null) {
+    				continue;
+    			}
+    			String norm = GalacticAveragePrices.normalizeMaterialKey(s.trim());
+    			if (norm != null && !norm.isBlank()) {
+    				allowed.add(norm);
+    			}
+    		}
+    	}
+
+    	double minEstValueForAnnounce = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
+
+    	
+    	
+
+		prospectorHighlightNames.clear();
+    	Row best = null;
+    	List<Row> matches = new ArrayList<>();
+    	double minPct = Double.POSITIVE_INFINITY;
+    	double maxPct = Double.NEGATIVE_INFINITY;
+
+    	for (Row r : rows) {
+    		if (r == null || r.isSummary() || r.isCore()) {
+    			continue;
+    		}
+
+    		double pct = r.getProportionPercent();
+			if (Double.isNaN(pct)) {
+				continue;
+			}
+
+			boolean pctOk = !Double.isNaN(pct) && pct >= minProp;
+boolean csvOk = false;
+    		if (!allowed.isEmpty()) {
+    			String norm = GalacticAveragePrices.normalizeMaterialKey(r.getName());
+    			if (norm != null && !norm.isBlank()) {
+    				for (String a : allowed) {
+    					String needle = GalacticAveragePrices.normalizeMaterialKey(a);
+    					if (needle != null && !needle.isBlank() && norm.contains(needle)) {
+    						csvOk = true;
+    						break;
+    					}
+    				}
+    			}
+    		}
+
+    		boolean valueOk = false;
+    		if (minEstValueForAnnounce > 0) {
+    			valueOk = r.getEstimatedValue() >= minEstValueForAnnounce;
+    		}
+
+    		// RULE: include if (pctOk && csvOk) OR valueOk
+			if (!((pctOk && csvOk) || valueOk)) {
+				continue;
+			}
+matches.add(r);
+			prospectorHighlightNames.add(r.getName());
+
+    		if (pct < minPct) {
+    			minPct = pct;
+    		}
+    		if (pct > maxPct) {
+    			maxPct = pct;
+    		}
+
+    		if (best == null || r.getEstimatedValue() > best.getEstimatedValue()) {
+    			best = r;
+    		}
+    	}
+
+    	if (matches.isEmpty()) {
+			prospectorHighlightNames.clear();
+			return null;
+		}
+matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
+    	List<String> names = new ArrayList<>();
+    	for (Row r : matches) {
+    		names.add(r.getName());
+    	}
+
+    	int minRounded = (int) Math.round(minPct);
+    	int maxRounded = (int) Math.round(maxPct);
+
+    	String ts = event.getTimestamp().toString();
+    	if (ts.length() > 19) {
+    		ts = ts.substring(0, 19);
+    	}
+
+    	// SINGLE vs LIST
+    	if (names.size() == 1) {
+    		Row only = matches.get(0);
+    		int pctRounded = (int) Math.round(only.getProportionPercent());
+
+    		String sig = ts + "|" + only.getName() + "|" + pctRounded;
+    		if (sig.equals(lastProspectorAnnouncementSig)) {
+    			return null;
+    		}
+
+    		return new ProspectorAnnouncement(only.getName(), pctRounded, sig);
+    	}
+
+    	String sig = ts + "|" + String.join(",", names) + "|" + minRounded + "|" + maxRounded;
+    	if (sig.equals(lastProspectorAnnouncementSig)) {
+    		return null;
+    	}
+
+    	String listText = joinWithAnd(names);
+    	return new ProspectorAnnouncement(listText, minRounded, maxRounded, sig);
+    }
+
+    
 	public void updateFromProspector(ProspectedAsteroidEvent event) {
 		if (event == null) {
 			model.setRows(List.of());
@@ -846,11 +1011,7 @@ return EdoUi.ED_ORANGE;
 			rows.add(new Row(shownName + " (Core)", Double.NaN, avg, tons, value, true));
 		}
 
-		// Fire announcement 1 second later
-		new javax.swing.Timer(1000, e -> {
-		    ((javax.swing.Timer) e.getSource()).stop();
-		    maybeAnnounceProspector(event, rows);
-		}).start();
+		ProspectorAnnouncement ann = buildProspectorAnnouncement(event, rows);
 
 		rows.sort(Comparator
 				.comparing(Row::isCore).reversed()
@@ -859,10 +1020,27 @@ return EdoUi.ED_ORANGE;
 				.thenComparing(Row::getName, String.CASE_INSENSITIVE_ORDER));
 
 		model.setRows(rows);
-		maybeAnnounceProspector(event, rows);
 		prospectorScan.startProspectorScan(prospectorLayer);
 
-		String hdr = "Mining (" + (content == null ? "" : content) + ")";
+		// Delay BEFORE the first overlay speech to avoid talking over the game's voice callout.
+		// After the delay: core first (if present), then the combined prospector sentence (no extra delay).
+		new javax.swing.Timer(1000, e -> {
+			((javax.swing.Timer) e.getSource()).stop();
+
+			if (ann != null) {
+				lastProspectorAnnouncementSig = ann.sig;
+
+				if (ann.single) {
+					tts.speakf("Prospector found {material} at {n} percent.", ann.material, ann.pct);
+				} else {
+					tts.speakf("Prospector found {list} from {min} to {max} percent.", ann.listText, ann.minPct, ann.maxPct);
+				}
+			}
+
+		}).start();
+
+
+				String hdr = "Mining (" + (content == null ? "" : content) + ")";
 		if (motherlode != null && !motherlode.isBlank()) {
 			hdr += " - Motherlode: " + motherlode;
 		}
@@ -871,117 +1049,6 @@ return EdoUi.ED_ORANGE;
 	}
 
 
-	private void maybeAnnounceProspector(ProspectedAsteroidEvent event, List<Row> rows) {
-	    if (event == null || rows == null || rows.isEmpty()) {
-	        prospectorHighlightName = null;
-	        return;
-	    }
-
-	    double minProp = OverlayPreferences.getProspectorMinProportionPercent();
-	    if (minProp <= 0.0) {
-	        prospectorHighlightName = null;
-	        return;
-	    }
-
-	    String materialsCsv = OverlayPreferences.getProspectorMaterialsCsv();
-	    Set<String> allowed = new HashSet<>();
-	    if (materialsCsv != null && !materialsCsv.isBlank()) {
-	        for (String s : materialsCsv.split(",")) {
-	            if (s == null) {
-	                continue;
-	            }
-	            String norm = GalacticAveragePrices.normalizeMaterialKey(s.trim());
-	            if (norm != null && !norm.isBlank()) {
-	                allowed.add(norm);
-	            }
-	        }
-	    }
-
-	    Row best = null;
-	    List<Row> matches = new ArrayList<>();
-	    double minPct = Double.POSITIVE_INFINITY;
-	    double maxPct = Double.NEGATIVE_INFINITY;
-
-	    for (Row r : rows) {
-	        if (r == null || r.isSummary() || r.isCore()) {
-	            continue;
-	        }
-
-	        double pct = r.getProportionPercent();
-	        if (Double.isNaN(pct) || pct < minProp) {
-	            continue;
-	        }
-
-	        if (!allowed.isEmpty()) {
-	            String norm = GalacticAveragePrices.normalizeMaterialKey(r.getName());
-	            if (norm == null || norm.isBlank()) {
-	                continue;
-	            }
-
-	            boolean ok = false;
-	            for (String a : allowed) {
-	                String needle = GalacticAveragePrices.normalizeMaterialKey(a);
-	                if (needle != null && !needle.isBlank() && norm.contains(needle)) {
-	                    ok = true;
-	                    break;
-	                }
-	            }
-	            if (!ok) {
-	                continue;
-	            }
-	        }
-
-	        matches.add(r);
-
-	        if (pct < minPct) {
-	            minPct = pct;
-	        }
-	        if (pct > maxPct) {
-	            maxPct = pct;
-	        }
-
-	        if (best == null || r.getEstimatedValue() > best.getEstimatedValue()) {
-	            best = r;
-	        }
-	    }
-
-	    if (matches.isEmpty() || best == null) {
-	        prospectorHighlightName = null;
-	        return;
-	    }
-
-	    // Keep your existing "highlight one" behavior for now
-	    prospectorHighlightName = best.getName();
-
-	    // Build one combined sentence
-	    matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
-	    List<String> names = new ArrayList<>();
-	    for (Row r : matches) {
-	        names.add(r.getName());
-	    }
-
-	    int minRounded = (int) Math.round(minPct);
-	    int maxRounded = (int) Math.round(maxPct);
-
-	    String ts = event.getTimestamp().toString();
-	    if (ts.length() > 19) {
-	        ts = ts.substring(0, 19);
-	    }
-
-	    // Substring-based timestamp for stability + include list + range so it doesn't repeat incorrectly
-	    String sig = ts + "|" + String.join(",", names) + "|" + minRounded + "|" + maxRounded;
-	    if (sig.equals(lastProspectorAnnouncementSig)) {
-	        return;
-	    }
-	    lastProspectorAnnouncementSig = sig;
-
-	    tts.speakf(
-	            "Prospector found {list} from {min} to {max} percent.",
-	            joinWithAnd(names),
-	            minRounded,
-	            maxRounded
-	    );
-	}
 
 	/**
 	 * Use the INARA CSV display name if present; fall back to a friendly formatting of the journal token.

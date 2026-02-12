@@ -94,6 +94,7 @@ public class TtsSprintf {
     public void speakf(String template, Object... args) {
         SpeechPlan plan = formatToSpeechPlan(template, args);
         List<String> chunks = plan.chunkTexts;
+        System.out.print("*** SPEAKING: ");
         for (String s : chunks) {
             System.out.print(s + " ");
         }
