@@ -95,6 +95,7 @@ private final JLayer<JTable> cargoLayer;
 
 
 	private Font uiFont;
+	private JLabel prospectorLabel;
 
 	private static final int VISIBLE_ROWS = 10;
 
@@ -118,13 +119,13 @@ private final JLayer<JTable> cargoLayer;
 		headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		headerLabel.setOpaque(false);
 
-		JLabel prospectorLabel = new JLabel("Prospector Limpet");
+		prospectorLabel = new JLabel("Prospector Limpet");
 		prospectorLabel.setForeground(EdoUi.STATUS_BLUE);
 		prospectorLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		prospectorLabel.setOpaque(false);
 		prospectorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		Font base = prospectorLabel.getFont();
+		Font base = OverlayPreferences.getUiFont();
 		prospectorLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
 
 		// Let it span the width so BoxLayout doesn't center it
@@ -505,6 +506,12 @@ private final JLayer<JTable> cargoLayer;
 			return;
 		}
 
+		Font base = OverlayPreferences.getUiFont();
+		Font headerFont = base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4);
+		
+		prospectorLabel.setFont(headerFont);
+		inventoryLabel.setFont(headerFont);
+		
 		uiFont = font;
 
 		headerLabel.setFont(uiFont.deriveFont(Font.BOLD));

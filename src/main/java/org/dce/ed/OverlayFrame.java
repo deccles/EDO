@@ -542,10 +542,23 @@ private void installExoCreditsTracker() {
         if (enable) {
             getRootPane().setBorder(null);
         } else {
-            getRootPane().setBorder(overlayBorder);
+            getRootPane().setBorder(javax.swing.BorderFactory.createEmptyBorder());
         }
 
         revalidate();
+    }
+    public void prepareForShow(boolean passThroughMode) {
+        // Make sure we have the right background color/alpha set BEFORE first paint
+        applyOverlayBackgroundFromPreferences(passThroughMode);
+
+        // Defensive: avoid any default opaque background painting
+        setBackground(new java.awt.Color(0, 0, 0, 0));
+        if (getContentPane() != null) {
+            getContentPane().setBackground(new java.awt.Color(0, 0, 0, 0));
+        }
+        if (getRootPane() != null) {
+            getRootPane().setOpaque(false);
+        }
     }
 
     public void loadBoundsFromPreferences(

@@ -166,8 +166,37 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     		passThroughFrame.setPassThroughEnabled(true);
     	}
 
+    	// Avoid white flash: configure background + styles before first paint
+    	toWindow.setVisible(false);
+
+    	// Hide first paint to avoid a brief default (white) background flash.
+    	// We restore opacity immediately after the window is realized.
+    	boolean usedOpacityHack = false;
+    	if (!enablePassThrough) {
+    		try {
+    			toWindow.setOpacity(0.0f);
+    			usedOpacityHack = true;
+    		} catch (Exception ignored) {
+    		}
+    	}
+
+    	if (toWindow instanceof OverlayFrame) {
+    		((OverlayFrame) toWindow).prepareForShow(enablePassThrough);
+    	}
+
     	toWindow.setVisible(true);
     	toWindow.toFront();
+    	toWindow.requestFocus();
+
+    	if (usedOpacityHack) {
+    		javax.swing.SwingUtilities.invokeLater(() -> {
+    			try {
+    				toWindow.setOpacity(1.0f);
+    			} catch (Exception ignored) {
+    			}
+    		});
+    	}
+
 
     	// 2) Reparent content with minimal churn.
     	contentPanel.setVisible(false);
@@ -211,6 +240,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     	// If we're switching to the decorated window, make sure pass-through is disabled.
     	if (!enablePassThrough) {
     		passThroughFrame.setPassThroughEnabled(false);
+    	    forceWindowToFront(toWindow);
     	}
     }
 
@@ -222,6 +252,30 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         int toggleKey = OverlayPreferences.getPassThroughToggleKeyCode();
         if (toggleKey > 0 && e.getKeyCode() == toggleKey) {
             SwingUtilities.invokeLater(() -> setPassThroughMode(!passThroughMode));
+        }
+    }
+    private static void forceWindowToFront(java.awt.Window w) {
+        if (w == null) {
+            return;
+        }
+
+        try {
+            // Make sure native peer exists before messing with z-order
+            if (!w.isDisplayable()) {
+                w.addNotify();
+            }
+
+            // "Kick" it above fullscreen/borderless windows, then restore.
+            boolean wasAot = w.isAlwaysOnTop();
+            w.setAlwaysOnTop(true);
+            w.setVisible(true);
+            w.toFront();
+            w.requestFocus();
+
+            // Restore user's expected behavior (not always-on-top).
+            w.setAlwaysOnTop(wasAot);
+        } catch (Exception ignored) {
+            // Best-effort only
         }
     }
 
