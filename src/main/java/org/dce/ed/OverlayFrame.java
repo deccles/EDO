@@ -50,7 +50,7 @@ import com.sun.jna.platform.win32.WinUser;
 
 import jakarta.mail.MessagingException;
 
-public class OverlayFrame extends JFrame {
+public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
 
     private static final int DEFAULT_WIDTH = 400;
     private static final int DEFAULT_HEIGHT = 1000;
@@ -96,14 +96,14 @@ public class OverlayFrame extends JFrame {
     
     public static OverlayFrame overlayFrame = null;
     
-    public OverlayFrame() {
+    public OverlayFrame(OverlayContentPanel contentPanel) {
         super("Elite Dangerous Overlay");
 
         overlayFrame = this;
-        
+
         // Need transparency -> undecorated
         setUndecorated(true);
-
+        
         // Check translucency support (informational)
         Window window = this;
         GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment()
@@ -155,8 +155,8 @@ public class OverlayFrame extends JFrame {
         updateRightStatusDefault();
 
         // Transparent content panel with tabbed pane
-        contentPanel = new OverlayContentPanel(this);
-        add(contentPanel, BorderLayout.CENTER);
+        this.contentPanel = contentPanel;
+        add(this.contentPanel, BorderLayout.CENTER);
 
         applyOverlayBackgroundFromPreferences(false);
 
@@ -435,14 +435,22 @@ private void installExoCreditsTracker() {
         }
     }
 
-    public void togglePassThrough() {
-        passThroughEnabled = !passThroughEnabled;
-        applyPassThrough(passThroughEnabled);
-        applyOverlayBackgroundFromPreferences(passThroughEnabled);
+    public void setPassThroughEnabled(boolean enabled) {
+        if (this.passThroughEnabled == enabled) {
+            return;
+        }
 
-        titleBar.setPassThrough(passThroughEnabled); // hide/show X
-        System.out.println("Pass-through " + (passThroughEnabled ? "ENABLED" : "DISABLED"));
+        this.passThroughEnabled = enabled;
+        applyPassThrough(this.passThroughEnabled);
+        applyOverlayBackgroundFromPreferences(this.passThroughEnabled);
+
+        titleBar.setPassThrough(this.passThroughEnabled); // hide/show X
+        System.out.println("Pass-through " + (this.passThroughEnabled ? "ENABLED" : "DISABLED"));
         repaint();
+    }
+
+    public void togglePassThrough() {
+        setPassThroughEnabled(!passThroughEnabled);
     }
 
     public boolean isPassThroughEnabled() {

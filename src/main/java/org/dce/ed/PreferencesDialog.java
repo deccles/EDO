@@ -119,8 +119,9 @@ public class PreferencesDialog extends JDialog {
             "Salli"
     };
     
-    public PreferencesDialog(OverlayFrame owner, String clientKey) {
-        super(owner, "Overlay Preferences", false);
+    public PreferencesDialog(java.awt.Window owner, String clientKey) {
+        super(owner, "Overlay Preferences", java.awt.Dialog.ModalityType.MODELESS);
+
         this.clientKey = clientKey;
         this.originalUiFont = OverlayPreferences.getUiFont();
 
@@ -759,13 +760,13 @@ public class PreferencesDialog extends JDialog {
     }
 
     private void applyLivePreview(Font font) {
-        if (getOwner() instanceof OverlayFrame) {
-            ((OverlayFrame) getOwner()).applyUiFontPreview(font);
+        if (getOwner() instanceof OverlayUiPreviewHost) {
+            ((OverlayUiPreviewHost) getOwner()).applyUiFontPreview(font);
         }
     }
 
     private void applyLivePreviewToOverlay() {
-        if (!(getOwner() instanceof OverlayFrame)) {
+        if (!(getOwner() instanceof OverlayUiPreviewHost)) {
             return;
         }
 
@@ -778,17 +779,17 @@ public class PreferencesDialog extends JDialog {
         }
 
         Font font = new Font(name, Font.PLAIN, size);
-        ((OverlayFrame) getOwner()).applyUiFontPreview(font);
+        ((OverlayUiPreviewHost) getOwner()).applyUiFontPreview(font);
     }
 
     private void revertLivePreviewIfNeeded() {
         if (okPressed) {
             return;
         }
-        if (!(getOwner() instanceof OverlayFrame)) {
+        if (!(getOwner() instanceof OverlayUiPreviewHost)) {
             return;
         }
-        OverlayFrame f = (OverlayFrame) getOwner();
+        OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
         f.applyUiFontPreview(originalUiFont);
         boolean pt = f.isPassThroughEnabled();
         int rgb = pt ? originalPassThroughBgRgb : originalNormalBgRgb;
@@ -954,8 +955,8 @@ content.add(speechUseAwsCheckBox, gbc);
         ok.addActionListener(e -> {
             okPressed = true;
             applyAndSavePreferences();
-            if (getOwner() instanceof OverlayFrame) {
-                OverlayFrame f = (OverlayFrame) getOwner();
+            if (getOwner() instanceof OverlayUiPreviewHost) {
+            	OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
                 f.applyOverlayBackgroundFromPreferences(f.isPassThroughEnabled());
                 f.applyUiFontPreferences();
             }
@@ -1154,11 +1155,11 @@ if (miningTonsLowSpinner != null) {
     }
 
     private void applyLiveOverlayBackgroundPreview(boolean passThroughSection) {
-        if (!(getOwner() instanceof OverlayFrame)) {
+        if (!(getOwner() instanceof OverlayUiPreviewHost)) {
             return;
         }
 
-        OverlayFrame f = (OverlayFrame) getOwner();
+        OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
         // Only preview the section that corresponds to the overlay's current mode.
         if (f.isPassThroughEnabled() != passThroughSection) {
             return;

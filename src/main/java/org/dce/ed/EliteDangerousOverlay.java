@@ -1,5 +1,6 @@
 package org.dce.ed;
 
+import java.awt.Color;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
@@ -10,12 +11,8 @@ import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 
-import org.dce.ed.logreader.EliteEventType;
-import org.dce.ed.logreader.EliteJournalReader;
-import org.dce.ed.logreader.EliteLogEvent;
-import org.dce.ed.logreader.EliteLogParser;
-import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.RescanJournalsMain;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
@@ -39,15 +36,29 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     private static final String MAVEN_ARTIFACT_ID = "EliteDangerousOverlay";
 
     private final Preferences prefs;
-    private final OverlayFrame overlayFrame;
+
+    private final OverlayContentPanel contentPanel;
+    private final OverlayFrame passThroughFrame;
+    private final DecoratedOverlayDialog decoratedDialog;
+
+    private volatile boolean passThroughMode;
 
     public EliteDangerousOverlay() {
         this.prefs = Preferences.userNodeForPackage(EliteDangerousOverlay.class);
-        this.overlayFrame = new OverlayFrame();
+        this.passThroughMode = true;
+        this.contentPanel = new OverlayContentPanel(() -> passThroughMode);
 
-        AppIconUtil.applyAppIcon(overlayFrame, "/org/dce/ed/edsm/locate_icon.png");
+        this.passThroughFrame = new OverlayFrame(contentPanel);
+        this.passThroughFrame.setPassThroughEnabled(true);
+
+        this.decoratedDialog = new DecoratedOverlayDialog(passThroughFrame, contentPanel, clientKey);
+        this.decoratedDialog.setOnRequestSwitchToPassThrough(() -> SwingUtilities.invokeLater(() -> setPassThroughMode(true)));
+
+        UIManager.put("TitlePane.background", new Color(30, 30, 30));
+        UIManager.put("TitlePane.foreground", Color.ORANGE);
         
-        GithubMsiUpdater.checkForUpdatesOnStartup(overlayFrame);
+        AppIconUtil.applyAppIcon(passThroughFrame, "/org/dce/ed/edsm/locate_icon.png");
+        GithubMsiUpdater.checkForUpdatesOnStartup(passThroughFrame);
     }
 
     public static void main(String[] args) throws IOException {
@@ -56,8 +67,6 @@ public class EliteDangerousOverlay implements NativeKeyListener {
 
         ConsoleMonitor consoleMonitor = ConsoleMonitor.getInstance(1000);
         consoleMonitor.redirectOutput();
-        
-        String commander = "villanous";
 
         TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
         ttsSprintf.speakf("Welcome commander");
@@ -75,13 +84,6 @@ public class EliteDangerousOverlay implements NativeKeyListener {
             EliteDangerousOverlay app = new EliteDangerousOverlay();
             app.start();
         });
-        
-//        EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-//        EliteLogEvent lastLoadout = r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
-//        if (lastLoadout != null) {
-//			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
-//			monitor.dispatch(lastLoadout);
-//        }
     }
 
     private static String getAppVersion() {
@@ -113,23 +115,17 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     }
 
     private void start() {
-        overlayFrame.showOverlay();
+        passThroughFrame.showOverlay();
+     // Pre-warm the decorated window so the first F9 toggle doesn't jump.
+        prewarmDecoratedDialog();
 
         // Save bounds and clean up on close
-        overlayFrame.addWindowListener(new WindowAdapter() {
+        passThroughFrame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-//                overlayFrame.saveBoundsToPreferences(
-//                        PREF_WINDOW_X,
-//                        PREF_WINDOW_Y,
-//                        PREF_WINDOW_WIDTH,
-//                        PREF_WINDOW_HEIGHT
-//                );
-
                 try {
                     GlobalScreen.unregisterNativeHook();
                 } catch (NativeHookException ex) {
-                    // Not critical if this fails during shutdown
                     ex.printStackTrace();
                 }
             }
@@ -150,14 +146,82 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         GlobalScreen.addNativeKeyListener(this);
     }
 
+    private void setPassThroughMode(boolean enablePassThrough) {
+    	if (this.passThroughMode == enablePassThrough) {
+    		return;
+    	}
+
+    	// Determine current bounds from the currently-visible window.
+    	java.awt.Rectangle bounds = this.passThroughMode
+    			? passThroughFrame.getBounds()
+    			: decoratedDialog.getBounds();
+
+    	java.awt.Window fromWindow = this.passThroughMode ? passThroughFrame : decoratedDialog;
+    	java.awt.Window toWindow = enablePassThrough ? passThroughFrame : decoratedDialog;
+
+    	// 1) Prep + show the target window first (reduces compositor "blank" / pop).
+    	toWindow.setBounds(bounds);
+
+    	if (toWindow == passThroughFrame) {
+    		passThroughFrame.setPassThroughEnabled(true);
+    	}
+
+    	toWindow.setVisible(true);
+    	toWindow.toFront();
+
+    	// 2) Reparent content with minimal churn.
+    	contentPanel.setVisible(false);
+
+    	if (contentPanel.getParent() != null) {
+    		contentPanel.getParent().remove(contentPanel);
+    	}
+
+    	if (toWindow == passThroughFrame) {
+    		passThroughFrame.add(contentPanel, java.awt.BorderLayout.CENTER);
+    	} else {
+    		// attachContent() should remove+add contentPanel into the decorated frame.
+    		passThroughFrame.setPassThroughEnabled(false);
+    		passThroughFrame.setVisible(false);
+
+    		decoratedDialog.setBounds(bounds);      // set bounds FIRST
+    		decoratedDialog.attachContent();        // then attach content
+    		decoratedDialog.applyOverlayBackgroundFromPreferences(false);
+    		decoratedDialog.setVisible(true);
+    		decoratedDialog.toFront();
+    	}
+
+    	contentPanel.setVisible(true);
+
+    	// 3) Apply visuals after attach (prevents a flash of old background/font).
+    	if (toWindow instanceof OverlayUiPreviewHost) {
+    		OverlayUiPreviewHost host = (OverlayUiPreviewHost) toWindow;
+    		host.applyOverlayBackgroundFromPreferences(enablePassThrough);
+    		host.applyUiFontPreferences();
+    	}
+
+    	toWindow.validate();
+    	toWindow.repaint();
+
+    	// 4) Hide the old window last (avoid flicker).
+    	fromWindow.setVisible(false);
+
+    	// 5) Final state.
+    	this.passThroughMode = enablePassThrough;
+
+    	// If we're switching to the decorated window, make sure pass-through is disabled.
+    	if (!enablePassThrough) {
+    		passThroughFrame.setPassThroughEnabled(false);
+    	}
+    }
+
     //
-    // Global key listener: F9 toggles overlay pass-through
+    // Global key listener: F9 toggles between click-through overlay and a normal decorated window.
     //
     @Override
     public void nativeKeyPressed(com.github.kwhat.jnativehook.keyboard.NativeKeyEvent e) {
         int toggleKey = OverlayPreferences.getPassThroughToggleKeyCode();
         if (toggleKey > 0 && e.getKeyCode() == toggleKey) {
-            overlayFrame.togglePassThrough();
+            SwingUtilities.invokeLater(() -> setPassThroughMode(!passThroughMode));
         }
     }
 
@@ -170,4 +234,31 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     public void nativeKeyTyped(com.github.kwhat.jnativehook.keyboard.NativeKeyEvent e) {
         // not used
     }
+    
+    private void prewarmDecoratedDialog() {
+    	SwingUtilities.invokeLater(() -> {
+    		// Make sure the peer is created.
+    		decoratedDialog.addNotify();
+
+    		// Put it somewhere not visible.
+    		java.awt.Rectangle b = passThroughFrame.getBounds();
+    		decoratedDialog.setBounds(b.x, b.y + 3000, b.width, b.height);
+
+    		// Show once at essentially invisible opacity (decorated window stays opaque for normal use).
+    		try {
+    			decoratedDialog.setOpacity(0.01f);
+    		} catch (Exception ignored) {
+    		}
+
+    		decoratedDialog.setVisible(true);
+
+    		// Immediately hide again; restore opacity.
+    		decoratedDialog.setVisible(false);
+    		try {
+    			decoratedDialog.setOpacity(1.0f);
+    		} catch (Exception ignored) {
+    		}
+    	});
+    }
+
 }
