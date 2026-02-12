@@ -66,7 +66,7 @@ public class PollyTtsCached implements Closeable {
     );
 
     // Single-thread executor = non-blocking callers, but sequential playback.
-    private final ExecutorService playbackQueue = Executors.newSingleThreadExecutor(r -> {
+    private static final ExecutorService PLAYBACK_QUEUE  = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "PollyTtsCached-Playback");
         t.setDaemon(true);
         return t;
@@ -82,14 +82,14 @@ public class PollyTtsCached implements Closeable {
     }
 
     public ExecutorService getPlaybackQueue() {
-        return playbackQueue;
+        return PLAYBACK_QUEUE;
     }
 
     public void speak(String text) {
         if (text == null || text.isBlank()) {
             return;
         }
-        playbackQueue.submit(() -> {
+        PLAYBACK_QUEUE.submit(() -> {
             try {
                 speakBlocking(text);
             } catch (Exception e) {
@@ -996,7 +996,6 @@ private static VoiceId resolveVoiceId(String voiceName) {
 
     @Override
     public void close() {
-        playbackQueue.shutdownNow();
         try {
             polly.close();
         } catch (Exception e) {

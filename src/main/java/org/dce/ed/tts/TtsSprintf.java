@@ -10,6 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,6 +40,13 @@ public class TtsSprintf {
         List<String> resolve(String tag, Object value);
     }
 
+    private final ExecutorService speakQueue = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "edo-tts-queue");
+        t.setDaemon(true);
+        return t;
+    });
+
+    
     public static void main(String args[]) {
     	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
     	ttsSprintf.speakf("Hello McFly!");

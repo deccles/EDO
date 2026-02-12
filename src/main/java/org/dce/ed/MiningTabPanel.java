@@ -67,6 +67,7 @@ public class MiningTabPanel extends JPanel {
 
 	private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 	private String lastProspectorAnnouncementSig;
+	private String prospectorHighlightName;
 
 	private final GalacticAveragePrices prices;
 	private final MaterialNameMatcher matcher;
@@ -399,7 +400,18 @@ private final JLayer<JTable> cargoLayer;
 		applyUiFontPreferences();
 	}
 
-	private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
+	
+private boolean isHighlightedProspectorRow(Row r) {
+	if (r == null) {
+		return false;
+	}
+	if (prospectorHighlightName == null || prospectorHighlightName.isBlank()) {
+		return false;
+	}
+	return prospectorHighlightName.equals(r.getName());
+}
+
+private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
 	private Color resolveRowForeground(JTable tbl, int viewRow) {
 		if (tbl == null || viewRow < 0) {
 			return EdoUi.ED_ORANGE;
@@ -416,12 +428,14 @@ private final JLayer<JTable> cargoLayer;
 				if (r.isCore()) {
 					return CORE_BLUE;
 				}
+				if (isHighlightedProspectorRow(r)) {
+					return NON_CORE_GREEN;
+				}
 				if (r.getEstimatedValue() > GREEN_THRESHOLD_AVG_CR_PER_TON) {
 					return NON_CORE_GREEN;
 				}
 			}
-
-			return EdoUi.ED_ORANGE;
+return EdoUi.ED_ORANGE;
 		}
 
 		return EdoUi.ED_ORANGE;
@@ -832,11 +846,17 @@ private final JLayer<JTable> cargoLayer;
 			rows.add(new Row(shownName + " (Core)", Double.NaN, avg, tons, value, true));
 		}
 
+		// Fire announcement 1 second later
+		new javax.swing.Timer(1000, e -> {
+		    ((javax.swing.Timer) e.getSource()).stop();
+		    maybeAnnounceProspector(event, rows);
+		}).start();
+
 		rows.sort(Comparator
 				.comparing(Row::isCore).reversed()
+				.thenComparing(Comparator.comparing((Row r) -> isHighlightedProspectorRow(r)).reversed())
 				.thenComparing(Comparator.comparingDouble(Row::getEstimatedValue).reversed())
 				.thenComparing(Row::getName, String.CASE_INSENSITIVE_ORDER));
-
 
 		model.setRows(rows);
 		maybeAnnounceProspector(event, rows);
@@ -852,69 +872,115 @@ private final JLayer<JTable> cargoLayer;
 
 
 	private void maybeAnnounceProspector(ProspectedAsteroidEvent event, List<Row> rows) {
-		if (event == null || rows == null || rows.isEmpty()) {
-			return;
-		}
+	    if (event == null || rows == null || rows.isEmpty()) {
+	        prospectorHighlightName = null;
+	        return;
+	    }
 
-		double minProp = OverlayPreferences.getProspectorMinProportionPercent();
-		if (minProp <= 0.0) {
-			return;
-		}
+	    double minProp = OverlayPreferences.getProspectorMinProportionPercent();
+	    if (minProp <= 0.0) {
+	        prospectorHighlightName = null;
+	        return;
+	    }
 
-		String materialsCsv = OverlayPreferences.getProspectorMaterialsCsv();
-		Set<String> allowed = new HashSet<>();
-		if (materialsCsv != null && !materialsCsv.isBlank()) {
-			for (String s : materialsCsv.split(",")) {
-				if (s == null) {
-					continue;
-				}
-				String norm = GalacticAveragePrices.normalizeMaterialKey(s.trim());
-				if (norm != null && !norm.isBlank()) {
-					allowed.add(norm);
-				}
-			}
-		}
+	    String materialsCsv = OverlayPreferences.getProspectorMaterialsCsv();
+	    Set<String> allowed = new HashSet<>();
+	    if (materialsCsv != null && !materialsCsv.isBlank()) {
+	        for (String s : materialsCsv.split(",")) {
+	            if (s == null) {
+	                continue;
+	            }
+	            String norm = GalacticAveragePrices.normalizeMaterialKey(s.trim());
+	            if (norm != null && !norm.isBlank()) {
+	                allowed.add(norm);
+	            }
+	        }
+	    }
 
-		int minAvg = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
+	    Row best = null;
+	    List<Row> matches = new ArrayList<>();
+	    double minPct = Double.POSITIVE_INFINITY;
+	    double maxPct = Double.NEGATIVE_INFINITY;
 
-		Row best = null;
-		for (Row r : rows) {
-			if (r == null || r.isSummary() || r.isCore()) {
-				continue;
-			}
-			double pct = r.getProportionPercent();
-			if (Double.isNaN(pct) || pct < minProp) {
-				continue;
-			}
+	    for (Row r : rows) {
+	        if (r == null || r.isSummary() || r.isCore()) {
+	            continue;
+	        }
 
-			if (!allowed.isEmpty()) {
-				String norm = GalacticAveragePrices.normalizeMaterialKey(r.getName());
-				if (norm == null || norm.isBlank() || !allowed.contains(norm)) {
-					continue;
-				}
-			}
+	        double pct = r.getProportionPercent();
+	        if (Double.isNaN(pct) || pct < minProp) {
+	            continue;
+	        }
 
-			if (minAvg > 0 && r.getAvgSell() > 0 && r.getAvgSell() < minAvg) {
-				continue;
-			}
+	        if (!allowed.isEmpty()) {
+	            String norm = GalacticAveragePrices.normalizeMaterialKey(r.getName());
+	            if (norm == null || norm.isBlank()) {
+	                continue;
+	            }
 
-			if (best == null || r.getEstimatedValue() > best.getEstimatedValue()) {
-				best = r;
-			}
-		}
+	            boolean ok = false;
+	            for (String a : allowed) {
+	                String needle = GalacticAveragePrices.normalizeMaterialKey(a);
+	                if (needle != null && !needle.isBlank() && norm.contains(needle)) {
+	                    ok = true;
+	                    break;
+	                }
+	            }
+	            if (!ok) {
+	                continue;
+	            }
+	        }
 
-		if (best == null) {
-			return;
-		}
+	        matches.add(r);
 
-		String sig = event.getTimestamp() + "|" + best.getName() + "|" + Math.round(best.getProportionPercent());
-		if (sig.equals(lastProspectorAnnouncementSig)) {
-			return;
-		}
-		lastProspectorAnnouncementSig = sig;
+	        if (pct < minPct) {
+	            minPct = pct;
+	        }
+	        if (pct > maxPct) {
+	            maxPct = pct;
+	        }
 
-		int pctRounded = (int) Math.round(best.getProportionPercent());
-		tts.speakf("Prospector: {material} at {n} percent.", best.getName(), pctRounded);
+	        if (best == null || r.getEstimatedValue() > best.getEstimatedValue()) {
+	            best = r;
+	        }
+	    }
+
+	    if (matches.isEmpty() || best == null) {
+	        prospectorHighlightName = null;
+	        return;
+	    }
+
+	    // Keep your existing "highlight one" behavior for now
+	    prospectorHighlightName = best.getName();
+
+	    // Build one combined sentence
+	    matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
+	    List<String> names = new ArrayList<>();
+	    for (Row r : matches) {
+	        names.add(r.getName());
+	    }
+
+	    int minRounded = (int) Math.round(minPct);
+	    int maxRounded = (int) Math.round(maxPct);
+
+	    String ts = event.getTimestamp().toString();
+	    if (ts.length() > 19) {
+	        ts = ts.substring(0, 19);
+	    }
+
+	    // Substring-based timestamp for stability + include list + range so it doesn't repeat incorrectly
+	    String sig = ts + "|" + String.join(",", names) + "|" + minRounded + "|" + maxRounded;
+	    if (sig.equals(lastProspectorAnnouncementSig)) {
+	        return;
+	    }
+	    lastProspectorAnnouncementSig = sig;
+
+	    tts.speakf(
+	            "Prospector found {list} from {min} to {max} percent.",
+	            joinWithAnd(names),
+	            minRounded,
+	            maxRounded
+	    );
 	}
 
 	/**
@@ -978,6 +1044,30 @@ private final JLayer<JTable> cargoLayer;
 		 }
 		 return sb.toString();
 	 }
+	 private static String joinWithAnd(List<String> items) {
+		    if (items == null || items.isEmpty()) {
+		        return "";
+		    }
+		    if (items.size() == 1) {
+		        return items.get(0);
+		    }
+		    if (items.size() == 2) {
+		        return items.get(0) + " and " + items.get(1);
+		    }
+
+		    StringBuilder sb = new StringBuilder();
+		    for (int i = 0; i < items.size(); i++) {
+		        if (i > 0) {
+		            if (i == items.size() - 1) {
+		                sb.append(", and ");
+		            } else {
+		                sb.append(", ");
+		            }
+		        }
+		        sb.append(items.get(i));
+		    }
+		    return sb.toString();
+		}
 
 
 	 /**
