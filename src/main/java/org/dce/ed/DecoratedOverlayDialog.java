@@ -7,6 +7,7 @@ import java.awt.Window;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
+import javax.swing.Box;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -140,6 +141,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		popup.setBackground(MENU_POPUP_BG);
 		popup.setBorder(new EmptyBorder(4, 4, 4, 4));
 
+		bar.add(Box.createHorizontalGlue());
 		bar.add(overlayMenu);
 		return bar;
 	}
