@@ -49,6 +49,8 @@ import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
 import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
+import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
 
 import com.google.gson.JsonArray;
@@ -62,6 +64,9 @@ import com.google.gson.JsonParser;
  * Shows the most recent ProspectedAsteroid materials sorted by galactic average value.
  */
 public class MiningTabPanel extends JPanel {
+
+	private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
+	private String lastProspectorAnnouncementSig;
 
 	private final GalacticAveragePrices prices;
 	private final MaterialNameMatcher matcher;
@@ -81,7 +86,7 @@ public class MiningTabPanel extends JPanel {
 	private Path cargoFile;
 	private long lastCargoModified = -1L;
 
-private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
+	private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
 
 private final TableScanState prospectorScan;
 private final TableScanState cargoScan;
@@ -579,7 +584,7 @@ private final JLayer<JTable> cargoLayer;
 			totalValue += r.getEstimatedValue();
 		}
 
-		out.add(new Row("Total", 0, totalTons, totalValue, false, true));
+		out.add(new Row("Total", Double.NaN, 0, totalTons, totalValue, false, true));
 		return out;
 	}
 
@@ -807,7 +812,7 @@ private final JLayer<JTable> cargoLayer;
 			double tons = (mp.getProportion() / 100.0) * totalTons;
 			double value = tons * avg;
 
-			rows.add(new Row(shownName, avg, tons, value));
+			rows.add(new Row(shownName, mp.getProportion(), avg, tons, value));
 		}
 
 		if (motherlode != null && !motherlode.isBlank()) {
@@ -817,7 +822,7 @@ private final JLayer<JTable> cargoLayer;
 			double tons = OverlayPreferences.getMiningEstimateTonsCore();
 			double value = tons * avg;
 
-			rows.add(new Row(shownName + " (Core)", avg, tons, value, true));
+			rows.add(new Row(shownName + " (Core)", Double.NaN, avg, tons, value, true));
 		}
 
 		rows.sort(Comparator
@@ -827,6 +832,7 @@ private final JLayer<JTable> cargoLayer;
 
 
 		model.setRows(rows);
+		maybeAnnounceProspector(event, rows);
 		prospectorScan.startProspectorScan(prospectorLayer);
 
 		String hdr = "Mining (" + (content == null ? "" : content) + ")";
@@ -834,6 +840,74 @@ private final JLayer<JTable> cargoLayer;
 			hdr += " - Motherlode: " + motherlode;
 		}
 		headerLabel.setText(hdr);
+
+	}
+
+
+	private void maybeAnnounceProspector(ProspectedAsteroidEvent event, List<Row> rows) {
+		if (event == null || rows == null || rows.isEmpty()) {
+			return;
+		}
+
+		double minProp = OverlayPreferences.getProspectorMinProportionPercent();
+		if (minProp <= 0.0) {
+			return;
+		}
+
+		String materialsCsv = OverlayPreferences.getProspectorMaterialsCsv();
+		Set<String> allowed = new HashSet<>();
+		if (materialsCsv != null && !materialsCsv.isBlank()) {
+			for (String s : materialsCsv.split(",")) {
+				if (s == null) {
+					continue;
+				}
+				String norm = GalacticAveragePrices.normalizeMaterialKey(s.trim());
+				if (norm != null && !norm.isBlank()) {
+					allowed.add(norm);
+				}
+			}
+		}
+
+		int minAvg = OverlayPreferences.getProspectorMinAvgValueCrPerTon();
+
+		Row best = null;
+		for (Row r : rows) {
+			if (r == null || r.isSummary() || r.isCore()) {
+				continue;
+			}
+			double pct = r.getProportionPercent();
+			if (Double.isNaN(pct) || pct < minProp) {
+				continue;
+			}
+
+			if (!allowed.isEmpty()) {
+				String norm = GalacticAveragePrices.normalizeMaterialKey(r.getName());
+				if (norm == null || norm.isBlank() || !allowed.contains(norm)) {
+					continue;
+				}
+			}
+
+			if (minAvg > 0 && r.getAvgSell() > 0 && r.getAvgSell() < minAvg) {
+				continue;
+			}
+
+			if (best == null || r.getEstimatedValue() > best.getEstimatedValue()) {
+				best = r;
+			}
+		}
+
+		if (best == null) {
+			return;
+		}
+
+		String sig = event.getTimestamp() + "|" + best.getName() + "|" + Math.round(best.getProportionPercent());
+		if (sig.equals(lastProspectorAnnouncementSig)) {
+			return;
+		}
+		lastProspectorAnnouncementSig = sig;
+
+		int pctRounded = (int) Math.round(best.getProportionPercent());
+		tts.speakf("Prospector: {material} at {n} percent.", best.getName(), pctRounded);
 	}
 
 	/**
@@ -935,6 +1009,7 @@ private final JLayer<JTable> cargoLayer;
 
 	 private static final class Row {
 		 private final String name;
+		 private final double proportionPercent;
 		 private final int avgSell;
 		 private final double expectedTons;
 		 private final double estimatedValue;
@@ -942,15 +1017,24 @@ private final JLayer<JTable> cargoLayer;
 		 private final boolean isSummary;
 
 		 Row(String name, int avgSell, double expectedTons, double estimatedValue) {
-			 this(name, avgSell, expectedTons, estimatedValue, false);
+			 this(name, Double.NaN, avgSell, expectedTons, estimatedValue, false, false);
 		 }
 
 		 Row(String name, int avgSell, double expectedTons, double estimatedValue, boolean isCore) {
-			 this(name, avgSell, expectedTons, estimatedValue, isCore, false);
+			 this(name, Double.NaN, avgSell, expectedTons, estimatedValue, isCore, false);
 		 }
 
-		 Row(String name, int avgSell, double expectedTons, double estimatedValue, boolean isCore, boolean isSummary) {
+		 Row(String name, double proportionPercent, int avgSell, double expectedTons, double estimatedValue) {
+			 this(name, proportionPercent, avgSell, expectedTons, estimatedValue, false, false);
+		 }
+
+		 Row(String name, double proportionPercent, int avgSell, double expectedTons, double estimatedValue, boolean isCore) {
+			 this(name, proportionPercent, avgSell, expectedTons, estimatedValue, isCore, false);
+		 }
+
+		 Row(String name, double proportionPercent, int avgSell, double expectedTons, double estimatedValue, boolean isCore, boolean isSummary) {
 			 this.name = name;
+			 this.proportionPercent = proportionPercent;
 			 this.avgSell = avgSell;
 			 this.expectedTons = expectedTons;
 			 this.estimatedValue = estimatedValue;
@@ -958,8 +1042,12 @@ private final JLayer<JTable> cargoLayer;
 			 this.isSummary = isSummary;
 		 }
 
-		 String getName() {
+String getName() {
 			 return name;
+		 }
+
+		 double getProportionPercent() {
+			 return proportionPercent;
 		 }
 
 		 int getAvgSell() {
@@ -989,6 +1077,7 @@ private final JLayer<JTable> cargoLayer;
 
 		 private final NumberFormat intFmt = NumberFormat.getIntegerInstance(Locale.US);
 		 private final NumberFormat tonsFmt = NumberFormat.getNumberInstance(Locale.US);
+		 private final NumberFormat pctFmt = NumberFormat.getNumberInstance(Locale.US);
 
 		 private List<Row> rows = List.of();
 
@@ -997,6 +1086,7 @@ private final JLayer<JTable> cargoLayer;
 
 			 cols = new String[] {
 					 "Material",
+					 "Percent",
 					 "Avg Cr/t",
 					 tl,
 					 "Est. Value"
@@ -1005,6 +1095,9 @@ private final JLayer<JTable> cargoLayer;
 			 boolean estimated = tl.toLowerCase(Locale.US).contains("est");
 			 tonsFmt.setMaximumFractionDigits(estimated ? 1 : 0);
 			 tonsFmt.setMinimumFractionDigits(0);
+		 
+			 pctFmt.setMaximumFractionDigits(1);
+			 pctFmt.setMinimumFractionDigits(0);
 		 }
 
 		 void setRows(List<Row> newRows) {
@@ -1044,22 +1137,29 @@ private final JLayer<JTable> cargoLayer;
 				 case 1:
 					 return "";
 				 case 2:
-					 return tonsFmt.format(r.getExpectedTons());
+					 return "";
 				 case 3:
+					 return tonsFmt.format(r.getExpectedTons());
+				 case 4:
 					 return intFmt.format(Math.round(r.getEstimatedValue()));
 				 default:
 					 return "";
 				 }
-			 }
+			}
 
 			 switch (columnIndex) {
 			 case 0:
 				 return r.getName();
 			 case 1:
-				 return r.getAvgSell() <= 0 ? "" : intFmt.format(r.getAvgSell());
+				 if (Double.isNaN(r.getProportionPercent()) || r.getProportionPercent() <= 0.0) {
+					 return "";
+				 }
+				 return pctFmt.format(r.getProportionPercent());
 			 case 2:
-				 return tonsFmt.format(r.getExpectedTons());
+				 return r.getAvgSell() <= 0 ? "" : intFmt.format(r.getAvgSell());
 			 case 3:
+				 return tonsFmt.format(r.getExpectedTons());
+			 case 4:
 				 return r.getAvgSell() <= 0 ? "" : intFmt.format(Math.round(r.getEstimatedValue()));
 			 default:
 				 return "";
