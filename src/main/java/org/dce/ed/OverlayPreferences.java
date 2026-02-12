@@ -48,6 +48,7 @@ public final class OverlayPreferences {
     // --- Text notifications (email-to-SMS gateways like vtext.com) ---
     private static final String KEY_TEXT_NOTIFICATIONS_ENABLED = "textNotifications.enabled";
     private static final String KEY_TEXT_NOTIFICATIONS_ADDRESS = "textNotifications.address"; // e.g. 5551234567@vtext.com
+    private static final String KEY_NON_OVERLAY_ALWAYS_ON_TOP = "window.nonOverlay.alwaysOnTop"; // Decorated window (non-overlay mode)
 
 
     // ----------------------------
@@ -138,6 +139,18 @@ public final class OverlayPreferences {
     public static void setPassThroughBackgroundRgb(int rgb) {
         PREFS.putInt(KEY_OVERLAY_BG_PT_RGB, rgb & 0xFFFFFF);
     }
+ // ---------------------------------------------------------------------
+ // Non-overlay window behavior (decorated window)
+ // ---------------------------------------------------------------------
+
+ public static boolean isNonOverlayAlwaysOnTop() {
+     boolean b = PREFS.getBoolean(KEY_NON_OVERLAY_ALWAYS_ON_TOP, false);
+     return b;
+ }
+
+ public static void setNonOverlayAlwaysOnTop(boolean alwaysOnTop) {
+     PREFS.putBoolean(KEY_NON_OVERLAY_ALWAYS_ON_TOP, alwaysOnTop);
+ }
 
     public static int getPassThroughTransparencyPercent() {
         ensureOverlayBackgroundMigratedIfNeeded();

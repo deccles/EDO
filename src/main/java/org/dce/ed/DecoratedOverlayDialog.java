@@ -117,6 +117,8 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 		applyOverlayBackgroundFromPreferences(false);
 		applyUiFontPreferences();
+		setAlwaysOnTop(OverlayPreferences.isNonOverlayAlwaysOnTop());
+
 	}
 
 	private JMenuBar createMenuBar() {

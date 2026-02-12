@@ -9,6 +9,7 @@ import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Window;
 import java.io.File;
 import java.util.List;
 import java.util.Objects;
@@ -59,6 +60,7 @@ public class PreferencesDialog extends JDialog {
     private JLabel passThroughTransparencyValueLabel;
 
     private JComboBox<String> passThroughHotkeyCombo;
+    private JCheckBox nonOverlayAlwaysOnTopCheckBox;
 
     // Logging-tab fields so OK can read them
     private JCheckBox autoDetectCheckBox;
@@ -230,6 +232,17 @@ public class PreferencesDialog extends JDialog {
         passThroughHotkeyCombo.setSelectedItem(keyCodeToDisplayString(originalPassThroughToggleKeyCode));
         hotkeyPanel.add(passThroughHotkeyCombo, gbc);
 
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+
+        nonOverlayAlwaysOnTopCheckBox = new JCheckBox("Always on top (non-overlay mode)");
+        nonOverlayAlwaysOnTopCheckBox.setOpaque(false);
+        nonOverlayAlwaysOnTopCheckBox.setSelected(OverlayPreferences.isNonOverlayAlwaysOnTop());
+        hotkeyPanel.add(nonOverlayAlwaysOnTopCheckBox, gbc);
+
+        gbc.gridwidth = 1;
+        
         content.add(hotkeyPanel, outer);
 
         panel.add(content, BorderLayout.NORTH);
@@ -955,11 +968,20 @@ content.add(speechUseAwsCheckBox, gbc);
         ok.addActionListener(e -> {
             okPressed = true;
             applyAndSavePreferences();
+
             if (getOwner() instanceof OverlayUiPreviewHost) {
-            	OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
+                OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
                 f.applyOverlayBackgroundFromPreferences(f.isPassThroughEnabled());
                 f.applyUiFontPreferences();
+
+                if (!f.isPassThroughEnabled()) {
+                    if (getOwner() instanceof Window) {
+                        Window w = (Window) getOwner();
+                        w.setAlwaysOnTop(OverlayPreferences.isNonOverlayAlwaysOnTop());
+                    }
+                }
             }
+
             dispose();
         });
 
@@ -992,6 +1014,10 @@ content.add(speechUseAwsCheckBox, gbc);
             OverlayPreferences.setPassThroughToggleKeyCode(keyCode);
         }
 
+        if (nonOverlayAlwaysOnTopCheckBox != null) {
+            OverlayPreferences.setNonOverlayAlwaysOnTop(nonOverlayAlwaysOnTopCheckBox.isSelected());
+        }
+        
         // Logging tab
         if (autoDetectCheckBox != null && customPathField != null) {
             boolean auto = autoDetectCheckBox.isSelected();
