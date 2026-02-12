@@ -1,11 +1,14 @@
 package org.dce.ed;
 
+import java.awt.AlphaComposite;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.Insets;
 import java.awt.MouseInfo;
 import java.awt.Point;
@@ -143,7 +146,28 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		// ----- Card area with the actual tab contents -----
 		cardLayout = new CardLayout();
-		cardPanel = new JPanel(cardLayout);
+
+		cardPanel = new JPanel(cardLayout) {
+
+		    private static final long serialVersionUID = 1L;
+
+		    @Override
+		    protected void paintComponent(Graphics g) {
+		        Graphics2D g2 = (Graphics2D) g.create();
+		        try {
+		            // IMPORTANT: Src overwrites pixels (including alpha).
+		            // This prevents "ghosting" between CardLayout swaps while preserving transparency.
+		            g2.setComposite(AlphaComposite.Src);
+		            g2.setColor(getBackground());
+		            g2.fillRect(0, 0, getWidth(), getHeight());
+		        } finally {
+		            g2.dispose();
+		        }
+
+		        super.paintComponent(g);
+		    }
+		};
+
 		cardPanel.setOpaque(opaque);
 		cardPanel.setBackground(Color.black);
 		cardPanel.setPreferredSize(new Dimension(400, 1000));

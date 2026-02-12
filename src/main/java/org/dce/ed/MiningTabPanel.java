@@ -225,6 +225,11 @@ private final JLayer<JTable> cargoLayer;
 			th.setDefaultRenderer(new HeaderRenderer());
 
 			th.setPreferredSize(new Dimension(pref.width, table.getRowHeight()));
+			
+			// Give the Material column more room (prevents truncation like "Grandidierite...").
+			table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+			applyMiningColumnWidths(table);
+			
 		}
 
 		DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer() {
@@ -343,6 +348,9 @@ private final JLayer<JTable> cargoLayer;
 			cargoHeader.setDefaultRenderer(new HeaderRenderer());
 
 			cargoHeader.setPreferredSize(new Dimension(pref.width, cargoTable.getRowHeight()));
+			
+			cargoTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+			applyMiningColumnWidths(cargoTable);
 		}
 
 		for (int c = 0; c < cargoTable.getColumnModel().getColumnCount(); c++) {
@@ -408,6 +416,32 @@ private final JLayer<JTable> cargoLayer;
 		return prospectorHighlightNames.contains(r.getName());
 	}
 
+	private static void applyMiningColumnWidths(JTable tbl) {
+		if (tbl == null) {
+			return;
+		}
+
+		TableColumnModel cm = tbl.getColumnModel();
+		if (cm == null || cm.getColumnCount() < 5) {
+			return;
+		}
+
+		// Material | Percent | Avg Cr/t | Tons | Est. Value
+		cm.getColumn(0).setMinWidth(170);
+		cm.getColumn(0).setPreferredWidth(260);
+
+		cm.getColumn(1).setMinWidth(55);
+		cm.getColumn(1).setPreferredWidth(70);
+
+		cm.getColumn(2).setMinWidth(70);
+		cm.getColumn(2).setPreferredWidth(85);
+
+		cm.getColumn(3).setMinWidth(55);
+		cm.getColumn(3).setPreferredWidth(70);
+
+		cm.getColumn(4).setMinWidth(75);
+		cm.getColumn(4).setPreferredWidth(95);
+	}
 
 
 
@@ -556,6 +590,8 @@ return EdoUi.ED_ORANGE;
 			Dimension pref = cth.getPreferredSize();
 			cth.setPreferredSize(new Dimension(pref.width, rowH));
 		}
+		applyMiningColumnWidths(table);
+		applyMiningColumnWidths(cargoTable);
 
 		updateScrollerHeights();
 
