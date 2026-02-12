@@ -79,7 +79,7 @@ public final class OverlayPreferences {
     // --- Mining / Prospector ---
     private static final String KEY_MINING_PROSPECTOR_MATERIALS = "mining.prospector.materials"; // comma-separated
     private static final String KEY_MINING_PROSPECTOR_MIN_PROP = "mining.prospector.minProportion"; // percent
-    private static final String KEY_MINING_PROSPECTOR_MIN_AVG_VALUE = "mining.prospector.minAvgValueCrPerTon"; // credits/ton
+    private static final String KEY_MINING_PROSPECTOR_MIN_AVG_VALUE = "mining.prospector.minAvgValuePerTon"; // credits/ton
 
     // Mining value estimation (Mining tab)
     private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
@@ -405,7 +405,7 @@ public static Engine getSpeechEngine() {
      * This is used for ProspectedAsteroid announcements when enabled.
      */
     public static int getProspectorMinAvgValueCrPerTon() {
-        String s = PREFS.get(KEY_MINING_PROSPECTOR_MIN_AVG_VALUE, "28000");
+        String s = PREFS.get(KEY_MINING_PROSPECTOR_MIN_AVG_VALUE, "150000");
         try {
             int v = Integer.parseInt(s.trim());
             if (v < 0) {
@@ -413,7 +413,7 @@ public static Engine getSpeechEngine() {
             }
             return v;
         } catch (Exception e) {
-            return 28000;
+            return 150000;
         }
     }
 
