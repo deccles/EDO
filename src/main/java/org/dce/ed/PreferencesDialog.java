@@ -417,15 +417,14 @@ public class PreferencesDialog extends JDialog {
     	prospectorMaterialsField.setText(OverlayPreferences.getProspectorMaterialsCsv());
     	prospectorBox.add(prospectorMaterialsField, gbc);
 
-    	gbc.weightx = 0.0;
+    	gbc.gridx = 2;
     	gbc.fill = GridBagConstraints.NONE;
+    	gbc.weightx = 0.0;
 
-    	gbc.gridx = 0;
-    	gbc.gridy++;
-    	JLabel minPropLabel = new JLabel("Minimum proportion (%):");
+    	JLabel minPropLabel = new JLabel("Min%:");
     	prospectorBox.add(minPropLabel, gbc);
 
-    	gbc.gridx = 1;
+    	gbc.gridx = 3;
     	double currentProp = OverlayPreferences.getProspectorMinProportionPercent();
     	prospectorMinPropSpinner = new JSpinner(new SpinnerNumberModel(currentProp, 0.0, 100.0, 1.0));
     	((JSpinner.DefaultEditor) prospectorMinPropSpinner.getEditor()).getTextField().setColumns(6);
@@ -444,7 +443,7 @@ public class PreferencesDialog extends JDialog {
 
     	gbc.gridx = 0;
     	gbc.gridy++;
-    	gbc.gridwidth = 2;
+    	gbc.gridwidth = 4;
     	JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the thresholds.");
     	prospectorBox.add(hint, gbc);
 
