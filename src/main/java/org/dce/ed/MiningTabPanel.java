@@ -37,9 +37,9 @@ import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
+import javax.swing.border.CompoundBorder;
 import javax.swing.plaf.LayerUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -54,6 +54,7 @@ import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.EdoUi.User;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -217,9 +218,9 @@ private final JLayer<JTable> cargoLayer;
 
 		JTableHeader th = table.getTableHeader();
 		if (th != null) {
-			th.setOpaque(false);
+			th.setOpaque(true);
 			th.setForeground(EdoUi.User.MAIN_TEXT);
-			th.setBackground(EdoUi.Internal.TRANSPARENT);
+			th.setBackground(EdoUi.User.BACKGROUND);
 			th.setBorder(null);
 			th.setReorderingAllowed(false);
 			th.setFocusable(false);
@@ -1594,20 +1595,21 @@ private static final class TransparentTableHeader extends JTableHeader {
 
 		 TransparentTableHeader(TableColumnModel cm) {
 			 super(cm);
-			 setOpaque(false);
-			 setBackground(EdoUi.Internal.TRANSPARENT);
+			 setOpaque(true);
+			 setBackground(EdoUi.User.BACKGROUND);
 		 }
 
 		 @Override
 		 protected void paintComponent(Graphics g) {
-			 // Force-clear any background paint from the LAF delegate.
+			 // Fill with theme background (header does not automatically inherit panel background).
 			 Graphics2D g2 = (Graphics2D) g.create();
-			 g2.setComposite(AlphaComposite.Clear);
+			 g2.setComposite(AlphaComposite.SrcOver);
+			 g2.setColor(EdoUi.User.BACKGROUND);
 			 g2.fillRect(0, 0, getWidth(), getHeight());
 			 g2.dispose();
 
-			 setOpaque(false);
-			 setBackground(EdoUi.Internal.TRANSPARENT);
+			 setOpaque(true);
+			 setBackground(EdoUi.User.BACKGROUND);
 
 			 super.paintComponent(g);
 		 }
@@ -1630,8 +1632,8 @@ private static final class TransparentTableHeader extends JTableHeader {
 					 row,
 					 column);
 
-			 label.setOpaque(false);
-			 label.setBackground(EdoUi.Internal.TRANSPARENT);
+			 label.setOpaque(true);
+			 label.setBackground(EdoUi.User.BACKGROUND);
 			 label.setForeground(EdoUi.Internal.tableHeaderForeground());
 			 label.setFont(label.getFont().deriveFont(Font.BOLD));
 			 label.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);

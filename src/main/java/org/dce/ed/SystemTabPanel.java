@@ -80,7 +80,9 @@ public class SystemTabPanel extends JPanel {
     private static final Icon BIO_DOLLAR_ICON = new DollarIcon(14, 14);
 
     private static final long BIO_DOLLAR_THRESHOLD = 20_000_000L;
-    // NEW: semi-transparent orange for separators, similar to RouteTabPanel    // NEW: shared ED font (similar to Route tab)
+    // NEW: semi-transparent orange for separators, similar to RouteTabPanel
+    private static final Color ED_ORANGE_TRANS = EdoUi.ED_ORANGE_TRANS;
+    // NEW: shared ED font (similar to Route tab)
         private Font uiFont = OverlayPreferences.getUiFont();
 
     private final JTable table;
@@ -180,7 +182,7 @@ public class SystemTabPanel extends JPanel {
         JTableHeader header = table.getTableHeader();
         header.setOpaque(false);
         header.setForeground(EdoUi.User.MAIN_TEXT);
-        header.setBackground(Color.BLACK);
+        header.setBackground(EdoUi.User.BACKGROUND);
         header.setFont(uiFont.deriveFont(Font.BOLD));
         header.setBorder(null);
         
@@ -196,7 +198,7 @@ public class SystemTabPanel extends JPanel {
                         table, value, false, false, row, column);
 
                 label.setOpaque(true);
-                label.setBackground(Color.BLACK);
+                label.setBackground(EdoUi.User.BACKGROUND);
                 label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
@@ -1215,7 +1217,7 @@ static class Row {
 
             Graphics2D g2 = (Graphics2D) g.create();
             try {
-                g2.setColor(EdoUi.ED_ORANGE_TRANS);
+                g2.setColor(ED_ORANGE_TRANS);
 
                 int rowCount = tableModel.getRowCount();
                 boolean firstBodySeen = false;
@@ -1226,7 +1228,7 @@ static class Row {
                         if (firstBodySeen) {
                             Rectangle rect = getCellRect(row, 0, true);
                             int y = rect.y;
-                            g2.setColor(EdoUi.ED_ORANGE_TRANS);
+                            g2.setColor(ED_ORANGE_TRANS);
                             g2.drawLine(0, y, getWidth(), y);
                         } else {
                             firstBodySeen = true;

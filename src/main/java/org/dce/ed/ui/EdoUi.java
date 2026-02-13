@@ -19,7 +19,7 @@ public final class EdoUi {
 
         // Core theme
         public static Color MAIN_TEXT = new Color(255, 140, 0); // ED orange
-        public static Color BACKGROUND = new Color(30, 30, 30);
+        public static Color BACKGROUND = new Color(10, 10, 10);
         public static Color PANEL_BG = new Color(22, 22, 22);
 
         // Semantic/status

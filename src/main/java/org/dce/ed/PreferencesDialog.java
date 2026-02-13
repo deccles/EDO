@@ -116,6 +116,10 @@ public class PreferencesDialog extends JDialog {
     private final int originalPassThroughTransparencyPct;
     private final int originalPassThroughToggleKeyCode;
 
+    private final int originalUiMainTextRgb;
+    private final int originalUiBackgroundRgb;
+
+    
     public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
             "Joanna",
             "Matthew",
@@ -139,6 +143,10 @@ public class PreferencesDialog extends JDialog {
         this.originalPassThroughTransparencyPct = OverlayPreferences.getPassThroughTransparencyPercent();
         this.originalPassThroughToggleKeyCode = OverlayPreferences.getPassThroughToggleKeyCode();
 
+        this.originalUiMainTextRgb = OverlayPreferences.getUiMainTextRgb();
+        this.originalUiBackgroundRgb = OverlayPreferences.getUiBackgroundRgb();
+
+        
         this.okPressed = false;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -414,6 +422,7 @@ public class PreferencesDialog extends JDialog {
             Color chosen = JColorChooser.showDialog(this, "Choose main text color", uiMainTextColorButton.getBackground());
             if (chosen != null) {
                 uiMainTextColorButton.setBackground(chosen);
+                applyLiveColorPreviewFromButtons();
             }
         });
         grid.add(uiMainTextColorButton, gbc);
@@ -430,14 +439,64 @@ public class PreferencesDialog extends JDialog {
             Color chosen = JColorChooser.showDialog(this, "Choose background color", uiBackgroundColorButton.getBackground());
             if (chosen != null) {
                 uiBackgroundColorButton.setBackground(chosen);
+                applyLiveColorPreviewFromButtons();
             }
         });
         grid.add(uiBackgroundColorButton, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
+
+        JButton resetColorsButton = new JButton("Reset to defaults");
+        resetColorsButton.addActionListener(e -> {
+            uiMainTextColorButton.setBackground(new Color(255, 140, 0));
+            uiBackgroundColorButton.setBackground(new Color(10, 10, 10));
+            applyLiveColorPreviewFromButtons();
+        });
+        grid.add(resetColorsButton, gbc);
 
         panel.add(grid);
         panel.add(Box.createVerticalGlue());
 
         return panel;
+    }
+    private void applyLiveColorPreviewFromButtons() {
+        if (uiMainTextColorButton == null || uiBackgroundColorButton == null) {
+            return;
+        }
+        int mainRgb = colorToRgb(uiMainTextColorButton.getBackground());
+        int bgRgb = colorToRgb(uiBackgroundColorButton.getBackground());
+        applyLiveColorPreview(mainRgb, bgRgb);
+    }
+
+    private void applyLiveColorPreview(int mainRgb, int bgRgb) {
+        // Live preview: write to preferences so the existing theme plumbing picks it up.
+        // If the user cancels, revertLivePreviewIfNeeded() restores the original values.
+        OverlayPreferences.setUiMainTextRgb(mainRgb);
+        OverlayPreferences.setUiBackgroundRgb(bgRgb);
+        OverlayPreferences.applyThemeToEdoUi();
+
+        if (getOwner() instanceof OverlayUiPreviewHost) {
+            OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
+            f.applyThemeFromPreferences();
+
+            boolean pt = f.isPassThroughEnabled();
+            int pct;
+            if (pt) {
+                pct = passThroughTransparencySlider != null
+                        ? passThroughTransparencySlider.getValue()
+                        : originalPassThroughTransparencyPct;
+            } else {
+                pct = normalTransparencySlider != null
+                        ? normalTransparencySlider.getValue()
+                        : originalNormalTransparencyPct;
+            }
+
+            // Also preview overlay background using the chosen theme background color
+            f.applyOverlayBackgroundPreview(pt, bgRgb, pct);
+        }
     }
 
     private JPanel createMiningPanel() {
@@ -863,8 +922,19 @@ public class PreferencesDialog extends JDialog {
         if (!(getOwner() instanceof OverlayUiPreviewHost)) {
             return;
         }
+
         OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
+
+        // Revert theme colors
+        OverlayPreferences.setUiMainTextRgb(originalUiMainTextRgb);
+        OverlayPreferences.setUiBackgroundRgb(originalUiBackgroundRgb);
+        OverlayPreferences.applyThemeToEdoUi();
+        f.applyThemeFromPreferences();
+
+        // Revert font
         f.applyUiFontPreview(originalUiFont);
+
+        // Revert overlay background preview
         boolean pt = f.isPassThroughEnabled();
         int rgb = pt ? originalPassThroughBgRgb : originalNormalBgRgb;
         int pct = pt ? originalPassThroughTransparencyPct : originalNormalTransparencyPct;

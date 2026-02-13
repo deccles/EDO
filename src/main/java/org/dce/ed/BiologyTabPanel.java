@@ -684,7 +684,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
         th.setOpaque(true);
         th.setForeground(EdoUi.User.MAIN_TEXT);
-        th.setBackground(EdoUi.ED_DARK);
+        th.setBackground(EdoUi.User.BACKGROUND);
 
         th.setDefaultRenderer(new DefaultTableCellRenderer() {
 
@@ -701,7 +701,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
                 JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
                 label.setOpaque(true);
-                label.setBackground(EdoUi.ED_DARK);
+                label.setBackground(EdoUi.User.BACKGROUND);
                 label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setBorder(new EmptyBorder(0, 6, 0, 6));
                 return label;

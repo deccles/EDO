@@ -180,9 +180,29 @@ public class RouteTabPanel extends JPanel {
 		table.setFont(uiFont);
 		table.getTableHeader().setReorderingAllowed(false);
 		table.getTableHeader().setResizingAllowed(true);
-		table.getTableHeader().setForeground(EdoUi.User.MAIN_TEXT);
-		table.getTableHeader().setBackground(EdoUi.Internal.TRANSPARENT);
-		table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
+		JTableHeader routeHeader = table.getTableHeader();
+		routeHeader.setOpaque(true);
+		routeHeader.setForeground(EdoUi.User.MAIN_TEXT);
+		routeHeader.setBackground(EdoUi.User.BACKGROUND);
+		routeHeader.setFont(uiFont.deriveFont(Font.BOLD));
+		routeHeader.setDefaultRenderer(new DefaultTableCellRenderer() {
+			private static final long serialVersionUID = 1L;
+			@Override
+			public Component getTableCellRendererComponent(JTable tbl,
+					Object value,
+					boolean isSelected,
+					boolean hasFocus,
+					int row,
+					int column) {
+				JLabel l = (JLabel) super.getTableCellRendererComponent(tbl, value, false, false, row, column);
+				l.setOpaque(true);
+				l.setBackground(EdoUi.User.BACKGROUND);
+				l.setForeground(EdoUi.User.MAIN_TEXT);
+				l.setFont(uiFont.deriveFont(Font.BOLD));
+				l.setBorder(new EmptyBorder(3, 4, 3, 4));
+				return l;
+			}
+		});
 		// Default renderer that gives us consistent orange text + padding
 		DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer() {
 			private static final long serialVersionUID = 1L;
