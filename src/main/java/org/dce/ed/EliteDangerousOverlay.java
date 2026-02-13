@@ -45,6 +45,9 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     private volatile boolean passThroughMode;
 
     public EliteDangerousOverlay() {
+        // Apply theme prefs BEFORE constructing any UI components, so everything is styled consistently.
+        OverlayPreferences.applyThemeToEdoUi();
+
         this.prefs = Preferences.userNodeForPackage(EliteDangerousOverlay.class);
         this.passThroughMode = true;
         this.contentPanel = new OverlayContentPanel(() -> passThroughMode);
@@ -56,7 +59,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         this.decoratedDialog.setOnRequestSwitchToPassThrough(() -> SwingUtilities.invokeLater(() -> setPassThroughMode(true)));
 
         UIManager.put("TitlePane.background", EdoUi.User.BACKGROUND);
-        UIManager.put("TitlePane.foreground", Color.ORANGE);
+        UIManager.put("TitlePane.foreground", EdoUi.User.MAIN_TEXT);
         
         AppIconUtil.applyAppIcon(passThroughFrame, "/org/dce/ed/edsm/locate_icon.png");
         GithubMsiUpdater.checkForUpdatesOnStartup(passThroughFrame);

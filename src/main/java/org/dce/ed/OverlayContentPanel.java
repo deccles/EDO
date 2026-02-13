@@ -11,7 +11,7 @@ import javax.swing.JPanel;
 public class OverlayContentPanel extends JPanel {
 
     private final BooleanSupplier passThroughEnabledSupplier;
-    private final EliteOverlayTabbedPane tabbedPane;
+    private EliteOverlayTabbedPane tabbedPane;
 
     public OverlayContentPanel(BooleanSupplier passThroughEnabledSupplier) {
         this.passThroughEnabledSupplier = Objects.requireNonNull(passThroughEnabledSupplier, "passThroughEnabledSupplier");
@@ -22,6 +22,28 @@ public class OverlayContentPanel extends JPanel {
         tabbedPane = new EliteOverlayTabbedPane(() -> this.passThroughEnabledSupplier.getAsBoolean());
         add(tabbedPane, BorderLayout.CENTER);
     }
+    public void rebuildTabbedPane() {
+        EliteOverlayTabbedPane old = tabbedPane;
+
+        EliteOverlayTabbedPane next = new EliteOverlayTabbedPane(() -> this.passThroughEnabledSupplier.getAsBoolean());
+        tabbedPane = next;
+
+        if (old != null) {
+            remove(old);
+        }
+        add(next, BorderLayout.CENTER);
+
+        // Reapply current overlay background + font prefs to the new pane
+        java.awt.Color bg = getBackground();
+        boolean treatAsTransparent = (bg != null && bg.getAlpha() == 0);
+        next.applyOverlayBackground(bg, treatAsTransparent);
+        next.applyUiFontPreferences();
+
+        revalidate();
+        repaint();
+    }
+
+
 
     public EliteOverlayTabbedPane getTabbedPane() {
         return tabbedPane;

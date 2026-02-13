@@ -35,6 +35,11 @@ public final class OverlayPreferences {
     private static final String KEY_UI_FONT_NAME = "ui.font.name";
     private static final String KEY_UI_FONT_SIZE = "ui.font.size";
 
+
+    // --- UI theme colors ---
+    private static final String KEY_UI_MAIN_TEXT_RGB = "ui.colors.mainTextRgb"; // 0xRRGGBB
+    private static final String KEY_UI_BACKGROUND_RGB = "ui.colors.backgroundRgb"; // 0xRRGGBB
+
     // --- Speech / Polly (new) ---
     private static final String KEY_SPEECH_ENABLED = "speech.enabled";
     private static final String KEY_SPEECH_USE_AWS = "speech.useAwsSynthesis"; // allow AWS to generate missing speech
@@ -662,6 +667,37 @@ public static Engine getSpeechEngine() {
         int alpha = (int)Math.round(255.0 * (1.0 - (pct / 100.0)));
 
         return EdoUi.withAlpha(baseColor, alpha);
+    }
+
+
+    // ---------------------------------------------------------------------
+    // UI theme colors
+    // ---------------------------------------------------------------------
+
+    public static int getUiMainTextRgb() {
+        return PREFS.getInt(KEY_UI_MAIN_TEXT_RGB, EdoUi.User.MAIN_TEXT.getRGB() & 0x00FFFFFF);
+    }
+
+    public static void setUiMainTextRgb(int rgb) {
+        PREFS.putInt(KEY_UI_MAIN_TEXT_RGB, rgb & 0x00FFFFFF);
+    }
+
+    public static int getUiBackgroundRgb() {
+        return PREFS.getInt(KEY_UI_BACKGROUND_RGB, EdoUi.User.BACKGROUND.getRGB() & 0x00FFFFFF);
+    }
+
+    public static void setUiBackgroundRgb(int rgb) {
+        PREFS.putInt(KEY_UI_BACKGROUND_RGB, rgb & 0x00FFFFFF);
+    }
+
+    /**
+     * Apply persisted theme preferences into {@link EdoUi.User} and refresh derived colors.
+     * Safe to call multiple times.
+     */
+    public static void applyThemeToEdoUi() {
+        EdoUi.User.MAIN_TEXT = EdoUi.fromRgbInt(getUiMainTextRgb());
+        EdoUi.User.BACKGROUND = EdoUi.fromRgbInt(getUiBackgroundRgb());
+        EdoUi.refreshDerivedColors();
     }
 
     private static void putDoubleClamped(String key, double v, double min, double max) {

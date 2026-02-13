@@ -196,6 +196,18 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		repaint();
 	}
 
+
+    @Override
+    public void applyThemeFromPreferences() {
+        OverlayPreferences.applyThemeToEdoUi();
+
+        if (contentPanel != null) {
+            contentPanel.rebuildTabbedPane();
+        }
+
+        repaint();
+    }
+
 	@Override
 	public void applyUiFontPreview(Font font) {
 		if (font == null) {

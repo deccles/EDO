@@ -81,6 +81,11 @@ public class PreferencesDialog extends JDialog {
     private JComboBox<String> uiFontNameCombo;
     private JSpinner uiFontSizeSpinner;
 
+
+    // Colors-tab fields
+    private JButton uiMainTextColorButton;
+    private JButton uiBackgroundColorButton;
+
     // Mining-tab fields
     private JTextField prospectorMaterialsField;
     private JSpinner prospectorMinPropSpinner;
@@ -144,6 +149,7 @@ public class PreferencesDialog extends JDialog {
         tabs.addTab("Logging", createLoggingPanel());
         tabs.addTab("Speech", createSpeechPanel());
         tabs.addTab("Fonts", createFontsPanel());
+        tabs.addTab("Colors", createColorsPanel());
         tabs.addTab("Mining", createMiningPanel());
         tabs.addTab("Tools", createToolsPanel());
         
@@ -376,6 +382,61 @@ public class PreferencesDialog extends JDialog {
         uiFontSizeSpinner.addChangeListener(e -> updatePreviewLabelFont());
 
         panel.add(content, BorderLayout.NORTH);
+        return panel;
+    }
+
+
+    private JPanel createColorsPanel() {
+        JPanel panel = new JPanel();
+        panel.setOpaque(false);
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        int initialMainRgb = OverlayPreferences.getUiMainTextRgb();
+        int initialBgRgb = OverlayPreferences.getUiBackgroundRgb();
+
+        JPanel grid = new JPanel(new GridBagLayout());
+        grid.setOpaque(false);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(6, 6, 6, 6);
+
+        grid.add(new JLabel("Main text:"), gbc);
+
+        gbc.gridx = 1;
+        uiMainTextColorButton = new JButton("Choose...");
+        uiMainTextColorButton.setBackground(rgbToColor(initialMainRgb));
+        uiMainTextColorButton.setOpaque(true);
+        uiMainTextColorButton.addActionListener(e -> {
+            Color chosen = JColorChooser.showDialog(this, "Choose main text color", uiMainTextColorButton.getBackground());
+            if (chosen != null) {
+                uiMainTextColorButton.setBackground(chosen);
+            }
+        });
+        grid.add(uiMainTextColorButton, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        grid.add(new JLabel("Background:"), gbc);
+
+        gbc.gridx = 1;
+        uiBackgroundColorButton = new JButton("Choose...");
+        uiBackgroundColorButton.setBackground(rgbToColor(initialBgRgb));
+        uiBackgroundColorButton.setOpaque(true);
+        uiBackgroundColorButton.addActionListener(e -> {
+            Color chosen = JColorChooser.showDialog(this, "Choose background color", uiBackgroundColorButton.getBackground());
+            if (chosen != null) {
+                uiBackgroundColorButton.setBackground(chosen);
+            }
+        });
+        grid.add(uiBackgroundColorButton, gbc);
+
+        panel.add(grid);
+        panel.add(Box.createVerticalGlue());
+
         return panel;
     }
 
@@ -973,6 +1034,7 @@ content.add(speechUseAwsCheckBox, gbc);
                 OverlayUiPreviewHost f = (OverlayUiPreviewHost) getOwner();
                 f.applyOverlayBackgroundFromPreferences(f.isPassThroughEnabled());
                 f.applyUiFontPreferences();
+                f.applyThemeFromPreferences();
 
                 if (!f.isPassThroughEnabled()) {
                     if (getOwner() instanceof Window) {
@@ -1082,7 +1144,22 @@ content.add(speechUseAwsCheckBox, gbc);
             }
         }
 
-        // Mining
+        
+        // Colors
+        if (uiMainTextColorButton != null) {
+            OverlayPreferences.setUiMainTextRgb(colorToRgb(uiMainTextColorButton.getBackground()));
+        }
+        if (uiBackgroundColorButton != null) {
+            int rgb = colorToRgb(uiBackgroundColorButton.getBackground());
+            OverlayPreferences.setUiBackgroundRgb(rgb);
+
+            // Keep the overlay background in sync with the UI theme background.
+            // (Users can still override this in the Overlay tab later.)
+            OverlayPreferences.setNormalBackgroundRgb(rgb);
+            OverlayPreferences.setPassThroughBackgroundRgb(rgb);
+        }
+
+// Mining
         if (prospectorMaterialsField != null) {
             OverlayPreferences.setProspectorMaterialsCsv(prospectorMaterialsField.getText());
         }

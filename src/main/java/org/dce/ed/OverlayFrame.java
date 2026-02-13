@@ -464,6 +464,18 @@ private void installExoCreditsTracker() {
         repaint();
     }
 
+
+    @Override
+    public void applyThemeFromPreferences() {
+        OverlayPreferences.applyThemeToEdoUi();
+
+        if (contentPanel != null) {
+            contentPanel.rebuildTabbedPane();
+        }
+
+        repaint();
+    }
+
     public void applyUiFontPreview(java.awt.Font font) {
         if (font == null) {
             return;

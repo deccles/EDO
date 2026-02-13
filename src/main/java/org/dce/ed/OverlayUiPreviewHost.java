@@ -17,4 +17,6 @@ public interface OverlayUiPreviewHost {
     void applyOverlayBackgroundFromPreferences(boolean passThroughMode);
 
     void applyOverlayBackgroundPreview(boolean passThroughMode, int rgb, int transparencyPercent);
+
+    void applyThemeFromPreferences();
 }

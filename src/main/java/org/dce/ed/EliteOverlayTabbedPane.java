@@ -82,10 +82,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private static final String CARD_MINING = "MINING";
 	private static final String CARD_LOG = "LOG";
 
-	private static final int TAB_HOVER_DELAY_MS = 500;
-
-	private static final Color TAB_ORANGE = EdoUi.Internal.MAIN_TEXT_ALPHA_220;
-	private static final Color TAB_WHITE = EdoUi.Internal.WHITE_ALPHA_230;
+	private static final int TAB_HOVER_DELAY_MS = 500;	private static final Color TAB_WHITE = EdoUi.Internal.WHITE_ALPHA_230;
 
 	// Restores the original "bigger" tab look (padding inside the outline)
 	private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
@@ -128,7 +125,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 		// ----- Tab bar (row of buttons) -----
 		tabBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
 		tabBar.setOpaque(opaque);
-		tabBar.setBackground(Color.black);
+		tabBar.setBackground(EdoUi.User.BACKGROUND);
 		ButtonGroup group = new ButtonGroup();
 
 		routeButton = createTabButton("Route");
@@ -171,7 +168,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 		};
 
 		cardPanel.setOpaque(opaque);
-		cardPanel.setBackground(Color.black);
+		cardPanel.setBackground(EdoUi.User.BACKGROUND);
 		cardPanel.setPreferredSize(new Dimension(400, 1000));
 
 		// Create tab content panels
@@ -743,7 +740,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 			return;
 		}
 
-		Color c = button.isSelected() ? TAB_WHITE : TAB_ORANGE;
+		Color c = button.isSelected() ? TAB_WHITE : EdoUi.Internal.MAIN_TEXT_ALPHA_220;
 
 		// This restores size/padding compared to a bare LineBorder.
 		button.setMargin(TAB_PADDING);
