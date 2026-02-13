@@ -69,9 +69,6 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         ConsoleMonitor consoleMonitor = ConsoleMonitor.getInstance(1000);
         consoleMonitor.redirectOutput();
 
-        TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
-        ttsSprintf.speakf("Welcome commander");
-
         System.setProperty("awt.useSystemAAFontSettings", "on");
         System.setProperty("swing.aatext", "true");
 
@@ -145,6 +142,8 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         }
 
         GlobalScreen.addNativeKeyListener(this);
+        TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
+        ttsSprintf.speakf("Welcome commander");
     }
 
     private void setPassThroughMode(boolean enablePassThrough) {
