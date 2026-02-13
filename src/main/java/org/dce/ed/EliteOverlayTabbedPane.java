@@ -50,6 +50,7 @@ import org.dce.ed.logreader.event.LoadoutEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.logreader.event.SupercruiseExitEvent;
 import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.tts.PollyTtsCached;
@@ -305,10 +306,19 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (event instanceof StartJumpEvent) {
 			showRouteTabFromStatusWatcher();
 		}
+		if (event instanceof SupercruiseExitEvent e) {
+		    String bodyType = e.getBodyType();
+		    if (bodyType != null && bodyType.contains("PlanetaryRing")) {
+		        showMiningTabFromStatusWatcher();
+		    }
+		}
 
 		if (event.getType() == EliteEventType.UNDOCKED) {
 			maybeRemindAboutLimpets();
 		}
+	}
+	private void showMiningTabFromStatusWatcher() {
+	    SwingUtilities.invokeLater(() -> selectTab(CARD_MINING, miningButton));
 	}
 
 	private void handleProspectedAsteroid(ProspectedAsteroidEvent event) {

@@ -29,6 +29,7 @@ import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.logreader.event.SupercruiseExitEvent;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -110,6 +111,8 @@ public class EliteLogParser {
             
             case CARRIER_JUMP_CANCELLED:
                 return new GenericEvent(ts, type, obj);
+            case SUPERCRUISE_EXIT:
+                return parseSupercruiseExit(ts, obj);
 
             case PROSPECTED_ASTEROID:
                 return parseProspectedAsteroid(ts, obj);
@@ -139,6 +142,25 @@ default:
             }
         }
         return new ProspectedAsteroidEvent(ts, obj, materials, motherlode, content);
+    }
+    private SupercruiseExitEvent parseSupercruiseExit(Instant ts, JsonObject obj) {
+        boolean taxi = getBoolean(obj, "Taxi", false);
+        boolean multicrew = getBoolean(obj, "Multicrew", false);
+        String starSystem = getString(obj, "StarSystem");
+        long systemAddress = getLong(obj, "SystemAddress");
+        String body = getString(obj, "Body");
+        int bodyId = (int) getLong(obj, "BodyID");
+        String bodyType = getString(obj, "BodyType");
+
+        return new SupercruiseExitEvent(ts,
+                                       obj,
+                                       taxi,
+                                       multicrew,
+                                       starSystem,
+                                       systemAddress,
+                                       body,
+                                       bodyId,
+                                       bodyType);
     }
 
     private CarrierJumpRequestEvent parseCarrierJumpRequest(Instant ts, JsonObject obj) {
