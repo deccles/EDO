@@ -198,7 +198,7 @@ public class SystemTabPanel extends JPanel {
 
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
-                label.setForeground(EdoUi.ED_ORANGE_TRANS);
+                label.setForeground(EdoUi.ED_ORANGE);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
 //                label.setBorder(new EmptyBorder(0, 4, 0, 4));
@@ -317,9 +317,11 @@ public class SystemTabPanel extends JPanel {
 
         add(headerPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
-        UtilTable.autoSizeTableColumns(table);
+
 
         refreshFromCache();
+        
+        UtilTable.autoSizeTableColumns(table);
     }
 
     // ---------------------------------------------------------------------
