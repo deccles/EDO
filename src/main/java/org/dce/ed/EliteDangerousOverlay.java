@@ -44,6 +44,9 @@ public class EliteDangerousOverlay implements NativeKeyListener {
 
     private volatile boolean passThroughMode;
 
+    private static final String PREF_START_IN_PASSTHROUGH = "overlay.startInPassThrough";
+
+    
     public EliteDangerousOverlay() {
         // Apply theme prefs BEFORE constructing any UI components, so everything is styled consistently.
         OverlayPreferences.applyThemeToEdoUi();
@@ -117,8 +120,19 @@ public class EliteDangerousOverlay implements NativeKeyListener {
 
     private void start() {
         passThroughFrame.showOverlay();
-     // Pre-warm the decorated window so the first F9 toggle doesn't jump.
+
+        boolean startInPassThrough = prefs.getBoolean(PREF_START_IN_PASSTHROUGH, false);
+
+        // Now that the native HWND exists, actually apply click-through if desired.
+        passThroughFrame.setPassThroughEnabled(startInPassThrough);
+
+        // Pre-warm the decorated window so the first F9 toggle doesn't jump.
         prewarmDecoratedDialog();
+
+        // Default behavior: start in normal (decorated) window mode.
+        if (!startInPassThrough) {
+            SwingUtilities.invokeLater(() -> setPassThroughMode(false));
+        }
 
         // Save bounds and clean up on close
         passThroughFrame.addWindowListener(new WindowAdapter() {
