@@ -45,7 +45,6 @@ import javax.swing.table.TableColumnModel;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
-import org.dce.ed.edsm.UtilTable;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteJournalReader;
@@ -62,6 +61,7 @@ import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.util.EdsmClient;
 
+import org.dce.ed.edsm.UtilTable;
 /**
  * System tab – now a *pure UI* renderer.
  *
@@ -198,7 +198,7 @@ public class SystemTabPanel extends JPanel {
 
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
-                label.setForeground(EdoUi.ED_ORANGE);
+                label.setForeground(EdoUi.ED_ORANGE_TRANS);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
 //                label.setBorder(new EmptyBorder(0, 4, 0, 4));
@@ -288,10 +288,10 @@ public class SystemTabPanel extends JPanel {
             }
         };
 
-        // Column index 4 is "Value"
-        table.getColumnModel().getColumn(3).setCellRenderer(new BioCellRenderer());
+        // Column index 3 is "Value"
+        table.getColumnModel().getColumn(2).setCellRenderer(new BioCellRenderer());
 
-        table.getColumnModel().getColumn(4).setCellRenderer(valueRightRenderer);
+        table.getColumnModel().getColumn(3).setCellRenderer(valueRightRenderer);
 
         JScrollPane scrollPane = new JScrollPane(table);
         scrollPane.setBorder(null);
@@ -317,33 +317,6 @@ public class SystemTabPanel extends JPanel {
 
         add(headerPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
-
-        
-     // Column widths preserved
-        TableColumnModel columns = table.getColumnModel();
-        columns.getColumn(0).setPreferredWidth(40);
-        columns.getColumn(1).setPreferredWidth(60);
-
-        // Resize "Atmo / Body" down to ~60% and give the space to "Bio".
-        int atmoBodyOld = 220;
-        int bioOld = 70;
-
-        int atmoBodyNew = (int) Math.round(atmoBodyOld * 0.60); // 132
-        int delta = atmoBodyOld - atmoBodyNew;                  // 88
-        int bioNew = bioOld + delta;                            // 158
-
-//        columns.getColumn(2).setPreferredWidth(atmoBodyNew); // "Atmo / Body"
-//        columns.getColumn(3).setPreferredWidth(bioNew);      // "Bio"
-//
-//        // Keep Value column as-is (same place, same width constraints)
-//        columns.getColumn(4).setPreferredWidth(20);
-//        columns.getColumn(4).setMinWidth(60);
-//        columns.getColumn(4).setMaxWidth(80);
-//        columns.getColumn(4).setResizable(false);
-//
-//        columns.getColumn(5).setPreferredWidth(30);
-//        columns.getColumn(6).setPreferredWidth(80);
-        
         UtilTable.autoSizeTableColumns(table);
 
         refreshFromCache();
@@ -1477,8 +1450,7 @@ static class Row {
 
         private final String[] columns = {
                 "Body",
-                "g",
-                "Atmo / Body",
+                                "Atmo / Body",
                 "Bio",
                 "Value",
                 "Land",
@@ -1524,8 +1496,8 @@ static class Row {
                 	return "";
                 }
                 switch (col) {
-                    case 3: return r.bioText != null ? r.bioText : "";
-                    case 4: return r.bioValue != null ? r.bioValue : "";
+                    case 2: return r.bioText != null ? r.bioText : "";
+                    case 3: return r.bioValue != null ? r.bioValue : "";
                     default: return "";
                 }
             }
@@ -1542,27 +1514,23 @@ static class Row {
                     }
                     return shortName != null ? shortName : "";
                 case 1:
-                    if (b.getGravityMS() == null) return "";
-                    double g = b.getGravityMS() / 9.80665;
-                    return String.format(Locale.US, "%.2f g", g);
-                case 2:
                     String atmo = b.getAtmoOrType() != null ? b.getAtmoOrType() : "";
                     atmo = atmo.replaceAll("content body",  "body");
                     atmo = atmo.replaceAll("No atmosphere",  "");
                     atmo = atmo.replaceAll("atmosphere",  "");
                     return atmo;
-                case 3:
+                case 2:
                     // CHANGED: remove bare "Bio" label – only show Geo / Bio+Geo
                     if (b.hasBio() && b.hasGeo()) return "Bio + Geo";
                     if (b.hasGeo()) return "Geo";
                     return "";
-                case 4:
+                case 3:
                     // Keep "High" marker for the main body row;
                     // detail rows carry the M Cr values.
                     return b.isHighValue() ? "High" : "";
-                case 5:
+                case 4:
                     return b.isLandable() ? "Yes" : "";
-                case 6:
+                case 5:
                     if (Double.isNaN(b.getDistanceLs())) return "";
                     return String.format(Locale.US, "%.0f Ls", b.getDistanceLs());
                 default:
