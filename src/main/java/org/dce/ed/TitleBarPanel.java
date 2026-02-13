@@ -21,6 +21,7 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
+import org.dce.ed.ui.EdoUi;
 
 /**
  * Custom "title bar" for the undecorated overlay frame.
@@ -52,7 +53,7 @@ public class TitleBarPanel extends JPanel {
         leftPanel.add(this.titleLabel);
 
         setOpaque(true);
-        setBackground(new Color(32, 32, 32, 230));
+        setBackground(EdoUi.Internal.TITLEBAR_BG);
         setLayout(new BorderLayout());
 
         closeButton = new CloseButton();
@@ -249,8 +250,8 @@ public class TitleBarPanel extends JPanel {
                 int w = getWidth();
                 int h = getHeight();
 
-                Color base = new Color(150, 20, 20, 230);
-                Color hoverColor = new Color(200, 40, 40, 230);
+                Color base = EdoUi.Internal.CLOSE_BG_HOVER;
+                Color hoverColor = EdoUi.Internal.CLOSE_BG;
                 g2.setColor(hover ? hoverColor : base);
                 g2.fillRoundRect(0, 0, w - 1, h - 1, 6, 6);
 
@@ -297,8 +298,8 @@ public class TitleBarPanel extends JPanel {
                 int w = getWidth();
                 int h = getHeight();
 
-                Color base = new Color(60, 60, 60, 230);
-                Color hoverColor = new Color(90, 90, 90, 230);
+                Color base = EdoUi.Internal.TITLEBAR_BG_HOVER;
+                Color hoverColor = EdoUi.Internal.TITLEBAR_BG_ACTIVE;
                 g2.setColor(hover ? hoverColor : base);
                 g2.fillRoundRect(0, 0, w - 1, h - 1, 6, 6);
 

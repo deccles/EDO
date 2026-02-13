@@ -173,14 +173,14 @@ public class RouteTabPanel extends JPanel {
 		table.setShowGrid(false);
 		table.setRowHeight(computeRowHeight(table, uiFont, 6));
 		table.setForeground(EdoUi.ED_ORANGE);
-		table.setBackground(new Color(0, 0, 0, 0));
+		table.setBackground(EdoUi.Internal.TRANSPARENT);
 		table.setSelectionForeground(Color.BLACK);
-		table.setSelectionBackground(new Color(255, 255, 255, 64));
+		table.setSelectionBackground(EdoUi.Internal.WHITE_ALPHA_64);
 		table.setFont(uiFont);
 		table.getTableHeader().setReorderingAllowed(false);
 		table.getTableHeader().setResizingAllowed(true);
 		table.getTableHeader().setForeground(EdoUi.ED_ORANGE);
-		table.getTableHeader().setBackground(new Color(0, 0, 0, 0));
+		table.getTableHeader().setBackground(EdoUi.Internal.TRANSPARENT);
 		table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 		// Default renderer that gives us consistent orange text + padding
 		DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer() {

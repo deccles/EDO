@@ -42,6 +42,7 @@ import javax.swing.event.ChangeListener;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
 import org.dce.ed.util.GithubMsiUpdater;
+import org.dce.ed.ui.EdoUi;
 
 /**
  * Preferences dialog for the overlay.
@@ -394,7 +395,7 @@ public class PreferencesDialog extends JDialog {
     	prospectorBox.setOpaque(false);
     	prospectorBox.setBorder(
     			BorderFactory.createTitledBorder(
-    				BorderFactory.createLineBorder(new Color(120, 120, 120)),
+    				BorderFactory.createLineBorder(EdoUi.Internal.GRAY_120),
     				"Prospector"
     			)
     		);
@@ -569,7 +570,7 @@ public class PreferencesDialog extends JDialog {
     	estBox.setOpaque(false);
     	estBox.setBorder(
     			BorderFactory.createTitledBorder(
-    				BorderFactory.createLineBorder(new Color(120, 120, 120)),
+    				BorderFactory.createLineBorder(EdoUi.Internal.GRAY_120),
     				"Mining tab value estimation (tons)"
     			)
     		);
@@ -1284,7 +1285,7 @@ if (miningTonsLowSpinner != null) {
     }
 
     private static Color rgbToColor(int rgb) {
-        return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        return EdoUi.rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     }
 
     private static int colorToRgb(Color c) {

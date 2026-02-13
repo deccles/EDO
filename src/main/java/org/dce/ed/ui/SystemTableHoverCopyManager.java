@@ -167,7 +167,7 @@ public class SystemTableHoverCopyManager {
 
         JLabel toast = new JLabel("Copied: " + systemName, SwingConstants.CENTER);
         toast.setOpaque(true);
-        toast.setBackground(new Color(0, 0, 0, 180));
+        toast.setBackground(EdoUi.Internal.BLACK_ALPHA_180);
         toast.setForeground(Color.WHITE);
         toast.setBorder(new EmptyBorder(4, 8, 4, 8));
 

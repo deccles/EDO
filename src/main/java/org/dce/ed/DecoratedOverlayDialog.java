@@ -23,6 +23,7 @@ import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.WinDef.HWND;
+import org.dce.ed.ui.EdoUi;
 
 /**
  * Decorated window (min/max/resize) where ONLY the background fades.
@@ -38,10 +39,10 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	private static final String APP_ICON_RESOURCE = "/org/dce/ed/edsm/locate_icon.png";
 
 	// Menu styling
-	private static final Color MENU_BG = new Color(22, 22, 22);
-	private static final Color MENU_FG = new Color(255, 150, 0);
-	private static final Color MENU_POPUP_BG = new Color(14, 14, 14);
-	private static final Color MENU_POPUP_FG = new Color(230, 230, 230);
+	private static final Color MENU_BG = EdoUi.Internal.DARK_22;
+	private static final Color MENU_FG = EdoUi.Internal.MENU_ACCENT;
+	private static final Color MENU_POPUP_BG = EdoUi.Internal.DARK_14;
+	private static final Color MENU_POPUP_FG = EdoUi.Internal.MENU_FG_LIGHT;
 
 	private final OverlayContentPanel contentPanel;
 	private final String clientKey;
@@ -231,8 +232,8 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 			alpha = 255;
 		}
 
-		Color base = new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
-		Color bg = new Color(base.getRed(), base.getGreen(), base.getBlue(), alpha);
+		Color base = EdoUi.rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+		Color bg = EdoUi.withAlpha(base, alpha);
 
 		// Push the translucent background into your content panel (this is the important part).
 		// If OverlayContentPanel already propagates this to sub-panels, you're done.

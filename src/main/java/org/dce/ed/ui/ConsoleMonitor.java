@@ -103,7 +103,7 @@ public class ConsoleMonitor extends JPanel {
         textArea.setEditable(false);
         textArea.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
         // Original color scheme from your file
-        textArea.setBackground(new Color(0, 0, 165));
+        textArea.setBackground(EdoUi.User.MAIN_TEXT);
         textArea.setForeground(Color.white);
         textArea.setLineWrap(false);
         textArea.setWrapStyleWord(false);

@@ -45,6 +45,7 @@ import javax.swing.table.TableColumnModel;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.edsm.BodiesResponse;
+import org.dce.ed.edsm.UtilTable;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteJournalReader;
@@ -79,7 +80,7 @@ public class SystemTabPanel extends JPanel {
 
     private static final long BIO_DOLLAR_THRESHOLD = 20_000_000L;
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
-    private static final Color ED_ORANGE_TRANS = new Color(255, 140, 0, 64);
+    private static final Color ED_ORANGE_TRANS = EdoUi.ED_ORANGE_TRANS;
     // NEW: shared ED font (similar to Route tab)
         private Font uiFont = OverlayPreferences.getUiFont();
 
@@ -164,7 +165,7 @@ public class SystemTabPanel extends JPanel {
         table.setShowHorizontalLines(false);
         table.setShowVerticalLines(false);
         table.setIntercellSpacing(new Dimension(0, 0));
-        table.setGridColor(new Color(0, 0, 0, 0));
+        table.setGridColor(EdoUi.Internal.TRANSPARENT);
         
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
@@ -197,7 +198,7 @@ public class SystemTabPanel extends JPanel {
 
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
-                label.setForeground(EdoUi.ED_ORANGE_TRANS);
+                label.setForeground(EdoUi.ED_ORANGE);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
 //                label.setBorder(new EmptyBorder(0, 4, 0, 4));
@@ -236,7 +237,7 @@ public class SystemTabPanel extends JPanel {
                     } else if (samples > 0) {
                         c.setForeground(Color.YELLOW);
                     } else {
-                        c.setForeground(new Color(180, 180, 180)); // gray for biologicals
+                        c.setForeground(EdoUi.Internal.GRAY_180); // gray for biologicals
                     }
                 } else {
                     c.setForeground(EdoUi.ED_ORANGE);
@@ -278,7 +279,7 @@ public class SystemTabPanel extends JPanel {
                 if (isSelected) {
                     c.setForeground(Color.BLACK);
                 } else if (isBioRow) {
-                    c.setForeground(new Color(180, 180, 180));
+                    c.setForeground(EdoUi.Internal.GRAY_180);
                 } else {
                     c.setForeground(EdoUi.ED_ORANGE);
                 }
@@ -300,7 +301,7 @@ public class SystemTabPanel extends JPanel {
         JViewport headerViewport = scrollPane.getColumnHeader();
         if (headerViewport != null) {
             headerViewport.setOpaque(false);
-            headerViewport.setBackground(new Color(0, 0, 0, 0));
+            headerViewport.setBackground(EdoUi.Internal.TRANSPARENT);
         }
 
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -331,18 +332,19 @@ public class SystemTabPanel extends JPanel {
         int delta = atmoBodyOld - atmoBodyNew;                  // 88
         int bioNew = bioOld + delta;                            // 158
 
-        columns.getColumn(2).setPreferredWidth(atmoBodyNew); // "Atmo / Body"
-        columns.getColumn(3).setPreferredWidth(bioNew);      // "Bio"
-
-        // Keep Value column as-is (same place, same width constraints)
-        columns.getColumn(4).setPreferredWidth(20);
-        columns.getColumn(4).setMinWidth(60);
-        columns.getColumn(4).setMaxWidth(80);
-        columns.getColumn(4).setResizable(false);
-
-        columns.getColumn(5).setPreferredWidth(30);
-        columns.getColumn(6).setPreferredWidth(80);
-
+//        columns.getColumn(2).setPreferredWidth(atmoBodyNew); // "Atmo / Body"
+//        columns.getColumn(3).setPreferredWidth(bioNew);      // "Bio"
+//
+//        // Keep Value column as-is (same place, same width constraints)
+//        columns.getColumn(4).setPreferredWidth(20);
+//        columns.getColumn(4).setMinWidth(60);
+//        columns.getColumn(4).setMaxWidth(80);
+//        columns.getColumn(4).setResizable(false);
+//
+//        columns.getColumn(5).setPreferredWidth(30);
+//        columns.getColumn(6).setPreferredWidth(80);
+        
+        UtilTable.autoSizeTableColumns(table);
 
         refreshFromCache();
     }
@@ -836,7 +838,7 @@ public class SystemTabPanel extends JPanel {
                 } else if (samples > 0) {
                     c.setForeground(Color.YELLOW);
                 } else {
-                    c.setForeground(new Color(180, 180, 180));
+                    c.setForeground(EdoUi.Internal.GRAY_180);
                 }
             } else {
                 c.setForeground(EdoUi.ED_ORANGE);
@@ -1126,10 +1128,10 @@ return c;
                 int cw = w - pad * 2;
                 int ch = h - pad * 2;
 
-                Color gold = new Color(212, 175, 55);
-                Color goldDark = new Color(140, 110, 25);
+                Color gold = EdoUi.User.VALUABLE;
+                Color goldDark = EdoUi.Internal.BROWN_DARK;
 
-                g2.setColor(new Color(gold.getRed(), gold.getGreen(), gold.getBlue(), 220));
+                g2.setColor(EdoUi.withAlpha(gold, 220));
                 g2.fillOval(cx, cy, cw, ch);
 
                 g2.setColor(goldDark);
@@ -1137,7 +1139,7 @@ return c;
                 g2.drawOval(cx, cy, cw, ch);
 
                 // Dollar sign
-                g2.setColor(new Color(50, 35, 10));
+                g2.setColor(EdoUi.Internal.BROWN_DARKER);
                 Font f = c != null ? c.getFont() : new Font("Dialog", Font.BOLD, 12);
                 g2.setFont(f.deriveFont(Font.BOLD, 11f));
                 FontMetrics fm = g2.getFontMetrics();
@@ -1308,7 +1310,7 @@ static class Row {
                     FontMetrics fm = g.getFontMetrics();
 
                     // Use the same gray tone as the target outline so it looks intentional.
-                    g.setColor(new Color(180, 180, 180, 200));
+                    g.setColor(EdoUi.Internal.GRAY_ALPHA_200);
 
                     int x = cellRect.x + 6;
                     int y = rowRect.y + (rowRect.height + fm.getAscent()) / 2 - 2;
@@ -1380,7 +1382,7 @@ static class Row {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             // Gray dashed outline for the currently targeted body.
-            Color outline = new Color(180, 180, 180, 140);
+            Color outline = EdoUi.Internal.GRAY_ALPHA_140;
             g2.setColor(outline);
             float[] dash = new float[] { 6.0f, 6.0f };
             g2.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND, 10.0f, dash, 0.0f));
@@ -1454,7 +1456,7 @@ static class Row {
             Object oldAA = g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            Color outline = new Color(255, 140, 0, 200);
+            Color outline = EdoUi.Internal.MAIN_TEXT_ALPHA_200;
             g2.setColor(outline);
             g2.setStroke(new BasicStroke(2.0f));
 

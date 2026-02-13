@@ -13,6 +13,7 @@ import org.dce.ed.logreader.EliteLogFileLocator;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 
 import software.amazon.awssdk.services.polly.model.Engine;
+import org.dce.ed.ui.EdoUi;
 
 /**
  * Centralized preferences for the overlay, including log directory selection.
@@ -176,7 +177,7 @@ public final class OverlayPreferences {
 
     public static Color getOverlayBackgroundColor() {
         int rgb = getNormalBackgroundRgb();
-        return new Color(rgb);
+        return EdoUi.fromRgbInt(rgb);
     }
 
     public static int getOverlayTransparencyPercent() {
@@ -660,7 +661,7 @@ public static Engine getSpeechEngine() {
         // 0% transparent   => alpha 255
         int alpha = (int)Math.round(255.0 * (1.0 - (pct / 100.0)));
 
-        return new Color(baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue(), alpha);
+        return EdoUi.withAlpha(baseColor, alpha);
     }
 
     private static void putDoubleClamped(String key, double v, double min, double max) {

@@ -61,6 +61,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.dce.ed.ui.EdoUi;
 
 
 /**
@@ -83,8 +84,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 	private static final int TAB_HOVER_DELAY_MS = 500;
 
-	private static final Color TAB_ORANGE = new Color(255, 140, 0, 220);
-	private static final Color TAB_WHITE = new Color(255, 255, 255, 230);
+	private static final Color TAB_ORANGE = EdoUi.Internal.MAIN_TEXT_ALPHA_220;
+	private static final Color TAB_WHITE = EdoUi.Internal.WHITE_ALPHA_230;
 
 	// Restores the original "bigger" tab look (padding inside the outline)
 	private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
@@ -697,7 +698,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		// Slightly translucent dark background so tabs are legible but not huge blocks
 		button.setOpaque(!OverlayPreferences.isOverlayTransparent());
-		button.setBackground(new Color(50, 50, 50, 220));
+		button.setBackground(EdoUi.Internal.DARK_ALPHA_220);
 
 		applyTabButtonStyle(button);
 		return button;
@@ -918,7 +919,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 
 	public void applyOverlayTransparency(boolean transparent) {
-		applyOverlayBackground(new Color(0, 0, 0, transparent ? 0 : 255), transparent);
+		applyOverlayBackground(transparent ? EdoUi.Internal.TRANSPARENT : Color.BLACK, transparent);
 	}
 
 	public void applyOverlayBackground(Color bgWithAlpha, boolean treatAsTransparent) {

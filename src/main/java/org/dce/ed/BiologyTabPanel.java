@@ -1159,9 +1159,9 @@ private final class BioMapPanel extends JPanel {
             int y0 = (h - side) / 2;
 
             // Border / background
-            g2.setColor(new Color(0, 0, 0, 80));
+            g2.setColor(EdoUi.Internal.BLACK_ALPHA_80);
             g2.fillRect(x0, y0, side, side);
-            g2.setColor(new Color(255, 140, 0, 140));
+            g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_140);
 //            g2.drawRect(x0, y0, side - 1, side - 1);
 
             if (!haveShip) {
@@ -1228,7 +1228,7 @@ private final class BioMapPanel extends JPanel {
                         int ty = cy + (int) Math.round(dy * scale);
 
                         g2.setStroke(new BasicStroke(2f));
-                        g2.setColor(new Color(255, 140, 0, 220));
+                        g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_220);
                         g2.draw(new Line2D.Double(cx, cy, tx, ty));
 
                         // distance label at midpoint
@@ -1248,9 +1248,9 @@ private final class BioMapPanel extends JPanel {
             int compCx = x0 + side - pad - compR;
             int compCy = y0 + pad + compR;
 
-            g2.setColor(new Color(0, 0, 0, 140));
+            g2.setColor(EdoUi.Internal.BLACK_ALPHA_140);
             g2.fill(new Ellipse2D.Double(compCx - compR, compCy - compR, compR * 2, compR * 2));
-            g2.setColor(new Color(255, 255, 255, 200));
+            g2.setColor(EdoUi.Internal.WHITE_ALPHA_200);
             g2.draw(new Ellipse2D.Double(compCx - compR, compCy - compR, compR * 2, compR * 2));
 
             double relN = Math.toRadians(0.0 - shipHeadingDeg);

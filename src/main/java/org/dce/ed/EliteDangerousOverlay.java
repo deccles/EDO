@@ -23,6 +23,7 @@ import org.dce.ed.util.GithubMsiUpdater;
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
+import org.dce.ed.ui.EdoUi;
 
 public class EliteDangerousOverlay implements NativeKeyListener {
 
@@ -54,7 +55,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         this.decoratedDialog = new DecoratedOverlayDialog(passThroughFrame, contentPanel, clientKey);
         this.decoratedDialog.setOnRequestSwitchToPassThrough(() -> SwingUtilities.invokeLater(() -> setPassThroughMode(true)));
 
-        UIManager.put("TitlePane.background", new Color(30, 30, 30));
+        UIManager.put("TitlePane.background", EdoUi.User.BACKGROUND);
         UIManager.put("TitlePane.foreground", Color.ORANGE);
         
         AppIconUtil.applyAppIcon(passThroughFrame, "/org/dce/ed/edsm/locate_icon.png");

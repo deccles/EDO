@@ -86,6 +86,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.dce.ed.ui.EdoUi;
 
 /**
  * Tab that displays Elite Dangerous journal events in a table:
@@ -427,7 +428,7 @@ public class LogTabPanel extends JPanel {
 
                 if (!isSelected) {
                     if (row == simCurrentViewRow) {
-                        c.setBackground(new Color(255, 235, 200)); // simulator cursor
+                        c.setBackground(EdoUi.Internal.LOG_LIGHT_ORANGE); // simulator cursor
                     } else {
                         c.setBackground(Color.WHITE);
                     }

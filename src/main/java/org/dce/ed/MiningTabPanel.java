@@ -38,6 +38,8 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.MatteBorder;
+import javax.swing.border.CompoundBorder;
 import javax.swing.plaf.LayerUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -101,9 +103,8 @@ private final JLayer<JTable> cargoLayer;
 	private static final int VISIBLE_ROWS = 10;
 
 	// Row colors for mining tables.
-	private static final Color CORE_BLUE = new Color(0, 140, 190);
-	private static final Color NON_CORE_GREEN = new Color(0, 200, 0);
-
+	private static final Color CORE_COLOR = EdoUi.User.VALUABLE;
+	private static final Color NON_CORE_GREEN = EdoUi.User.SUCCESS;
 
 	public MiningTabPanel(GalacticAveragePrices prices) {
 		super(new BorderLayout());
@@ -113,7 +114,7 @@ private final JLayer<JTable> cargoLayer;
 		this.matcher = new MaterialNameMatcher(prices);
 // Always render transparent so passthrough mode looks right.
 		setOpaque(false);
-		setBackground(new Color(0, 0, 0, 0));
+		setBackground(EdoUi.Internal.TRANSPARENT);
 
 		headerLabel = new JLabel("Mining (latest prospector)");
 		headerLabel.setForeground(EdoUi.ED_ORANGE);
@@ -121,7 +122,8 @@ private final JLayer<JTable> cargoLayer;
 		headerLabel.setOpaque(false);
 
 		prospectorLabel = new JLabel("Prospector Limpet");
-		prospectorLabel.setForeground(EdoUi.STATUS_BLUE);
+		prospectorLabel.setForeground(EdoUi.User.MAIN_TEXT);
+		prospectorLabel.setFont(prospectorLabel.getFont().deriveFont(Font.BOLD));
 		prospectorLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		prospectorLabel.setOpaque(false);
 		prospectorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -135,7 +137,8 @@ private final JLayer<JTable> cargoLayer;
 
 		
 		inventoryLabel = new JLabel("Ship Inventory");
-		inventoryLabel.setForeground(EdoUi.STATUS_BLUE);
+		inventoryLabel.setForeground(EdoUi.User.MAIN_TEXT);
+		inventoryLabel.setFont(inventoryLabel.getFont().deriveFont(Font.BOLD));
 		inventoryLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		inventoryLabel.setOpaque(false);
 		inventoryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -179,7 +182,7 @@ private final JLayer<JTable> cargoLayer;
 					JViewport hv = sp.getColumnHeader();
 					if (hv != null) {
 						hv.setOpaque(false);
-						hv.setBackground(new Color(0, 0, 0, 0));
+						hv.setBackground(EdoUi.Internal.TRANSPARENT);
 						hv.setBorder(null);
 					}
 				}
@@ -204,10 +207,10 @@ private final JLayer<JTable> cargoLayer;
 		table.setShowHorizontalLines(false);
 		table.setShowVerticalLines(false);
 		table.setIntercellSpacing(new java.awt.Dimension(0, 0));
-		table.setGridColor(new Color(0, 0, 0, 0));
+		table.setGridColor(EdoUi.Internal.TRANSPARENT);
 
 		table.setForeground(EdoUi.ED_ORANGE);
-		table.setBackground(new Color(0, 0, 0, 0));
+		table.setBackground(EdoUi.Internal.TRANSPARENT);
 		table.setRowHeight(22);
 
 		table.setTableHeader(new TransparentTableHeader(table.getColumnModel()));
@@ -216,7 +219,7 @@ private final JLayer<JTable> cargoLayer;
 		if (th != null) {
 			th.setOpaque(false);
 			th.setForeground(EdoUi.ED_ORANGE);
-			th.setBackground(new Color(0, 0, 0, 0));
+			th.setBackground(EdoUi.Internal.TRANSPARENT);
 			th.setBorder(null);
 			th.setReorderingAllowed(false);
 			th.setFocusable(false);
@@ -282,9 +285,8 @@ private final JLayer<JTable> cargoLayer;
 
 				super.paintComponent(g2);
 
-				g2.setColor(EdoUi.ED_ORANGE_TRANS);
-				int y = getHeight() - 1;
-				g2.drawLine(0, y, getWidth(), y);
+				g2.setColor(EdoUi.Internal.tableHeaderTopBorder());
+				g2.drawLine(0, 0, getWidth(), 0);
 
 				g2.dispose();
 			}
@@ -296,16 +298,16 @@ private final JLayer<JTable> cargoLayer;
 
 		materialsScroller = new JScrollPane(prospectorLayer);
 		materialsScroller.setOpaque(false);
-		materialsScroller.setBackground(new Color(0, 0, 0, 0));
+		materialsScroller.setBackground(EdoUi.Internal.TRANSPARENT);
 		materialsScroller.getViewport().setOpaque(false);
-		materialsScroller.getViewport().setBackground(new Color(0, 0, 0, 0));
+		materialsScroller.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
 		materialsScroller.setBorder(null);
 		materialsScroller.setViewportBorder(null);
 
 		JViewport headerViewport = materialsScroller.getColumnHeader();
 		if (headerViewport != null) {
 			headerViewport.setOpaque(false);
-			headerViewport.setBackground(new Color(0, 0, 0, 0));
+			headerViewport.setBackground(EdoUi.Internal.TRANSPARENT);
 			headerViewport.setBorder(null);
 		}
 
@@ -327,10 +329,10 @@ private final JLayer<JTable> cargoLayer;
 		cargoTable.setShowHorizontalLines(false);
 		cargoTable.setShowVerticalLines(false);
 		cargoTable.setIntercellSpacing(new java.awt.Dimension(0, 0));
-		cargoTable.setGridColor(new Color(0, 0, 0, 0));
+		cargoTable.setGridColor(EdoUi.Internal.TRANSPARENT);
 
 		cargoTable.setForeground(EdoUi.ED_ORANGE);
-		cargoTable.setBackground(new Color(0, 0, 0, 0));
+		cargoTable.setBackground(EdoUi.Internal.TRANSPARENT);
 		cargoTable.setRowHeight(22);
 
 		cargoTable.setTableHeader(new TransparentTableHeader(cargoTable.getColumnModel()));
@@ -339,7 +341,7 @@ private final JLayer<JTable> cargoLayer;
 		if (cargoHeader != null) {
 			cargoHeader.setOpaque(false);
 			cargoHeader.setForeground(EdoUi.ED_ORANGE);
-			cargoHeader.setBackground(new Color(0, 0, 0, 0));
+			cargoHeader.setBackground(EdoUi.Internal.TRANSPARENT);
 			cargoHeader.setBorder(null);
 			cargoHeader.setReorderingAllowed(false);
 			cargoHeader.setFocusable(false);
@@ -362,16 +364,16 @@ private final JLayer<JTable> cargoLayer;
 
 		cargoScroller = new JScrollPane(cargoLayer);
 		cargoScroller.setOpaque(false);
-		cargoScroller.setBackground(new Color(0, 0, 0, 0));
+		cargoScroller.setBackground(EdoUi.Internal.TRANSPARENT);
 		cargoScroller.getViewport().setOpaque(false);
-		cargoScroller.getViewport().setBackground(new Color(0, 0, 0, 0));
+		cargoScroller.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
 		cargoScroller.setBorder(null);
 		cargoScroller.setViewportBorder(null);
 
 		JViewport cargoHeaderViewport = cargoScroller.getColumnHeader();
 		if (cargoHeaderViewport != null) {
 			cargoHeaderViewport.setOpaque(false);
-			cargoHeaderViewport.setBackground(new Color(0, 0, 0, 0));
+			cargoHeaderViewport.setBackground(EdoUi.Internal.TRANSPARENT);
 			cargoHeaderViewport.setBorder(null);
 		}
 
@@ -386,7 +388,7 @@ private final JLayer<JTable> cargoLayer;
 
 		JPanel centerPanel = new JPanel();
 		centerPanel.setOpaque(false);
-		centerPanel.setBackground(new Color(0, 0, 0, 0));
+		centerPanel.setBackground(EdoUi.Internal.TRANSPARENT);
 		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
 		
 		centerPanel.add(prospectorLabel);
@@ -460,7 +462,7 @@ private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
 			Row r = model.getRow(modelRow);
 			if (r != null) {
 				if (r.isCore()) {
-					return CORE_BLUE;
+					return CORE_COLOR;
 				}
 				if (isHighlightedProspectorRow(r)) {
 					return NON_CORE_GREEN;
@@ -542,7 +544,7 @@ return EdoUi.ED_ORANGE;
 		b = Math.min(255, b + (int) (add * 0.20f));
 
 		int a = (int)(255.0f * reveal);
-		return new Color(r, g, b, a);
+		return EdoUi.rgba(r, g, b, a);
 	}
 
 	public void applyUiFontPreferences() {
@@ -821,7 +823,7 @@ return EdoUi.ED_ORANGE;
 
     public void applyOverlayBackground(Color bg) {
         if (bg == null) {
-            bg = new Color(0, 0, 0, 0);
+            bg = EdoUi.Internal.TRANSPARENT;
         }
 
         boolean opaque = bg.getAlpha() >= 255;
@@ -1380,34 +1382,34 @@ String getName() {
 		 }
 
 		 sp.setOpaque(false);
-		 sp.setBackground(new Color(0, 0, 0, 0));
+		 sp.setBackground(EdoUi.Internal.TRANSPARENT);
 		 sp.setBorder(BorderFactory.createEmptyBorder());
 		 sp.setViewportBorder(BorderFactory.createEmptyBorder());
 
 		 if (sp.getViewport() != null) {
 			 sp.getViewport().setOpaque(false);
-			 sp.getViewport().setBackground(new Color(0, 0, 0, 0));
+			 sp.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
 		 }
 
 		 if (sp.getColumnHeader() != null) {
 			 sp.getColumnHeader().setOpaque(false);
-			 sp.getColumnHeader().setBackground(new Color(0, 0, 0, 0));
+			 sp.getColumnHeader().setBackground(EdoUi.Internal.TRANSPARENT);
 			 sp.getColumnHeader().setBorder(BorderFactory.createEmptyBorder());
 		 }
 
 		 if (sp.getHorizontalScrollBar() != null) {
 			 sp.getHorizontalScrollBar().setOpaque(false);
-			 sp.getHorizontalScrollBar().setBackground(new Color(0, 0, 0, 0));
+			 sp.getHorizontalScrollBar().setBackground(EdoUi.Internal.TRANSPARENT);
 		 }
 
 		 if (sp.getVerticalScrollBar() != null) {
 			 sp.getVerticalScrollBar().setOpaque(false);
-			 sp.getVerticalScrollBar().setBackground(new Color(0, 0, 0, 0));
+			 sp.getVerticalScrollBar().setBackground(EdoUi.Internal.TRANSPARENT);
 		 }
 
 		 JPanel corner = new JPanel();
 		 corner.setOpaque(false);
-		 corner.setBackground(new Color(0, 0, 0, 0));
+		 corner.setBackground(EdoUi.Internal.TRANSPARENT);
 
 		 sp.setCorner(JScrollPane.UPPER_RIGHT_CORNER, corner);
 		 sp.setCorner(JScrollPane.LOWER_RIGHT_CORNER, corner);
@@ -1574,11 +1576,11 @@ String getName() {
 				int y = scan.getScanY();
 
 				// Soft glow band
-				g2.setColor(new Color(255, 140, 0, 40));
+				g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_40);
 				g2.fillRect(0, y - 6, w, 12);
 
 				// Bright core scan line
-				g2.setColor(new Color(255, 140, 0, 180));
+				g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_180);
 				g2.fillRect(0, y - 1, w, 3);
 
 			} finally {
@@ -1593,7 +1595,7 @@ private static final class TransparentTableHeader extends JTableHeader {
 		 TransparentTableHeader(TableColumnModel cm) {
 			 super(cm);
 			 setOpaque(false);
-			 setBackground(new Color(0, 0, 0, 0));
+			 setBackground(EdoUi.Internal.TRANSPARENT);
 		 }
 
 		 @Override
@@ -1605,7 +1607,7 @@ private static final class TransparentTableHeader extends JTableHeader {
 			 g2.dispose();
 
 			 setOpaque(false);
-			 setBackground(new Color(0, 0, 0, 0));
+			 setBackground(EdoUi.Internal.TRANSPARENT);
 
 			 super.paintComponent(g);
 		 }
@@ -1629,10 +1631,14 @@ private static final class TransparentTableHeader extends JTableHeader {
 					 column);
 
 			 label.setOpaque(false);
-			 label.setBackground(new Color(0, 0, 0, 0));
-			 label.setForeground(EdoUi.ED_ORANGE_TRANS);
+			 label.setBackground(EdoUi.Internal.TRANSPARENT);
+			 label.setForeground(EdoUi.Internal.tableHeaderForeground());
+			 label.setFont(label.getFont().deriveFont(Font.BOLD));
 			 label.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
-			 label.setBorder(new EmptyBorder(0, 4, 0, 4));
+			 label.setBorder(new CompoundBorder(
+					 new MatteBorder(2, 0, 0, 0, EdoUi.Internal.tableHeaderTopBorder()),
+					 new EmptyBorder(0, 4, 0, 4)
+			 ));
 			 return label;
 		 }
 

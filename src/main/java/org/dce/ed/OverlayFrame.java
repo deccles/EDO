@@ -49,6 +49,7 @@ import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser;
 
 import jakarta.mail.MessagingException;
+import org.dce.ed.ui.EdoUi;
 
 public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
 
@@ -869,7 +870,7 @@ private void installExoCreditsTracker() {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
                 // ED-style orange with some transparency
-                g2.setColor(new Color(255, 140, 0, 200));
+                g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_200);
 
                 int x = crosshairPoint.x;
                 int y = crosshairPoint.y;
