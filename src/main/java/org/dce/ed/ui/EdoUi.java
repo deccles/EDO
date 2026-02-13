@@ -164,7 +164,6 @@ public final class EdoUi {
 
 // ---- Backwards-compatible aliases (so call-sites can remain unchanged for now) ----
 
-    public static final Color ED_ORANGE = User.MAIN_TEXT;
     public static final Color ED_DARK = Color.BLACK;
     public static final Color TEXT_BLACK = Color.BLACK;
 
@@ -179,22 +178,4 @@ public final class EdoUi {
 
     public static final Color ED_ORANGE_LESS_TRANS =
     		withAlpha(User.MAIN_TEXT, 96);
-
-    public static final Color ED_ORANGE_TRANS_140 =
-    		withAlpha(User.MAIN_TEXT, 140);
-
-    public static final Color ED_ORANGE_TRANS_180 =
-    		withAlpha(User.MAIN_TEXT, 180);
-
-    public static final Color ED_ORANGE_TRANS_200 =
-    		withAlpha(User.MAIN_TEXT, 200);
-
-    public static final Color ED_ORANGE_TRANS_220 =
-    		withAlpha(User.MAIN_TEXT, 220);
-
-    public static final Color ED_ORANGE_TRANS_40 =
-    		withAlpha(User.MAIN_TEXT, 40);
-
-
-    public static final Color TRANSPARENT = Internal.TRANSPARENT;
 }
