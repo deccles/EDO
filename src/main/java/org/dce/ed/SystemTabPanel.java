@@ -59,6 +59,7 @@ import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.EdoUi.User;
 import org.dce.ed.util.EdsmClient;
 
 import org.dce.ed.edsm.UtilTable;
@@ -142,14 +143,14 @@ public class SystemTabPanel extends JPanel {
                 }
             }
         });
-        headerLabel.setForeground(EdoUi.ED_ORANGE);
+        headerLabel.setForeground(EdoUi.User.MAIN_TEXT);
 //        headerLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerLabel.setOpaque(false);
         headerLabel.setBorder(null);
         headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 
         headerSummaryLabel = new JLabel();
-        headerSummaryLabel.setForeground(EdoUi.ED_ORANGE);
+        headerSummaryLabel.setForeground(EdoUi.User.MAIN_TEXT);
         headerSummaryLabel.setFont(uiFont.deriveFont(Font.BOLD));
 //        headerSummaryLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
         headerSummaryLabel.setOpaque(false);
@@ -180,7 +181,7 @@ public class SystemTabPanel extends JPanel {
         
         JTableHeader header = table.getTableHeader();
         header.setOpaque(false);
-        header.setForeground(EdoUi.ED_ORANGE);
+        header.setForeground(EdoUi.User.MAIN_TEXT);
         header.setBackground(Color.BLACK);
         header.setFont(uiFont.deriveFont(Font.BOLD));
         header.setBorder(null);
@@ -198,7 +199,7 @@ public class SystemTabPanel extends JPanel {
 
                 label.setOpaque(true);
                 label.setBackground(Color.BLACK);
-                label.setForeground(EdoUi.ED_ORANGE);
+                label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
 //                label.setBorder(new EmptyBorder(0, 4, 0, 4));
@@ -210,7 +211,7 @@ public class SystemTabPanel extends JPanel {
         DefaultTableCellRenderer cellRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
-                setForeground(EdoUi.ED_ORANGE);
+                setForeground(EdoUi.User.MAIN_TEXT);
             }
 
             @Override
@@ -240,7 +241,7 @@ public class SystemTabPanel extends JPanel {
                         c.setForeground(EdoUi.Internal.GRAY_180); // gray for biologicals
                     }
                 } else {
-                    c.setForeground(EdoUi.ED_ORANGE);
+                    c.setForeground(EdoUi.User.MAIN_TEXT);
                 }
 
                 return c;
@@ -253,7 +254,7 @@ public class SystemTabPanel extends JPanel {
         DefaultTableCellRenderer valueRightRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
-                setForeground(EdoUi.ED_ORANGE);
+                setForeground(EdoUi.User.MAIN_TEXT);
             }
 
             @Override
@@ -281,7 +282,7 @@ public class SystemTabPanel extends JPanel {
                 } else if (isBioRow) {
                     c.setForeground(EdoUi.Internal.GRAY_180);
                 } else {
-                    c.setForeground(EdoUi.ED_ORANGE);
+                    c.setForeground(EdoUi.User.MAIN_TEXT);
                 }
 
                 return c;
@@ -816,7 +817,7 @@ public class SystemTabPanel extends JPanel {
                     c.setForeground(EdoUi.Internal.GRAY_180);
                 }
             } else {
-                c.setForeground(EdoUi.ED_ORANGE);
+                c.setForeground(EdoUi.User.MAIN_TEXT);
             }
 
             if (r == null) {

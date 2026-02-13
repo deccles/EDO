@@ -53,6 +53,7 @@ import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
+import org.dce.ed.ui.EdoUi.User;
 import org.dce.ed.util.EdsmClient;
 
 import com.google.gson.JsonArray;
@@ -71,7 +72,7 @@ public class RouteTabPanel extends JPanel {
 	private Font uiFont = OverlayPreferences.getUiFont();
 	// Orange / gray checkmarks for fully discovered systems.
 	private static final Icon ICON_FULLY_DISCOVERED_VISITED =
-			new StatusCircleIcon(EdoUi.ED_ORANGE, "\u2713");
+			new StatusCircleIcon(EdoUi.User.MAIN_TEXT, "\u2713");
 	private static final Icon ICON_FULLY_DISCOVERED_NOT_VISITED =
 			new StatusCircleIcon(EdoUi.STATUS_GRAY, "\u2713");
 	// Crossed-out eye equivalents when any body is missing discovery.commander.
@@ -128,7 +129,7 @@ public class RouteTabPanel extends JPanel {
 		setOpaque(false);
 		this.edsmClient = new EdsmClient();
 		headerLabel = new JLabel("Route: (no data)");
-		headerLabel.setForeground(EdoUi.ED_ORANGE);
+		headerLabel.setForeground(EdoUi.User.MAIN_TEXT);
 		headerLabel.setBorder(new EmptyBorder(4, 4, 4, 4));
 		headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 		tableModel = new RouteTableModel();
@@ -172,14 +173,14 @@ public class RouteTabPanel extends JPanel {
 		table.setFillsViewportHeight(true);
 		table.setShowGrid(false);
 		table.setRowHeight(computeRowHeight(table, uiFont, 6));
-		table.setForeground(EdoUi.ED_ORANGE);
+		table.setForeground(EdoUi.User.MAIN_TEXT);
 		table.setBackground(EdoUi.Internal.TRANSPARENT);
 		table.setSelectionForeground(Color.BLACK);
 		table.setSelectionBackground(EdoUi.Internal.WHITE_ALPHA_64);
 		table.setFont(uiFont);
 		table.getTableHeader().setReorderingAllowed(false);
 		table.getTableHeader().setResizingAllowed(true);
-		table.getTableHeader().setForeground(EdoUi.ED_ORANGE);
+		table.getTableHeader().setForeground(EdoUi.User.MAIN_TEXT);
 		table.getTableHeader().setBackground(EdoUi.Internal.TRANSPARENT);
 		table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 		// Default renderer that gives us consistent orange text + padding
@@ -187,7 +188,7 @@ public class RouteTabPanel extends JPanel {
 			private static final long serialVersionUID = 1L;
 			{
 				setOpaque(false);
-				setForeground(EdoUi.ED_ORANGE);
+				setForeground(EdoUi.User.MAIN_TEXT);
 			}
 			@Override
 			public Component getTableCellRendererComponent(JTable tbl,
@@ -203,7 +204,7 @@ public class RouteTabPanel extends JPanel {
 						row,
 						column);
 				if (c instanceof JLabel) {
-					c.setForeground(EdoUi.ED_ORANGE);
+					c.setForeground(EdoUi.User.MAIN_TEXT);
 					// Add a bit of vertical padding for readability
 					((JLabel) c).setBorder(new EmptyBorder(3, 4, 3, 4));
 				}
@@ -241,7 +242,7 @@ public class RouteTabPanel extends JPanel {
 			{
 				setOpaque(false);
 				setHorizontalAlignment(SwingConstants.RIGHT);
-				setForeground(EdoUi.ED_ORANGE);
+				setForeground(EdoUi.User.MAIN_TEXT);
 			}
 			@Override
 			public Component getTableCellRendererComponent(JTable tbl,
@@ -256,7 +257,7 @@ public class RouteTabPanel extends JPanel {
 						false,
 						row,
 						column);
-				c.setForeground(EdoUi.ED_ORANGE);
+				c.setForeground(EdoUi.User.MAIN_TEXT);
 				if (c instanceof JLabel) {
 					// Slight right padding for numbers
 					((JLabel) c).setBorder(new EmptyBorder(3, 4, 3, 8));
@@ -1755,7 +1756,7 @@ public class RouteTabPanel extends JPanel {
 			if (c instanceof JLabel) {
 				JLabel l = (JLabel) c;
 				l.setOpaque(false);
-				l.setForeground(EdoUi.ED_ORANGE);
+				l.setForeground(EdoUi.User.MAIN_TEXT);
 				int indent = 0;
 				try {
 					RouteEntry e = tableModel.getEntries(row);
@@ -1801,7 +1802,7 @@ public class RouteTabPanel extends JPanel {
 			MarkerKind kind = (entry != null ? entry.markerKind : MarkerKind.NONE);
 
 			if (kind == MarkerKind.CURRENT) {
-				icon = new TriangleIcon(EdoUi.ED_ORANGE, 10, 10);
+				icon = new TriangleIcon(EdoUi.User.MAIN_TEXT, 10, 10);
 
 			} else if (kind == MarkerKind.PENDING_JUMP) {
 				// Blink the "next jump" empty triangle.

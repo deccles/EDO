@@ -54,6 +54,7 @@ import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.EdoUi.User;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -117,7 +118,7 @@ private final JLayer<JTable> cargoLayer;
 		setBackground(EdoUi.Internal.TRANSPARENT);
 
 		headerLabel = new JLabel("Mining (latest prospector)");
-		headerLabel.setForeground(EdoUi.ED_ORANGE);
+		headerLabel.setForeground(EdoUi.User.MAIN_TEXT);
 		headerLabel.setHorizontalAlignment(SwingConstants.LEFT);
 		headerLabel.setOpaque(false);
 
@@ -209,7 +210,7 @@ private final JLayer<JTable> cargoLayer;
 		table.setIntercellSpacing(new java.awt.Dimension(0, 0));
 		table.setGridColor(EdoUi.Internal.TRANSPARENT);
 
-		table.setForeground(EdoUi.ED_ORANGE);
+		table.setForeground(EdoUi.User.MAIN_TEXT);
 		table.setBackground(EdoUi.Internal.TRANSPARENT);
 		table.setRowHeight(22);
 
@@ -218,7 +219,7 @@ private final JLayer<JTable> cargoLayer;
 		JTableHeader th = table.getTableHeader();
 		if (th != null) {
 			th.setOpaque(false);
-			th.setForeground(EdoUi.ED_ORANGE);
+			th.setForeground(EdoUi.User.MAIN_TEXT);
 			th.setBackground(EdoUi.Internal.TRANSPARENT);
 			th.setBorder(null);
 			th.setReorderingAllowed(false);
@@ -239,7 +240,7 @@ private final JLayer<JTable> cargoLayer;
 			private static final long serialVersionUID = 1L;
 			{
 				setOpaque(false);
-				setForeground(EdoUi.ED_ORANGE);
+				setForeground(EdoUi.User.MAIN_TEXT);
 			}
 
 			@Override
@@ -331,7 +332,7 @@ private final JLayer<JTable> cargoLayer;
 		cargoTable.setIntercellSpacing(new java.awt.Dimension(0, 0));
 		cargoTable.setGridColor(EdoUi.Internal.TRANSPARENT);
 
-		cargoTable.setForeground(EdoUi.ED_ORANGE);
+		cargoTable.setForeground(EdoUi.User.MAIN_TEXT);
 		cargoTable.setBackground(EdoUi.Internal.TRANSPARENT);
 		cargoTable.setRowHeight(22);
 
@@ -340,7 +341,7 @@ private final JLayer<JTable> cargoLayer;
 		JTableHeader cargoHeader = cargoTable.getTableHeader();
 		if (cargoHeader != null) {
 			cargoHeader.setOpaque(false);
-			cargoHeader.setForeground(EdoUi.ED_ORANGE);
+			cargoHeader.setForeground(EdoUi.User.MAIN_TEXT);
 			cargoHeader.setBackground(EdoUi.Internal.TRANSPARENT);
 			cargoHeader.setBorder(null);
 			cargoHeader.setReorderingAllowed(false);
@@ -450,7 +451,7 @@ private final JLayer<JTable> cargoLayer;
 private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
 	private Color resolveRowForeground(JTable tbl, int viewRow) {
 		if (tbl == null || viewRow < 0) {
-			return EdoUi.ED_ORANGE;
+			return EdoUi.User.MAIN_TEXT;
 		}
 
 		if (tbl == table) {
@@ -471,10 +472,10 @@ private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
 					return NON_CORE_GREEN;
 				}
 			}
-return EdoUi.ED_ORANGE;
+return EdoUi.User.MAIN_TEXT;
 		}
 
-		return EdoUi.ED_ORANGE;
+		return EdoUi.User.MAIN_TEXT;
 	}
 
 	private boolean isSummaryRow(JTable tbl, int viewRow) {

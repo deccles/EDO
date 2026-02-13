@@ -47,6 +47,7 @@ import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.EdoUi.User;
 
 public class BiologyTabPanel extends JPanel {
 
@@ -98,7 +99,7 @@ private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough 
         setOpaque(false);
 
         header.setOpaque(false);
-        header.setForeground(EdoUi.ED_ORANGE);
+        header.setForeground(EdoUi.User.MAIN_TEXT);
         add(header, BorderLayout.NORTH);
 
         table.setFillsViewportHeight(true);
@@ -682,7 +683,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
         }
 
         th.setOpaque(true);
-        th.setForeground(EdoUi.ED_ORANGE);
+        th.setForeground(EdoUi.User.MAIN_TEXT);
         th.setBackground(EdoUi.ED_DARK);
 
         th.setDefaultRenderer(new DefaultTableCellRenderer() {
@@ -701,7 +702,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
                 label.setOpaque(true);
                 label.setBackground(EdoUi.ED_DARK);
-                label.setForeground(EdoUi.ED_ORANGE);
+                label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setBorder(new EmptyBorder(0, 6, 0, 6));
                 return label;
             }
@@ -715,7 +716,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
         if (samples > 0) {
             return Color.YELLOW;
         }
-        return EdoUi.ED_ORANGE;
+        return EdoUi.User.MAIN_TEXT;
     }
 
     // ------------------------------------------------------------
@@ -858,7 +859,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
         private BioTextCellRenderer(BioTableModel model) {
             this.model = model;
             setOpaque(false);
-            setForeground(EdoUi.ED_ORANGE);
+            setForeground(EdoUi.User.MAIN_TEXT);
         }
 
         @Override
@@ -884,10 +885,10 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 if (column == 0 || column == 1 || column == 2) {
                     label.setForeground(colorForSamples(r.sampleCount));
                 } else {
-                    label.setForeground(EdoUi.ED_ORANGE);
+                    label.setForeground(EdoUi.User.MAIN_TEXT);
                 }
             } else {
-                label.setForeground(EdoUi.ED_ORANGE);
+                label.setForeground(EdoUi.User.MAIN_TEXT);
             }
 
             label.setBorder(new EmptyBorder(0, 6, 0, 6));
@@ -909,7 +910,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
             if (!(value instanceof BioRow)) {
                 DefaultTableCellRenderer fallback = new DefaultTableCellRenderer();
                 fallback.setOpaque(false);
-                fallback.setForeground(EdoUi.ED_ORANGE);
+                fallback.setForeground(EdoUi.User.MAIN_TEXT);
                 return fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             }
 
