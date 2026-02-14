@@ -13,6 +13,7 @@ import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -47,7 +48,6 @@ import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
-import org.dce.ed.ui.EdoUi.User;
 
 public class BiologyTabPanel extends JPanel {
 
@@ -954,17 +954,27 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 Color c = colorForSamples(row.sampleCount);
 
                 // Complete: show checkmarks only and no distances.
+             // Complete: show checkmarks only and no distances.
                 if (row.sampleCount >= 3) {
                     g2.setColor(c);
 
-                    String check = "\u2713";
-                    int checkW = fm.stringWidth(check);
+                    Font oldFont = g2.getFont();
+                    try {
+                        Font checkFont = iconFont(font);
+                        g2.setFont(checkFont);
 
-                    for (int i = 0; i < 3; i++) {
-                        int tx = x + (bubbleW - checkW) / 2;
-                        int ty = yMid + (fm.getAscent() / 2) - 1;
-                        g2.drawString(check, tx, ty);
-                        x += bubbleW + gap;
+                        FontMetrics checkFm = g2.getFontMetrics();
+                        String check = "\u2713";
+                        int checkW = checkFm.stringWidth(check);
+
+                        for (int i = 0; i < 3; i++) {
+                            int tx = x + (bubbleW - checkW) / 2;
+                            int ty = yMid + (checkFm.getAscent() / 2) - 1;
+                            g2.drawString(check, tx, ty);
+                            x += bubbleW + gap;
+                        }
+                    } finally {
+                        g2.setFont(oldFont);
                     }
                     return;
                 }
@@ -1001,6 +1011,22 @@ private static List<BioRow> buildRows(BodyInfo body) {
             } finally {
                 g2.dispose();
             }
+        }
+        private static Font iconFont(Font uiFont) {
+            int size = uiFont.getSize() - 1;
+            if (size < 10) {
+                size = uiFont.getSize();
+            }
+
+            String family = "SansSerif";
+            Font f = new Font(family, Font.BOLD, size);
+
+            // If that didn't actually give us SansSerif (odd platform/font issues), fall back.
+            if (!family.equalsIgnoreCase(f.getFamily())) {
+                f = new Font(Font.MONOSPACED, Font.PLAIN, size);
+            }
+
+            return f;
         }
 
         // Fixed formatting:
@@ -1160,8 +1186,10 @@ private final class BioMapPanel extends JPanel {
             int y0 = (h - side) / 2;
 
             // Border / background
-            g2.setColor(EdoUi.Internal.BLACK_ALPHA_80);
-            g2.fillRect(x0, y0, side, side);
+            if (!OverlayPreferences.isOverlayTransparent()) {
+                g2.setColor(EdoUi.Internal.BLACK_ALPHA_80);
+                g2.fillRect(x0, y0, side, side);
+            }
             g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_140);
 //            g2.drawRect(x0, y0, side - 1, side - 1);
 
@@ -1294,6 +1322,29 @@ private void recordMovementSample(Instant t, double lat, double lon, double radi
         if (a != null && b != null) {
             movementHeadingDeg = bearingDeg(a.lat, a.lon, b.lat, b.lon);
         }
+    }
+}
+private static void drawCheckMark(Graphics2D g2, int x, int y, int w, int h) {
+    // Vector checkmark so we don't depend on font glyph availability.
+    float stroke = Math.max(2f, Math.min(w, h) / 6f);
+
+    java.awt.Stroke oldStroke = g2.getStroke();
+    try {
+        g2.setStroke(new BasicStroke(stroke, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        Path2D.Float p = new Path2D.Float();
+
+     // More acute angle, longer + more upright long stem
+     p.moveTo(x + w * 0.24, y + h * 0.60);  // start (lower-left)
+     p.lineTo(x + w * 0.40, y + h * 0.78);  // knee (lower-ish, a bit right)
+     p.lineTo(x + w * 0.66, y + h * 0.20);  // tip (higher, less right -> more upright)
+
+     g2.draw(p);
+
+
+        g2.draw(p);
+    } finally {
+        g2.setStroke(oldStroke);
     }
 }
 
