@@ -3,6 +3,7 @@ package org.dce.ed.logreader.event;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteLogEvent;
@@ -55,7 +56,8 @@ public final class ScanEvent extends EliteLogEvent {
     private final boolean landable;
     private final String planetClass;
     private final String atmosphere;
-    private final String terraformState;
+    private final Map<String, Double> atmosphereComposition;
+private final String terraformState;
     private final Double surfaceGravity;
     private final Double surfaceTemperature;
     private final Double orbitalPeriod;
@@ -87,6 +89,7 @@ public final class ScanEvent extends EliteLogEvent {
                      Boolean wasDiscovered,
                      Boolean wasMapped,
                      Boolean wasFootfalled,
+                     Map<String, Double> atmosphereComposition,
                      String starType,
                      List<ParentRef> parents) {
 
@@ -108,6 +111,7 @@ public final class ScanEvent extends EliteLogEvent {
         this.wasDiscovered = wasDiscovered;
         this.wasMapped = wasMapped;
         this.wasFootfalled = wasFootfalled;
+        this.atmosphereComposition = (atmosphereComposition == null) ? Collections.emptyMap() : atmosphereComposition;
         
         this.starType = starType;
         this.parents = (parents == null) ? Collections.emptyList() : parents;
@@ -139,6 +143,10 @@ public final class ScanEvent extends EliteLogEvent {
 
     public String getAtmosphere() {
         return atmosphere;
+    }
+
+    public Map<String, Double> getAtmosphereComposition() {
+        return atmosphereComposition;
     }
 
     public String getTerraformState() {

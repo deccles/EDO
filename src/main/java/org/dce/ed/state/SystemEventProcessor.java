@@ -291,6 +291,10 @@ public class SystemEventProcessor {
         info.setPlanetClass(e.getPlanetClass());
         info.setAtmosphere(e.getAtmosphere());
 
+        if (e.getAtmosphereComposition() != null && !e.getAtmosphereComposition().isEmpty()) {
+            info.setAtmosphereComposition(e.getAtmosphereComposition());
+        }
+
         if (e.getSurfaceTemperature() != null) {
             info.setSurfaceTempK(e.getSurfaceTemperature());
         }

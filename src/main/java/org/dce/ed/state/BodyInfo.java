@@ -55,6 +55,7 @@ public class BodyInfo {
 	}
 	private String atmoOrType;    // primarily for display
 	private String atmosphere;
+	private Map<String, Double> atmosphereComposition = Collections.emptyMap();
 	Double axialTilt;
 
 	// Odyssey exobiology sample progress per species (1..3).
@@ -215,7 +216,7 @@ public class BodyInfo {
 				surfacePressure,
 				hasVolc,
 				getVolcanism(),
-				Collections.emptyMap(),
+				getAtmosphereComposition(),
 				orbitalPeriod,
 				distanceLs,
 				getGuardianSystem(),
@@ -261,6 +262,16 @@ public class BodyInfo {
 
 	public String getAtmosphere() {
 		return atmosphere;
+	}
+
+	public Map<String, Double> getAtmosphereComposition() {
+		return atmosphereComposition;
+	}
+
+	public void setAtmosphereComposition(Map<String, Double> atmosphereComposition) {
+		this.atmosphereComposition = (atmosphereComposition == null || atmosphereComposition.isEmpty())
+				? Collections.emptyMap()
+				: new HashMap<>(atmosphereComposition);
 	}
 
 	// ------------------------------------------------------------

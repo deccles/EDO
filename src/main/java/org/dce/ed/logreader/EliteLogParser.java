@@ -2,8 +2,10 @@ package org.dce.ed.logreader;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.dce.ed.logreader.EliteLogEvent.GenericEvent;
@@ -763,6 +765,8 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         String planetClass = getString(obj, "PlanetClass");
         String atmosphere = getString(obj, "Atmosphere");
         String terraformState = getString(obj, "TerraformState");
+        Map<String, Double> atmoComp = parseAtmosphereComposition(obj);
+
         Double surfaceGravity = obj.has("SurfaceGravity")
                 ? obj.get("SurfaceGravity").getAsDouble()
                 : null;
@@ -804,6 +808,7 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
                 wasDiscovered,
                 wasMapped,
                 wasFootfalled,
+                atmoComp,
                 starType,
                 parents
         );
@@ -937,5 +942,62 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
                 : defaultValue;
     }
 
+
+
+/**
+ * Parse the journal Scan event's AtmosphereComposition field into a simple map:
+ *   gasName -> percent
+ *
+ * Keys are canonicalized to match Exobiology rules (e.g., "SulphurDioxide").
+ */
+private Map<String, Double> parseAtmosphereComposition(JsonObject obj) {
+    if (obj == null || !obj.has("AtmosphereComposition") || obj.get("AtmosphereComposition").isJsonNull()) {
+        return Collections.emptyMap();
+    }
+    JsonElement el = obj.get("AtmosphereComposition");
+    if (!el.isJsonArray()) {
+        return Collections.emptyMap();
+    }
+
+    Map<String, Double> out = new HashMap<>();
+    for (JsonElement item : el.getAsJsonArray()) {
+        if (item == null || !item.isJsonObject()) {
+            continue;
+        }
+        JsonObject o = item.getAsJsonObject();
+        String name = getString(o, "Name");
+        if (name == null || name.isEmpty()) {
+            continue;
+        }
+        if (!o.has("Percent") || o.get("Percent").isJsonNull()) {
+            continue;
+        }
+        double pct;
+        try {
+            pct = o.get("Percent").getAsDouble();
+        } catch (Exception ex) {
+            continue;
+        }
+        out.put(canonicalGasName(name), Double.valueOf(pct));
+    }
+
+    if (out.isEmpty()) {
+        return Collections.emptyMap();
+    }
+    return out;
+}
+
+private static String canonicalGasName(String name) {
+    String raw = name.trim();
+    String norm = raw.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+
+    if ("sulphurdioxide".equals(norm) || "sulfurdioxide".equals(norm)) {
+        return "SulphurDioxide";
+    }
+    if ("carbondioxide".equals(norm)) {
+        return "CarbonDioxide";
+    }
+    return raw;
+}
 }
 

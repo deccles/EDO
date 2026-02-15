@@ -39,10 +39,11 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
+import org.dce.ed.exobiology.audit.ExoPredictionDebuggerMain;
+import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
 import org.dce.ed.util.GithubMsiUpdater;
-import org.dce.ed.ui.EdoUi;
 
 /**
  * Preferences dialog for the overlay.
@@ -766,6 +767,9 @@ public class PreferencesDialog extends JDialog {
         JButton launchEdsmQueryToolsButton = new JButton("Run EDSM Query Tools");
         launchEdsmQueryToolsButton.addActionListener(e -> launchEdsmQueryTools());
 
+        JButton launchExoPredictionDebuggerButton = new JButton("Exo Prediction Debugger");
+        launchExoPredictionDebuggerButton.addActionListener(e -> launchExoPredictionDebugger());
+
         JButton showConsole = new JButton("Show console");
         showConsole.addActionListener(new ShowConsoleAction());
 
@@ -820,6 +824,9 @@ public class PreferencesDialog extends JDialog {
         content.add(launchEdsmQueryToolsButton, gbc);
 
         gbc.gridy++;
+        content.add(launchExoPredictionDebuggerButton, gbc);
+
+        gbc.gridy++;
         content.add(showConsole, gbc);
 
         gbc.gridy++;
@@ -871,7 +878,19 @@ public class PreferencesDialog extends JDialog {
         });
     }
 
-    
+    private void launchExoPredictionDebugger() {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                ExoPredictionDebuggerMain.main(new String[0]);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Unable to launch Exo Prediction Debugger:\n" + ex.getMessage(),
+                        "Launch Error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+    }
+
 
     private void updatePreviewLabelFont() {
         Font f = buildSelectedUiFont();

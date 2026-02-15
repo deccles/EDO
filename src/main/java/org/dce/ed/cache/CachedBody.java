@@ -28,6 +28,9 @@ public class CachedBody {
     public String atmosphere;
     public String atmoOrType;
 
+    /** Atmosphere composition percent map (e.g., SulphurDioxide -> 12.3). */
+    public Map<String, Double> atmosphereComposition;
+
     public Double surfaceTempK;
     public Double orbitalPeriod;
     

@@ -259,6 +259,9 @@ public final class SystemCache {
             info.setAtmoOrType(cb.atmoOrType);
             info.setPlanetClass(cb.planetClass);
             info.setAtmosphere(cb.atmosphere);
+            if (cb.atmosphereComposition != null && !cb.atmosphereComposition.isEmpty()) {
+                info.setAtmosphereComposition(cb.atmosphereComposition);
+            }
             info.setSurfaceTempK(cb.surfaceTempK);
             info.setOrbitalPeriod(cb.orbitalPeriod);
             info.setVolcanism(cb.volcanism);
@@ -564,6 +567,9 @@ public final class SystemCache {
             cb.atmoOrType = b.getAtmoOrType();
             cb.planetClass = b.getPlanetClass();
             cb.atmosphere = b.getAtmosphere();
+            if (b.getAtmosphereComposition() != null && !b.getAtmosphereComposition().isEmpty()) {
+                cb.atmosphereComposition = new HashMap<>(b.getAtmosphereComposition());
+            }
             cb.surfaceTempK = b.getSurfaceTempK();
             cb.orbitalPeriod = b.getOrbitalPeriod();
             cb.volcanism = b.getVolcanism();
@@ -581,6 +587,9 @@ public final class SystemCache {
             // Preserve cache truth when the current session hasn't learned these flags yet.
             // These flags are monotonic in practice (once true, they don't become false).
             if (prev != null) {
+                if (cb.atmosphereComposition == null || cb.atmosphereComposition.isEmpty()) {
+                    cb.atmosphereComposition = prev.atmosphereComposition;
+                }
                 if (cb.wasMapped == null || (Boolean.FALSE.equals(cb.wasMapped) && Boolean.TRUE.equals(prev.wasMapped))) {
                     cb.wasMapped = prev.wasMapped;
                 }
