@@ -1589,7 +1589,12 @@ public final class ExobiologyDataConstraints {
                 .volcanism("Any")
                 .build(),
             SpeciesRuleBuilder.create()
-                .gravity(0.04, 0.055)
+            
+            /*
+             * Manually fixed the max gravity value
+             *
+             */
+                .gravity(0.04, 0.0597)
                 .atmospheres(AtmosphereType.WATER)
                 .planetTypes(PlanetType.ROCKY, PlanetType.HIGH_METAL)
                 .build()
