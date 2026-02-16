@@ -169,36 +169,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	}
 
 	private boolean shouldShowLowLimpetWarning() {
-		// Only while docked.
-		if (!lastDocked) {
-			return false;
-		}
-		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
-			return false;
-		}
-
-		LoadoutEvent loadout = EliteOverlayTabbedPane.getLatestLoadout();
-		if (!EliteOverlayTabbedPane.hasMiningEquipment(loadout)) {
-			return false;
-		}
-
-		CargoMonitor.Snapshot snap = lastCargoSnapshot;
-		if (snap == null) {
-			snap = CargoMonitor.getInstance().getSnapshot();
-		}
-		int numLimpets = (snap == null) ? 0 : snap.getLimpetCount();
-
-		if (OverlayPreferences.getMiningLowLimpetReminderMode() == MiningLimpetReminderMode.COUNT) {
-			return numLimpets < OverlayPreferences.getMiningLowLimpetReminderThreshold();
-		}
-
-		Integer cargoCapacity = (loadout == null) ? null : loadout.getCargoCapacity();
-		if (cargoCapacity == null || cargoCapacity <= 0) {
-			return false;
-		}
-
-		double percentage = (numLimpets * 100.0) / cargoCapacity;
-		return percentage < OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
+		return EliteOverlayTabbedPane.shouldShowLowLimpetWarning(lastDocked, lastCargoSnapshot);
 	}
 
 	private JMenuBar createMenuBar() {

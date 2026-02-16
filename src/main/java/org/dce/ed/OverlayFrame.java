@@ -79,6 +79,11 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private HWND hwnd;
     private boolean passThroughEnabled;
 
+ // For top title-bar status (passthrough overlay mode)
+    private volatile boolean lastDocked;
+    private volatile CargoMonitor.Snapshot lastCargoSnapshot;
+
+    
     private final TitleBarPanel titleBar;
     private final OverlayContentPanel contentPanel;
 	private final OverlayBackgroundPanel backgroundPanel;
@@ -173,6 +178,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         
         installCarrierJumpTitleUpdater();
         installExoCreditsTracker();
+        installLowLimpetStatusUpdater();
     }
 
     public void setTitleBarText(String text) {
@@ -393,6 +399,43 @@ private void installExoCreditsTracker() {
         ex.printStackTrace();
     }
 }
+
+private void installLowLimpetStatusUpdater() {
+    EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
+    if (tp != null) {
+        lastDocked = tp.isCurrentlyDocked();
+        tp.addDockedStateListener(docked -> {
+            lastDocked = docked;
+            updateLeftStatusLabel();
+        });
+    }
+
+    CargoMonitor.getInstance().addListener(snap -> {
+        lastCargoSnapshot = snap;
+        updateLeftStatusLabel();
+    });
+
+    lastCargoSnapshot = CargoMonitor.getInstance().getSnapshot();
+    updateLeftStatusLabel();
+}
+
+private void updateLeftStatusLabel() {
+    if (titleBar == null) {
+        return;
+    }
+
+    Runnable r = () -> {
+        boolean show = EliteOverlayTabbedPane.shouldShowLowLimpetWarning(lastDocked, lastCargoSnapshot);
+        titleBar.setLeftStatusText(show ? "Low Limpet Warning!" : "");
+    };
+
+    if (SwingUtilities.isEventDispatchThread()) {
+        r.run();
+    } else {
+        SwingUtilities.invokeLater(r);
+    }
+}
+
 
     
     private static int calcBorderDragThicknessPx() {

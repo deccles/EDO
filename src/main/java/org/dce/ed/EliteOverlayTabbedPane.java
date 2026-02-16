@@ -970,6 +970,38 @@ public class EliteOverlayTabbedPane extends JPanel {
 		revalidate();
 		repaint();
 	}
+	public static boolean shouldShowLowLimpetWarning(boolean docked, CargoMonitor.Snapshot snap) {
+		// Only while docked.
+		if (!docked) {
+			return false;
+		}
+		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
+			return false;
+		}
+
+		LoadoutEvent loadout = getLatestLoadout();
+		if (!hasMiningEquipment(loadout)) {
+			return false;
+		}
+
+		if (snap == null) {
+			snap = CargoMonitor.getInstance().getSnapshot();
+		}
+		int numLimpets = (snap == null) ? 0 : snap.getLimpetCount();
+
+		if (OverlayPreferences.getMiningLowLimpetReminderMode() == MiningLimpetReminderMode.COUNT) {
+			return numLimpets < OverlayPreferences.getMiningLowLimpetReminderThreshold();
+		}
+
+		Integer cargoCapacity = (loadout == null) ? null : loadout.getCargoCapacity();
+		if (cargoCapacity == null || cargoCapacity <= 0) {
+			return false;
+		}
+
+		double percentage = (numLimpets * 100.0) / cargoCapacity;
+		return percentage < OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
+	}
+
 	public static void maybeRemindAboutLimpets() {
 		// Avoid spamming if multiple events fire close together.
 		long now = System.currentTimeMillis();

@@ -38,6 +38,7 @@ public class TitleBarPanel extends JPanel {
     private final CloseButton closeButton;
     private final SettingsButton settingsButton;
     private final JLabel titleLabel;
+    private final JLabel leftStatusLabel;
     private final JLabel rightStatusLabel;
 
     public TitleBarPanel(OverlayFrame frame, String title) {
@@ -98,6 +99,13 @@ public class TitleBarPanel extends JPanel {
             }
         });
 
+        leftStatusLabel = new JLabel("");
+        leftStatusLabel.setForeground(Color.RED);
+        leftStatusLabel.setFont(leftStatusLabel.getFont().deriveFont(Font.BOLD, 13f));
+        leftStatusLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        leftStatusLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        leftStatusLabel.setVisible(false);
+
         rightStatusLabel = new JLabel("");
         rightStatusLabel.setForeground(Color.WHITE);
         rightStatusLabel.setFont(rightStatusLabel.getFont().deriveFont(Font.PLAIN, 13f));
@@ -110,8 +118,13 @@ public class TitleBarPanel extends JPanel {
         rightPanel.add(closeButton);
 
         add(leftPanel, BorderLayout.WEST);
-        // Put the status label in the center so it can expand, but keep its text right-justified.
-        add(rightStatusLabel, BorderLayout.CENTER);
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setOpaque(false);
+        centerPanel.add(leftStatusLabel, BorderLayout.WEST);
+        centerPanel.add(rightStatusLabel, BorderLayout.EAST);
+
+        // Put status in the center so it can expand.
+        add(centerPanel, BorderLayout.CENTER);
         add(rightPanel, BorderLayout.EAST);
 
         // Tall enough that nothing gets clipped even with DPI scaling
@@ -207,6 +220,18 @@ public class TitleBarPanel extends JPanel {
 
         final String finalText = text;
         SwingUtilities.invokeLater(() -> titleLabel.setText(finalText));
+    }
+
+    public void setLeftStatusText(String text) {
+        if (text == null) {
+            text = "";
+        }
+
+        final String finalText = text;
+        SwingUtilities.invokeLater(() -> {
+            leftStatusLabel.setText(finalText);
+            leftStatusLabel.setVisible(!finalText.isBlank());
+        });
     }
 
     /**
