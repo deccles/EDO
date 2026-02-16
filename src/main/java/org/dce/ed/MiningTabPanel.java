@@ -86,9 +86,6 @@ public class MiningTabPanel extends JPanel {
 	private final JScrollPane materialsScroller;
 	private final JScrollPane cargoScroller;
 
-	private final Timer cargoPollTimer;
-	private Path cargoFile;
-	private long lastCargoModified = -1L;
 
 	private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
 
@@ -402,10 +399,8 @@ private final JLayer<JTable> cargoLayer;
 
 		add(centerPanel, BorderLayout.CENTER);
 
-		cargoPollTimer = new Timer(1500, e -> pollCargo());
-		cargoPollTimer.setRepeats(true);
-		cargoPollTimer.start();
-		pollCargo();
+		CargoMonitor.getInstance().addListener(snap -> SwingUtilities.invokeLater(() -> updateFromCargoSnapshot(snap)));
+		updateFromCargoSnapshot(CargoMonitor.getInstance().getSnapshot());
 
 
 		applyUiFontPreferences();
@@ -648,28 +643,15 @@ return EdoUi.User.MAIN_TEXT;
 		return out;
 	}
 
-	private void pollCargo() {
-		try {
-			Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
-			if (journalDir == null) {
-				return;
-			}
 
-			if (cargoFile == null) {
-				cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
-			}
-			if (cargoFile == null || !Files.exists(cargoFile)) {
+	private void updateFromCargoSnapshot(CargoMonitor.Snapshot snap) {
+		try {
+			if (snap == null || snap.getCargoJson() == null) {
 				cargoModel.setRows(List.of());
 				return;
 			}
 
-			long modified = Files.getLastModifiedTime(cargoFile).toMillis();
-			if (modified == lastCargoModified) {
-				return;
-			}
-			lastCargoModified = modified;
-
-			JsonObject cargoObj = readJsonObject(cargoFile);
+			JsonObject cargoObj = snap.getCargoJson();
 			List<Row> rows = buildRowsFromCargo(cargoObj);
 			Set<Integer> changedModelRows = computeChangedInventoryModelRows(rows);
 			cargoModel.setRows(withTotalRow(rows));
@@ -678,20 +660,6 @@ return EdoUi.User.MAIN_TEXT;
 		}
 	}
 
-	private static JsonObject readJsonObject(Path file) {
-		if (file == null) {
-			return null;
-		}
-		try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			JsonElement el = JsonParser.parseReader(r);
-			if (el != null && el.isJsonObject()) {
-				return el.getAsJsonObject();
-			}
-			return null;
-		} catch (Exception e) {
-			return null;
-		}
-	}
 
 	private List<Row> buildRowsFromCargo(JsonObject cargo) {
 		if (cargo == null) {

@@ -62,6 +62,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.dce.ed.ui.EdoUi;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 
 /**
@@ -276,6 +278,32 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 	static LoadoutEvent loadoutEventx = null;
 
+	private static volatile boolean currentlyDocked = false;
+	private final CopyOnWriteArrayList<Consumer<Boolean>> dockedListeners = new CopyOnWriteArrayList<>();
+
+	public boolean isCurrentlyDocked() {
+		return currentlyDocked;
+	}
+
+	public void addDockedStateListener(Consumer<Boolean> listener) {
+		if (listener != null) {
+			dockedListeners.add(listener);
+		}
+	}
+
+	private void setCurrentlyDocked(boolean docked) {
+		if (currentlyDocked == docked) {
+			return;
+		}
+		currentlyDocked = docked;
+		for (Consumer<Boolean> c : dockedListeners) {
+			try {
+				c.accept(docked);
+			} catch (Exception ignored) {
+			}
+		}
+	}
+
 	public static LoadoutEvent getLatestLoadout() {
 		if (loadoutEventx == null) {
 			EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
@@ -292,6 +320,13 @@ public class EliteOverlayTabbedPane extends JPanel {
         if (event instanceof LoadoutEvent e) {
         	loadoutEventx = e;
         }
+
+        if (event instanceof org.dce.ed.logreader.event.StatusEvent se) {
+        	setCurrentlyDocked(se.isDocked());
+        } else if (event instanceof org.dce.ed.logreader.event.LocationEvent le) {
+        	setCurrentlyDocked(le.isDocked());
+        }
+
 
 		if (event instanceof FsdJumpEvent e) {
 			if (e.getDocked() == null || e.getDocked()) {
@@ -312,6 +347,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 
 		if (event.getType() == EliteEventType.UNDOCKED) {
+			setCurrentlyDocked(false);
 			maybeRemindAboutLimpets();
 		}
 	}
@@ -935,9 +971,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		repaint();
 	}
 	public static void maybeRemindAboutLimpets() {
-		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
-		Path cargoFile = EliteLogFileLocator.findCargoFile(journalDir);
-		
 		// Avoid spamming if multiple events fire close together.
 		long now = System.currentTimeMillis();
 //		if (now - lastLimpetReminderMs < 60_000L) {
@@ -949,9 +982,13 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
 			return;
 		}
-		JsonObject cargo = readJsonObject(cargoFile);
-		int numLimpets = getLimpetCount(cargo);
-		
+
+		CargoMonitor.Snapshot snap = CargoMonitor.getInstance().getSnapshot();
+		if (snap == null) {
+			snap = CargoMonitor.getInstance().refreshNow();
+		}
+		int numLimpets = (snap == null) ? 0 : snap.getLimpetCount();
+
 		boolean lowLimpets = false;
 		if (OverlayPreferences.getMiningLowLimpetReminderMode() == MiningLimpetReminderMode.COUNT) {
 			lowLimpets = numLimpets < OverlayPreferences.getMiningLowLimpetReminderThreshold();
@@ -962,22 +999,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 				// Without CargoCapacity, the percent threshold is meaningless.
 				return;
 			}
-			double percentage = (numLimpets*100) / cargoCapacity;
-			
+			double percentage = (numLimpets * 100.0) / cargoCapacity;
+
 			lowLimpets = percentage < OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
 		}
-
-
-
-		if (cargoFile == null) {
-			return;
-		}
-
 
 		if (!hasMiningEquipment(loadoutEventx)) {
 			return;
 		}
-
 
 		if (!lowLimpets) {
 			return;
@@ -1060,7 +1089,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 
-private static boolean hasMiningEquipment(LoadoutEvent loadout) {
+public static boolean hasMiningEquipment(LoadoutEvent loadout) {
 	if (loadout == null) {
 		return false;
 	}

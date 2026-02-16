@@ -9,6 +9,7 @@ import java.awt.event.WindowEvent;
 
 import javax.swing.Box;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
@@ -24,6 +25,8 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.OverlayPreferences.MiningLimpetReminderMode;
+import org.dce.ed.logreader.event.LoadoutEvent;
 
 /**
  * Decorated window (min/max/resize) where ONLY the background fades.
@@ -50,6 +53,9 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	private Runnable onRequestSwitchToPassThrough;
 
 	private JMenuBar menuBar;
+	private JLabel statusLabel;
+	private volatile boolean lastDocked;
+	private volatile CargoMonitor.Snapshot lastCargoSnapshot;
 
 	/**
 	 * Minimal DWM binding.
@@ -120,6 +126,79 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		applyUiFontPreferences();
 		setAlwaysOnTop(OverlayPreferences.isNonOverlayAlwaysOnTop());
 
+		installStatusArea();
+
+	}
+
+	private void installStatusArea() {
+		EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
+		if (tp != null) {
+			lastDocked = tp.isCurrentlyDocked();
+			tp.addDockedStateListener(docked -> {
+				lastDocked = docked;
+				updateStatusLabel();
+			});
+		}
+
+		CargoMonitor.getInstance().addListener(snap -> {
+			lastCargoSnapshot = snap;
+			updateStatusLabel();
+		});
+
+		// Initial paint.
+		lastCargoSnapshot = CargoMonitor.getInstance().getSnapshot();
+		updateStatusLabel();
+	}
+
+	private void updateStatusLabel() {
+		if (statusLabel == null) {
+			return;
+		}
+
+		Runnable r = () -> {
+			boolean show = shouldShowLowLimpetWarning();
+			statusLabel.setText(show ? "Low Limpet Warning!" : "");
+			statusLabel.setVisible(show);
+		};
+
+		if (SwingUtilities.isEventDispatchThread()) {
+			r.run();
+		} else {
+			SwingUtilities.invokeLater(r);
+		}
+	}
+
+	private boolean shouldShowLowLimpetWarning() {
+		// Only while docked.
+		if (!lastDocked) {
+			return false;
+		}
+		if (!OverlayPreferences.isMiningLowLimpetReminderEnabled()) {
+			return false;
+		}
+
+		LoadoutEvent loadout = EliteOverlayTabbedPane.getLatestLoadout();
+		if (!EliteOverlayTabbedPane.hasMiningEquipment(loadout)) {
+			return false;
+		}
+
+		CargoMonitor.Snapshot snap = lastCargoSnapshot;
+		if (snap == null) {
+			snap = CargoMonitor.getInstance().getSnapshot();
+		}
+		int numLimpets = (snap == null) ? 0 : snap.getLimpetCount();
+
+		if (OverlayPreferences.getMiningLowLimpetReminderMode() == MiningLimpetReminderMode.COUNT) {
+			return numLimpets < OverlayPreferences.getMiningLowLimpetReminderThreshold();
+		}
+
+		Integer cargoCapacity = (loadout == null) ? null : loadout.getCargoCapacity();
+		if (cargoCapacity == null || cargoCapacity <= 0) {
+			return false;
+		}
+
+		double percentage = (numLimpets * 100.0) / cargoCapacity;
+		return percentage < OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
 	}
 
 	private JMenuBar createMenuBar() {
@@ -144,7 +223,14 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		popup.setBackground(MENU_POPUP_BG);
 		popup.setBorder(new EmptyBorder(4, 4, 4, 4));
 
+		statusLabel = new JLabel("");
+		statusLabel.setOpaque(false);
+		statusLabel.setForeground(Color.RED);
+		statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
+
 		bar.add(Box.createHorizontalGlue());
+		bar.add(statusLabel);
+		bar.add(Box.createHorizontalStrut(10));
 		bar.add(overlayMenu);
 		return bar;
 	}
