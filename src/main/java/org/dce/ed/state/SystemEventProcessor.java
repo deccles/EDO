@@ -647,7 +647,8 @@ public class SystemEventProcessor {
                         info.getBodyId(),
                         info.getStarSystem(),
                         bonusApplies,
-                        filtered);
+                        filtered,
+                        BioScanPredictionEvent.PredictionKind.UPDATE);
 
                 LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
                 return;
@@ -666,7 +667,8 @@ public class SystemEventProcessor {
                 info.getBodyId(),
                 info.getStarSystem(),
                 bonusApplies,
-                candidates);
+                candidates,
+                BioScanPredictionEvent.PredictionKind.INITIAL);
 
         LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).dispatch(bioScanPredictionEvent);
     }

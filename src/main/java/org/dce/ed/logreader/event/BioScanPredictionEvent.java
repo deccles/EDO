@@ -15,6 +15,12 @@ import com.google.gson.JsonObject;
  */
 public class BioScanPredictionEvent extends EliteLogEvent {
 
+	public enum PredictionKind {
+		INITIAL,
+		UPDATE
+	}
+	private final PredictionKind kind;
+	
 	public Boolean getBonusApplies() {
 		return bonusApplies;
 	}
@@ -29,21 +35,38 @@ public class BioScanPredictionEvent extends EliteLogEvent {
     private final List<BioCandidate> candidates;
 	private Boolean bonusApplies;
     
-    public BioScanPredictionEvent(Instant timestamp,
-                     JsonObject rawJson,
-                     String bodyName,
-                     int bodyId,
-                     String starSystem,
-                     Boolean bonusApplies,
-                     List<BioCandidate> candidates) {
-        super(timestamp, EliteEventType.SCAN, rawJson);
-        this.bodyName = bodyName;
-        this.bodyId = bodyId;
-        this.starSystem = starSystem;
-        this.bonusApplies = bonusApplies;
-        this.candidates = candidates;
-    }
+	public BioScanPredictionEvent(Instant timestamp,
+			JsonObject rawJson,
+			String bodyName,
+			int bodyId,
+			String starSystem,
+			Boolean bonusApplies,
+			List<BioCandidate> candidates) {
 
+		this(timestamp, rawJson, bodyName, bodyId, starSystem, bonusApplies, candidates, PredictionKind.UPDATE);
+	}
+
+	public BioScanPredictionEvent(Instant timestamp,
+			JsonObject rawJson,
+			String bodyName,
+			int bodyId,
+			String starSystem,
+			Boolean bonusApplies,
+			List<BioCandidate> candidates,
+			PredictionKind kind) {
+
+		super(timestamp, EliteEventType.SCAN, rawJson);
+
+		this.bodyName = bodyName;
+		this.bodyId = bodyId;
+		this.starSystem = starSystem;
+		this.bonusApplies = bonusApplies;
+		this.candidates = candidates;
+		this.kind = (kind == null ? PredictionKind.UPDATE : kind);
+	}
+	public PredictionKind getKind() {
+		return kind;
+	}
     public List<BioCandidate> getCandidates() {
 		return candidates;
 	}

@@ -50,6 +50,7 @@ import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
+import org.dce.ed.logreader.event.BioScanPredictionEvent.PredictionKind;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
@@ -361,20 +362,18 @@ public class SystemTabPanel extends JPanel {
         	}
         	TtsSprintf ttsSprintf = new TtsSprintf(new PollyTtsCached());
         	
-        	if (highestPayout >= BIO_DOLLAR_THRESHOLD) {
-            	ttsSprintf.speakf("{n} species discovered on planetary body {body} with estimated value of {credits} credits",
-            			candidates.size(),
-            			e.getBodyName(),
-            			highestPayout);
-        	} else {
-            	ttsSprintf.speakf("{n} species discovered on planetary body {body}",
-            			candidates.size(),
-            			e.getBodyName());
+        	if (e.getKind() == PredictionKind.INITIAL) {
+        		if (highestPayout >= BIO_DOLLAR_THRESHOLD) {
+        			ttsSprintf.speakf("{n} species discovered on planetary body {body} with estimated value of {credits} credits",
+        					candidates.size(),
+        					e.getBodyName(),
+        					highestPayout);
+        		} else {
+        			ttsSprintf.speakf("{n} species discovered on planetary body {body}",
+        					candidates.size(),
+        					e.getBodyName());
+        		}
         	}
-
-
-
-        	
         }
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
