@@ -1034,6 +1034,10 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 		new javax.swing.Timer(1000, e -> {
 			((javax.swing.Timer) e.getSource()).stop();
 
+			if (!OverlayPreferences.isSpeechEnabled()) {
+				return;
+			}
+			
 			if (ann != null) {
 				lastProspectorAnnouncementSig = ann.sig;
 

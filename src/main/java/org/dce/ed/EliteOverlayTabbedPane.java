@@ -363,92 +363,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 		} catch (Exception e) {
 			// UI update errors shouldn't break log processing
 		}
-
-		if (event == null) {
-			return;
-		}
-		if (!OverlayPreferences.isSpeechEnabled()) {
-			return;
-		}
-
-		String msg = buildProspectorSummary(event);
-		System.out.println("Prospector summary : " + ((msg != null) ? msg : "Nothing valuable"));
-		if (msg != null && !msg.isBlank()) {
-			tts.speakf(msg);
-		}
 	}
 
-	private String buildProspectorSummary(ProspectedAsteroidEvent event) {
-		if (event == null) {
-			return null;
-		}
-
-		String motherlodeRaw = event.getMotherlodeMaterial();
-		String motherlodeNorm = normalizeMaterialName(motherlodeRaw);
-		boolean hasCore = motherlodeRaw != null && !motherlodeRaw.isBlank();
-
-		String content = event.getContent();
-		double totalTons = estimateTotalTons(content);
-
-		int valuableCount = 0;
-		Set<String> counted = new HashSet<>();
-		for (ProspectedAsteroidEvent.MaterialProportion m : event.getMaterials()) {
-			if (m == null || m.getName() == null) {
-				continue;
-			}
-
-			String rawName = m.getName();
-			String norm = normalizeMaterialName(rawName);
-			if (norm.isBlank()) {
-				continue;
-			}
-
-			// Don't count the core material in the "+ N valuable materials" part.
-			if (!motherlodeNorm.isBlank() && norm.equals(motherlodeNorm)) {
-				continue;
-			}
-
-			OptionalInt avgOpt = galacticAvgPrices.getAvgSellCrPerTon(rawName);
-			if (avgOpt.isEmpty()) {
-				continue;
-			}
-
-			double tons = (m.getProportion() / 100.0) * totalTons;
-			if (tons <= 0.0) {
-				continue;
-			}
-
-			long estCredits = Math.round(tons * (double) avgOpt.getAsInt());
-			if (estCredits < VALUABLE_MATERIAL_THRESHOLD_CREDITS) {
-				continue;
-			}
-
-			if (counted.add(norm)) {
-				valuableCount++;
-			}
-		}
-
-		if (hasCore) {
-			String coreSpoken = toSpokenMaterialName(motherlodeRaw);
-			if (valuableCount > 0) {
-				return String.format(Locale.US,
-						"Prospector detected %s core, plus %d valuable %s.",
-						coreSpoken,
-						valuableCount,
-						valuableCount == 1 ? "material" : "materials");
-			}
-			return String.format(Locale.US, "Prospector detected %s core.", coreSpoken);
-		}
-
-		if (valuableCount > 0) {
-			return String.format(Locale.US,
-					"Prospector detected %d valuable %s.",
-					valuableCount,
-					valuableCount == 1 ? "material" : "materials");
-		}
-
-		return null;
-	}
 
 	private static double estimateTotalTons(String content) {
 		if (content == null) {
@@ -464,84 +380,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		return OverlayPreferences.getMiningEstimateTonsMedium();
 	}
 
-//	private void announceValuableProspectByAvgValue(ProspectedAsteroidEvent event, int minAvgValueCrPerTon) {
-//		Set<String> wanted = parseMaterialList(OverlayPreferences.getProspectorMaterialsCsv());
-//
-//		LinkedHashMap<String, String> qualifying = new LinkedHashMap<>();
-//		for (ProspectedAsteroidEvent.MaterialProportion m : event.getMaterials()) {
-//			if (m == null) {
-//				continue;
-//			}
-//			String rawName = m.getName();
-//			String norm = normalizeMaterialName(rawName);
-//			if (!wanted.isEmpty() && !wanted.contains(norm)) {
-//				continue;
-//			}
-//
-//			OptionalInt avg = galacticAvgPrices.getAvgSellCrPerTon(rawName);
-//			if (avg.isEmpty()) {
-//				continue;
-//			}
-//			if (avg.getAsInt() < minAvgValueCrPerTon) {
-//				continue;
-//			}
-//
-//			qualifying.putIfAbsent(norm, rawName);
-//		}
-//
-//		if (qualifying.isEmpty()) {
-//			return;
-//		}
-//
-//		String motherlodeRaw = event.getMotherlodeMaterial();
-//		String motherlodeNorm = normalizeMaterialName(motherlodeRaw);
-//		boolean motherlodeQualifies = !motherlodeNorm.isBlank() && qualifying.containsKey(motherlodeNorm);
-//
-//		int count = qualifying.size();
-//		boolean isHigh = event.getContent() != null && event.getContent().equalsIgnoreCase("High");
-//		String coreWord = isHigh ? "motherlode" : "core";
-//
-//		String msg;
-//		if (count == 1) {
-//			String only = toSpokenMaterialName(qualifying.values().iterator().next());
-//			if (motherlodeQualifies) {
-//				msg = "Detected " + only + " " + coreWord;
-//			} else {
-//				msg = "Detected " + only;
-//			}
-//		} else if (count == 2) {
-//			if (motherlodeQualifies) {
-//				String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
-//				String other = null;
-//				for (Entry<String, String> e : qualifying.entrySet()) {
-//					if (!e.getKey().equals(motherlodeNorm)) {
-//						other = toSpokenMaterialName(e.getValue());
-//						break;
-//					}
-//				}
-//				if (other == null) {
-//					other = "material";
-//				}
-//				msg = "Detected " + mother + " " + coreWord + " and " + other;
-//			} else {
-//				List<String> names = new ArrayList<>();
-//				for (String raw : qualifying.values()) {
-//					names.add(toSpokenMaterialName(raw));
-//				}
-//				msg = "Detected " + names.get(0) + " and " + names.get(1);
-//			}
-//		} else {
-//			if (motherlodeQualifies) {
-//				String mother = toSpokenMaterialName(qualifying.get(motherlodeNorm));
-//				int otherCount = count - 1;
-//				msg = "Detected " + mother + " " + coreWord + " and " + otherCount + " valuable " + (otherCount == 1 ? "material" : "materials");
-//			} else {
-//				msg = "Detected " + count + " valuable materials";
-//			}
-//		}
-//
-//		tts.speakf(msg);
-//	}
 
 	private static Set<String> parseMaterialList(String csv) {
 		if (csv == null || csv.isBlank()) {
@@ -600,7 +438,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		t = t.replaceAll("\\s+", " ").trim();
 		return t;
 	}
-
 
 	/**
 	 * Attach a generic hover handler to a button; when the mouse rests over
