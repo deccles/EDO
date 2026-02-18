@@ -43,6 +43,7 @@ import org.dce.ed.exobiology.audit.ExoPredictionDebuggerMain;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
+import org.dce.ed.tts.VoicePackManager;
 import org.dce.ed.util.GithubMsiUpdater;
 
 /**
@@ -1192,7 +1193,14 @@ content.add(speechUseAwsCheckBox, gbc);
         }
 
         if (speechVoiceCombo != null && speechVoiceCombo.getSelectedItem() != null) {
-            OverlayPreferences.setSpeechVoiceId(speechVoiceCombo.getSelectedItem().toString());
+            String newVoice = speechVoiceCombo.getSelectedItem().toString();
+            String oldVoice = OverlayPreferences.getSpeechVoiceName();
+            OverlayPreferences.setSpeechVoiceId(newVoice);
+
+            // If voice changed and no local cache exists, try to download voice pack
+            if (!newVoice.equalsIgnoreCase(oldVoice) && !VoicePackManager.isVoicePackInstalled(newVoice)) {
+                VoicePackManager.downloadAndInstallVoicePack(this, newVoice, null);
+            }
         }
 
         if (speechRegionField != null) {

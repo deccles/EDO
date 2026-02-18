@@ -1,0 +1,375 @@
+package org.dce.ed.tts;
+
+import java.awt.Component;
+import java.awt.Dialog;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+import javax.swing.JDialog;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JProgressBar;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
+
+import org.dce.ed.OverlayPreferences;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+/**
+ * Downloads and installs pre-generated TTS voice packs from GitHub releases.
+ * 
+ * Voice packs are zip files named like "voice-salli.zip" attached to releases.
+ * They contain the cached WAV files (end/ and mid/ subdirectories) plus manifest.tsv.
+ */
+public final class VoicePackManager {
+
+    private static final String OWNER = "deccles";
+    private static final String REPO = "EDO";
+    private static final String VOICE_PACK_PREFIX = "voice-";
+    private static final String VOICE_PACK_SUFFIX = ".zip";
+
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
+
+    private VoicePackManager() {
+    }
+
+    /**
+     * Check if a voice pack is installed locally (has cached WAV files).
+     */
+    public static boolean isVoicePackInstalled(String voiceName) {
+        if (voiceName == null || voiceName.isBlank()) {
+            return false;
+        }
+
+        Path voiceDir = getVoiceCacheDir(voiceName);
+        if (!Files.isDirectory(voiceDir)) {
+            return false;
+        }
+
+        // Check for end/ or mid/ subdirectories with at least one .wav file
+        Path endDir = voiceDir.resolve("end");
+        Path midDir = voiceDir.resolve("mid");
+
+        return hasWavFiles(endDir) || hasWavFiles(midDir);
+    }
+
+    private static boolean hasWavFiles(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (var stream = Files.list(dir)) {
+            return stream.anyMatch(p -> p.toString().toLowerCase(Locale.ROOT).endsWith(".wav"));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Download and install a voice pack for the given voice name.
+     * Shows a progress dialog during download.
+     * 
+     * @param parent Parent component for dialogs
+     * @param voiceName Voice name (e.g., "Salli", "Joanna")
+     * @param onComplete Callback when complete (success or failure)
+     */
+    public static void downloadAndInstallVoicePack(Component parent, String voiceName, Runnable onComplete) {
+        if (voiceName == null || voiceName.isBlank()) {
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+
+        String normalizedVoice = voiceName.trim().toLowerCase(Locale.ROOT);
+        String zipName = VOICE_PACK_PREFIX + normalizedVoice + VOICE_PACK_SUFFIX;
+
+        JDialog dialog = new JDialog(
+                SwingUtilities.getWindowAncestor(parent),
+                "Downloading Voice Pack",
+                Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+
+        JLabel label = new JLabel("Downloading voice pack for " + voiceName + "...");
+        JProgressBar bar = new JProgressBar();
+        bar.setIndeterminate(true);
+
+        dialog.getContentPane().setLayout(new java.awt.BorderLayout(10, 10));
+        dialog.getContentPane().add(label, java.awt.BorderLayout.NORTH);
+        dialog.getContentPane().add(bar, java.awt.BorderLayout.CENTER);
+        dialog.setSize(400, 100);
+        dialog.setLocationRelativeTo(parent);
+
+        SwingWorker<Boolean, Void> worker = new SwingWorker<Boolean, Void>() {
+
+            private Exception failure;
+
+            @Override
+            protected Boolean doInBackground() {
+                try {
+                    // Find the voice pack asset URL from latest release
+                    String assetUrl = findVoicePackAssetUrl(zipName);
+                    if (assetUrl == null) {
+                        throw new IOException("Voice pack not found: " + zipName);
+                    }
+
+                    // Download and extract
+                    downloadAndExtract(assetUrl, voiceName, bar, label);
+                    return true;
+
+                } catch (Exception ex) {
+                    failure = ex;
+                    return false;
+                }
+            }
+
+            @Override
+            protected void done() {
+                dialog.dispose();
+
+                if (failure != null) {
+                    String msg = failure.getMessage();
+                    if (msg == null || msg.isBlank()) {
+                        msg = failure.getClass().getSimpleName();
+                    }
+
+                    // Don't show error for "not found" - just means no pre-built pack exists
+                    if (!msg.contains("not found")) {
+                        JOptionPane.showMessageDialog(parent,
+                                "Unable to download voice pack:\n" + msg,
+                                "Voice Pack Download Failed",
+                                JOptionPane.WARNING_MESSAGE);
+                    } else {
+                        System.out.println("Voice pack not available for download: " + voiceName);
+                    }
+                } else {
+                    System.out.println("Voice pack installed: " + voiceName);
+                }
+
+                if (onComplete != null) {
+                    onComplete.run();
+                }
+            }
+        };
+
+        worker.execute();
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Find the download URL for a voice pack asset in the latest release.
+     */
+    private static String findVoicePackAssetUrl(String zipName) throws IOException, InterruptedException {
+        String apiUrl = "https://api.github.com/repos/" + OWNER + "/" + REPO + "/releases/latest";
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(HTTP_TIMEOUT)
+                .build();
+
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(apiUrl))
+                .timeout(HTTP_TIMEOUT)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "EDO-Overlay")
+                .GET()
+                .build();
+
+        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new IOException("GitHub API returned " + resp.statusCode());
+        }
+
+        JsonObject release = JsonParser.parseString(resp.body()).getAsJsonObject();
+        JsonArray assets = release.getAsJsonArray("assets");
+        if (assets == null) {
+            return null;
+        }
+
+        String wantName = zipName.toLowerCase(Locale.ROOT);
+        for (JsonElement el : assets) {
+            JsonObject asset = el.getAsJsonObject();
+            String name = asset.has("name") ? asset.get("name").getAsString() : "";
+            if (name.toLowerCase(Locale.ROOT).equals(wantName)) {
+                return asset.has("browser_download_url")
+                        ? asset.get("browser_download_url").getAsString()
+                        : null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Download a zip file and extract it to the voice cache directory.
+     */
+    private static void downloadAndExtract(String url, String voiceName, JProgressBar bar, JLabel label)
+            throws IOException, InterruptedException {
+
+        Path voiceDir = getVoiceCacheDir(voiceName);
+        Files.createDirectories(voiceDir);
+
+        HttpClient client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .connectTimeout(HTTP_TIMEOUT)
+                .build();
+
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofMinutes(10))
+                .header("User-Agent", "EDO-Overlay")
+                .GET()
+                .build();
+
+        HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+            throw new IOException("HTTP " + resp.statusCode() + " downloading voice pack");
+        }
+
+        long contentLength = resp.headers().firstValueAsLong("Content-Length").orElse(-1L);
+        if (contentLength > 0) {
+            SwingUtilities.invokeLater(() -> {
+                bar.setIndeterminate(false);
+                bar.setMinimum(0);
+                bar.setMaximum(100);
+            });
+        }
+
+        // Download to temp file first
+        Path tempZip = Files.createTempFile("voice-pack-", ".zip");
+        try {
+            try (InputStream in = resp.body();
+                 var out = Files.newOutputStream(tempZip)) {
+
+                byte[] buf = new byte[64 * 1024];
+                long totalRead = 0;
+                int r;
+
+                while ((r = in.read(buf)) >= 0) {
+                    out.write(buf, 0, r);
+                    totalRead += r;
+
+                    if (contentLength > 0) {
+                        final int pct = (int) ((totalRead * 100L) / contentLength);
+                        SwingUtilities.invokeLater(() -> {
+                            bar.setValue(pct);
+                            label.setText("Downloading... " + pct + "%");
+                        });
+                    }
+                }
+            }
+
+            SwingUtilities.invokeLater(() -> {
+                bar.setIndeterminate(true);
+                label.setText("Extracting voice pack...");
+            });
+
+            // Extract zip to voice directory
+            extractZip(tempZip, voiceDir);
+
+        } finally {
+            Files.deleteIfExists(tempZip);
+        }
+    }
+
+    /**
+     * Extract a zip file to a target directory.
+     */
+    private static void extractZip(Path zipFile, Path targetDir) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipFile))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+
+                // Security: prevent path traversal
+                if (name.contains("..")) {
+                    continue;
+                }
+
+                Path outPath = targetDir.resolve(name);
+
+                if (entry.isDirectory()) {
+                    Files.createDirectories(outPath);
+                } else {
+                    Files.createDirectories(outPath.getParent());
+                    Files.copy(zis, outPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+
+                zis.closeEntry();
+            }
+        }
+    }
+
+    /**
+     * Get the cache directory for a voice.
+     */
+    private static Path getVoiceCacheDir(String voiceName) {
+        Path root = OverlayPreferences.getSpeechCacheDir();
+        String safeVoice = voiceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+        return root.resolve(safeVoice);
+    }
+
+    /**
+     * Create a zip file from a voice cache directory (for uploading to GitHub).
+     * 
+     * @param voiceName Voice name
+     * @param outputZip Path to write the zip file
+     */
+    public static void createVoicePackZip(String voiceName, Path outputZip) throws IOException {
+        Path voiceDir = getVoiceCacheDir(voiceName);
+        if (!Files.isDirectory(voiceDir)) {
+            throw new IOException("Voice cache directory not found: " + voiceDir);
+        }
+
+        try (var zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(outputZip))) {
+            Files.walk(voiceDir)
+                    .filter(Files::isRegularFile)
+                    .forEach(file -> {
+                        try {
+                            String entryName = voiceDir.relativize(file).toString().replace('\\', '/');
+                            zos.putNextEntry(new ZipEntry(entryName));
+                            Files.copy(file, zos);
+                            zos.closeEntry();
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+        }
+
+        System.out.println("Created voice pack: " + outputZip);
+    }
+
+    /**
+     * CLI entry point for creating voice packs.
+     * Usage: java ... VoicePackManager create <voiceName> <outputZip>
+     */
+    public static void main(String[] args) {
+        if (args.length < 3 || !"create".equals(args[0])) {
+            System.out.println("Usage: VoicePackManager create <voiceName> <outputZip>");
+            System.out.println("Example: VoicePackManager create Salli voice-salli.zip");
+            return;
+        }
+
+        String voiceName = args[1];
+        Path outputZip = Path.of(args[2]);
+
+        try {
+            createVoicePackZip(voiceName, outputZip);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
