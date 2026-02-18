@@ -195,7 +195,7 @@ public final class VoiceCacheWarmer {
                 args[i] = species;
             } else if (t.equals("body") || t.equals("bodyId")) {
                 args[i] = body;
-            } else if (t.equals("n") || t.equals("num") || t.equals("number")) {
+            } else if (t.equals("n") || t.equals("num") || t.equals("number") || t.equals("min") || t.equals("max")) {
                 args[i] = n;
             } else if (t.equals("credits")) {
                 args[i] = credits;

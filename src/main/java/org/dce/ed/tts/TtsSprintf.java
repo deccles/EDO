@@ -73,6 +73,8 @@ public class TtsSprintf {
         registerResolver("n", TtsSprintf::resolveNumberDefault);
         registerResolver("num", TtsSprintf::resolveNumberDefault);
         registerResolver("number", TtsSprintf::resolveNumberDefault);
+        registerResolver("min", TtsSprintf::resolveNumberDefault);
+        registerResolver("max", TtsSprintf::resolveNumberDefault);
 
         // Large numeric expansions (caller still writes the unit word in the template)
         // Example: "... value of {credits} credits" -> ["one", "million", "five", "hundred", "thousand"]
