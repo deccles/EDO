@@ -1029,11 +1029,6 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 		model.setRows(rows);
 		prospectorScan.startProspectorScan(prospectorLayer);
 
-		// Delay BEFORE the first overlay speech to avoid talking over the game's voice callout.
-		// After the delay: core first (if present), then the combined prospector sentence (no extra delay).
-		new javax.swing.Timer(1000, e -> {
-			((javax.swing.Timer) e.getSource()).stop();
-
 			if (!OverlayPreferences.isSpeechEnabled()) {
 				return;
 			}
@@ -1048,7 +1043,6 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 				}
 			}
 
-		}).start();
 
 
 				String hdr = "Mining (" + (content == null ? "" : content) + ")";
