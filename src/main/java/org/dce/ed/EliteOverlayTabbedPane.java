@@ -89,9 +89,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 	// Restores the original "bigger" tab look (padding inside the outline)
 	private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
 
-	/** Stored so we can unregister when this pane is replaced (avoids duplicate prospector announcements). */
-	private Consumer<EliteLogEvent> journalListener;
-
 	
 	private final BooleanSupplier hoverSwitchEnabled;
 	
@@ -238,13 +235,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		add(tabBar, BorderLayout.NORTH);
 
-		// Hook live journal monitoring into tabs (existing behavior).
-		// Listener is stored so we can remove it in removeNotify() when this pane is replaced
-		// (e.g. via rebuildTabbedPane), preventing duplicate announcements.
+		// Hook live journal monitoring into tabs (existing behavior)
 		try {
 			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
 
-			journalListener = event -> {
+			monitor.addListener(event -> {
+
 				this.handleLogEvent(event);
 
 				if (event instanceof ProspectedAsteroidEvent) {
@@ -262,8 +258,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 				systemTab.handleLogEvent(event);
 				routeTab.handleLogEvent(event);
 				biologyTab.handleLogEvent(event);
-			};
-			monitor.addListener(journalListener);
+			});
 
 		} catch (Exception ex) {
 			ex.printStackTrace();
@@ -276,15 +271,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		watcherThread.start();
 
 		add(cardPanel, BorderLayout.CENTER);
-	}
-
-	@Override
-	public void removeNotify() {
-		super.removeNotify();
-		if (journalListener != null) {
-			LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).removeListener(journalListener);
-			journalListener = null;
-		}
 	}
 
 	public SystemTabPanel getSystemTabPanel() {
