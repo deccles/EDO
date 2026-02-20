@@ -861,6 +861,10 @@ return EdoUi.User.MAIN_TEXT;
 				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
 				double afterTons = currentInventory.getOrDefault(material, 0.0);
 				double difference = afterTons - beforeTons;
+				// Only log rows where this material actually increased (skip zero/no gain)
+				if (difference <= 0) {
+					continue;
+				}
 				// Format numbers safely (avoid NaN/empty producing consecutive commas)
 				String pctStr = Double.isNaN(pct) ? "0.00" : String.format(Locale.US, "%.2f", pct);
 				String beforeStr = Double.isNaN(beforeTons) ? "0.00" : String.format(Locale.US, "%.2f", beforeTons);
