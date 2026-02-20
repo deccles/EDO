@@ -96,4 +96,5 @@ class MiningTabPanelTest {
         assertEquals(1, out.size());
         assertEquals(5.0, out.get("Tritium"), 1e-6);
     }
+
 }

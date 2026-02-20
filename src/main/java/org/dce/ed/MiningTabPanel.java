@@ -852,6 +852,10 @@ return EdoUi.User.MAIN_TEXT;
 				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
 				double afterTons = currentInventory.getOrDefault(material, 0.0);
 				double difference = afterTons - beforeTons;
+				// Only log increases (e.g. by at least 1 ton)
+				if (difference < 1) {
+					continue;
+				}
 				String line = csvEscape(timestampStr) + ","
 					+ csvEscape(material) + ","
 					+ String.format(Locale.US, "%.2f", pct) + ","
