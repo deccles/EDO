@@ -33,6 +33,7 @@ import javax.swing.border.LineBorder;
 
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteEventType;
+import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
@@ -178,7 +179,23 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         
         installCarrierJumpTitleUpdater();
         installExoCreditsTracker();
+        installTabbedPaneJournalListener();
         installLowLimpetStatusUpdater();
+    }
+
+    /** Single journal listener that delegates to the current tabbed pane. Prevents duplicate prospector/CSV handling. */
+    private void installTabbedPaneJournalListener() {
+        try {
+            LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
+            monitor.addListener(event -> {
+                EliteOverlayTabbedPane pane = (contentPanel != null) ? contentPanel.getTabbedPane() : null;
+                if (pane != null) {
+                    pane.processJournalEvent(event);
+                }
+            });
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
     public void setTitleBarText(String text) {

@@ -43,7 +43,6 @@ import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogFileLocator;
-import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.LoadoutEvent;
@@ -88,9 +87,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 	// Restores the original "bigger" tab look (padding inside the outline)
 	private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
-
-	/** Stored so the overlay can unregister when this pane is replaced (avoids duplicate prospector announcements). */
-	private Consumer<EliteLogEvent> journalListener;
 
 	
 	private final BooleanSupplier hoverSwitchEnabled;
@@ -238,36 +234,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		add(tabBar, BorderLayout.NORTH);
 
-		// Hook live journal monitoring into tabs (existing behavior).
-		// Listener is stored so OverlayContentPanel can call unregisterFromJournalMonitor() when
-		// replacing this pane (rebuildTabbedPane), preventing duplicate announcements.
-		try {
-			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
-
-			journalListener = event -> {
-				this.handleLogEvent(event);
-
-				if (event instanceof ProspectedAsteroidEvent) {
-					handleProspectedAsteroid((ProspectedAsteroidEvent) event);
-				}
-
-				if (event instanceof StatusEvent) {
-					StatusEvent flagEvent = (StatusEvent) event;
-
-					if (flagEvent.isFsdCharging()) {
-						showRouteTabFromStatusWatcher();
-					}
-				}
-
-				systemTab.handleLogEvent(event);
-				routeTab.handleLogEvent(event);
-				biologyTab.handleLogEvent(event);
-			};
-			monitor.addListener(journalListener);
-
-		} catch (Exception ex) {
-			ex.printStackTrace();
-		}
+		// Journal events are delivered by a single app-level listener in OverlayFrame that
+		// calls processJournalEvent() on the current tabbed pane (avoids duplicate handling).
 
 		// Start watcher that syncs tabs with in-game Galaxy/System map
 		GuiFocusWatcher watcher = new GuiFocusWatcher(this);
@@ -279,15 +247,26 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 	/**
-	 * Unregisters this pane's journal listener. Call this when replacing the pane
-	 * (e.g. from rebuildTabbedPane) so the old pane stops receiving events and
-	 * we avoid duplicate prospector announcements.
+	 * Process a journal event (called by the single app-level listener in OverlayFrame).
+	 * This ensures exactly one handler runs per event regardless of pane rebuilds.
 	 */
-	public void unregisterFromJournalMonitor() {
-		if (journalListener != null) {
-			LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).removeListener(journalListener);
-			journalListener = null;
+	public void processJournalEvent(EliteLogEvent event) {
+		this.handleLogEvent(event);
+
+		if (event instanceof ProspectedAsteroidEvent) {
+			handleProspectedAsteroid((ProspectedAsteroidEvent) event);
 		}
+
+		if (event instanceof StatusEvent) {
+			StatusEvent flagEvent = (StatusEvent) event;
+			if (flagEvent.isFsdCharging()) {
+				showRouteTabFromStatusWatcher();
+			}
+		}
+
+		systemTab.handleLogEvent(event);
+		routeTab.handleLogEvent(event);
+		biologyTab.handleLogEvent(event);
 	}
 
 	public SystemTabPanel getSystemTabPanel() {

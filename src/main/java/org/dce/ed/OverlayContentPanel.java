@@ -29,7 +29,6 @@ public class OverlayContentPanel extends JPanel {
         tabbedPane = next;
 
         if (old != null) {
-            old.unregisterFromJournalMonitor();
             remove(old);
         }
         add(next, BorderLayout.CENTER);
