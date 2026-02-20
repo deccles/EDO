@@ -14,6 +14,7 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -818,11 +819,13 @@ return EdoUi.User.MAIN_TEXT;
 	private static final DateTimeFormatter PROSPECTOR_CSV_TIMESTAMP = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
 
 	private void appendProspectorCsv(ProspectedAsteroidEvent event, Map<String, Double> currentInventory) {
-		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
-		if (journalDir == null) {
+		Path edoDir = Paths.get(System.getProperty("user.home", ""), "EDO");
+		try {
+			Files.createDirectories(edoDir);
+		} catch (Exception e) {
 			return;
 		}
-		Path csvPath = journalDir.resolve("prospector_log.csv");
+		Path csvPath = edoDir.resolve("prospector_log.csv");
 		try {
 			boolean newFile = !Files.exists(csvPath);
 			Instant ts = event.getTimestamp();
