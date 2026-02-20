@@ -257,8 +257,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 			handleProspectedAsteroid((ProspectedAsteroidEvent) event);
 		}
 
-		if (event instanceof FsdJumpEvent e) {
-			miningTab.onFsdJump(e);
+		if (event instanceof StartJumpEvent e) {
+			miningTab.onStartJump(e);
 		}
 
 		if (event instanceof StatusEvent) {

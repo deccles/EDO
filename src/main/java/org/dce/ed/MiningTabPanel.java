@@ -10,16 +10,15 @@ import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -43,30 +42,27 @@ import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
-import javax.swing.border.CompoundBorder;
 import javax.swing.plaf.LayerUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
-import org.dce.ed.logreader.EliteLogFileLocator;
-import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
+import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
-import org.dce.ed.ui.EdoUi.User;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 /**
  * Overlay tab: Mining
@@ -834,7 +830,7 @@ return EdoUi.User.MAIN_TEXT;
 	 * Called on FSD jump: flush any pending mining gains to CSV (using last-seen percent), then reset
 	 * so the next prospector scan is treated like the first (new area).
 	 */
-	public void onFsdJump(FsdJumpEvent event) {
+	public void onStartJump(StartJumpEvent event) {
 		Instant ts = (event != null && event.getTimestamp() != null) ? event.getTimestamp() : Instant.now();
 		CargoMonitor.Snapshot snap = CargoMonitor.getInstance().getSnapshot();
 		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(snap != null ? snap.getCargoJson() : null);
