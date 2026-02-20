@@ -436,29 +436,9 @@ public class SystemTabPanel extends JPanel {
 
     private void updateTargetBodyFromStatus(StatusEvent e) {
     	// Called from handleLogEvent; may be on a background thread.
-    	final Long destSystem = (e != null) ? e.getDestinationSystem() : null;
-    	final Integer destBodyRaw = (e != null) ? e.getDestinationBody() : null;
-    	final String destNameRaw = (e != null) ? e.getDestinationDisplayName() : null;
-
-    	// If the destination refers to a DIFFERENT system (e.g., your next jump target),
-    	// do not highlight any *body* in the current system.
-    	// Without this guard, a destination system name that matches the primary star name
-    	// (common case) causes the System tab to "select the sun" even when no body was targeted.
     	final long currentSystemAddress = state.getSystemAddress();
-    	final boolean destinationIsOtherSystem = destSystem != null
-    	        && currentSystemAddress != 0L
-    	        && destSystem.longValue() != currentSystemAddress;
-
-    	final Integer destBody = destinationIsOtherSystem ? null : destBodyRaw;
-
-    	final String destName;
-    	if (destinationIsOtherSystem) {
-    	    destName = null;
-    	} else if (destNameRaw != null && !destNameRaw.isBlank()) {
-    	    destName = destNameRaw.trim();
-    	} else {
-    	    destName = null;
-    	}
+    	final Integer destBody = SystemTabTargetLogic.effectiveDestBody(e, currentSystemAddress);
+    	final String destName = SystemTabTargetLogic.effectiveDestName(e, currentSystemAddress);
 
         // Body highlighting:
         // - For planet/body targets, DestinationDisplayName matches a body name and we can map it to a stable bodyId.

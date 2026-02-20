@@ -473,7 +473,7 @@ public class RouteTabPanel extends JPanel {
 			inHyperspace = inHyperspaceNow;
 			boolean preJumpCharging = hyperdriveCharging && !inHyperspaceNow;
 			boolean timerRunning = jumpFlashTimer.isRunning();
-			
+
 			// Remember destination fields (they may refer to either a target system or a body).
 			destinationSystemAddress = se.getDestinationSystem();
 			destinationBodyId = se.getDestinationBody();
@@ -620,62 +620,10 @@ public class RouteTabPanel extends JPanel {
 		destinationBodyId = null;
 		destinationName = null;
 
-		List<RouteEntry> entries = new ArrayList<>();
+		List<RouteEntry> entries;
 		try (Reader reader = Files.newBufferedReader(navRoute, StandardCharsets.UTF_8)) {
 			JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
-			JsonArray route = root.getAsJsonArray("Route");
-			if (route != null) {
-				List<double[]> coords = new ArrayList<>();
-				for (JsonElement elem : route) {
-					if (!elem.isJsonObject()) {
-						continue;
-					}
-					JsonObject obj = elem.getAsJsonObject();
-					String systemName    = safeString(obj, "StarSystem");
-					long systemAddress   = safeLong(obj, "SystemAddress");
-					String starClass     = safeString(obj, "StarClass");
-					JsonArray pos        = obj.getAsJsonArray("StarPos");
-					RouteEntry entry = new RouteEntry();
-					entry.index = entries.size();
-					entry.systemName    = systemName;
-					entry.systemAddress = systemAddress;
-					entry.starClass     = starClass;
-					entry.status        = ScanStatus.UNKNOWN;
-					entries.add(entry);
-					if (pos != null && pos.size() == 3) {
-						double x = pos.get(0).getAsDouble();
-						double y = pos.get(1).getAsDouble();
-						double z = pos.get(2).getAsDouble();
-						entry.x = Double.valueOf(x);
-						entry.y = Double.valueOf(y);
-						entry.z = Double.valueOf(z);
-						coords.add(new double[] { x, y, z });
-					} else {
-						entry.x = null;
-						entry.y = null;
-						entry.z = null;
-						coords.add(null);
-					}
-				}
-				// Compute per-jump distances (Ly) from the StarPos coordinates
-				for (int i = 0; i < entries.size(); i++) {
-					if (i == 0) {
-						entries.get(i).distanceLy = null; // origin system
-					} else {
-						double[] prev = coords.get(i - 1);
-						double[] cur  = coords.get(i);
-						if (prev == null || cur == null) {
-							entries.get(i).distanceLy = null;
-						} else {
-							double dx = cur[0] - prev[0];
-							double dy = cur[1] - prev[1];
-							double dz = cur[2] - prev[2];
-							double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-							entries.get(i).distanceLy = dist;
-						}
-					}
-				}
-			}
+			entries = parseNavRouteFromJson(root);
 		} catch (Exception e) {
 			e.printStackTrace();
 			headerLabel.setText("Error reading NavRoute.json");
@@ -689,6 +637,69 @@ public class RouteTabPanel extends JPanel {
 		// whenever current/destination changes.
 		baseRouteEntries = deepCopy(entries);
 		rebuildDisplayedEntries();
+	}
+
+	/**
+	 * Parses NavRoute.json-style JSON (root with "Route" array) into a list of RouteEntry with distances.
+	 * Package-visible for unit tests.
+	 */
+	static List<RouteEntry> parseNavRouteFromJson(JsonObject root) {
+		List<RouteEntry> entries = new ArrayList<>();
+		if (root == null || !root.has("Route") || !root.get("Route").isJsonArray()) {
+			return entries;
+		}
+		JsonArray route = root.getAsJsonArray("Route");
+		List<double[]> coords = new ArrayList<>();
+		for (JsonElement elem : route) {
+			if (!elem.isJsonObject()) {
+				continue;
+			}
+			JsonObject obj = elem.getAsJsonObject();
+			String systemName    = safeString(obj, "StarSystem");
+			long systemAddress   = safeLong(obj, "SystemAddress");
+			String starClass     = safeString(obj, "StarClass");
+			JsonArray pos        = obj.getAsJsonArray("StarPos");
+			RouteEntry entry = new RouteEntry();
+			entry.index = entries.size();
+			entry.systemName    = systemName;
+			entry.systemAddress = systemAddress;
+			entry.starClass     = starClass;
+			entry.status        = ScanStatus.UNKNOWN;
+			entries.add(entry);
+			if (pos != null && pos.size() == 3) {
+				double x = pos.get(0).getAsDouble();
+				double y = pos.get(1).getAsDouble();
+				double z = pos.get(2).getAsDouble();
+				entry.x = Double.valueOf(x);
+				entry.y = Double.valueOf(y);
+				entry.z = Double.valueOf(z);
+				coords.add(new double[] { x, y, z });
+			} else {
+				entry.x = null;
+				entry.y = null;
+				entry.z = null;
+				coords.add(null);
+			}
+		}
+		// Compute per-jump distances (Ly) from the StarPos coordinates
+		for (int i = 0; i < entries.size(); i++) {
+			if (i == 0) {
+				entries.get(i).distanceLy = null; // origin system
+			} else {
+				double[] prev = coords.get(i - 1);
+				double[] cur  = coords.get(i);
+				if (prev == null || cur == null) {
+					entries.get(i).distanceLy = null;
+				} else {
+					double dx = cur[0] - prev[0];
+					double dy = cur[1] - prev[1];
+					double dz = cur[2] - prev[2];
+					double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+					entries.get(i).distanceLy = dist;
+				}
+			}
+		}
+		return entries;
 	}
 	private void rebuildDisplayedEntries() {
 		List<RouteEntry> working = deepCopy(baseRouteEntries);
@@ -712,7 +723,7 @@ public class RouteTabPanel extends JPanel {
 					"RouteEdsm-" + entry.systemName).start();
 		}
 	}
-	private static List<RouteEntry> deepCopy(List<RouteEntry> entries) {
+	static List<RouteEntry> deepCopy(List<RouteEntry> entries) {
 		List<RouteEntry> out = new ArrayList<>();
 		if (entries == null) {
 			return out;
@@ -824,7 +835,7 @@ public class RouteTabPanel extends JPanel {
 		body.markerKind = MarkerKind.TARGET; // empty triangle
 		entries.add(Math.min(insertAt, entries.size()), body);
 	}
-	private int findSystemRow(List<RouteEntry> entries, String systemName, long systemAddress) {
+	static int findSystemRow(List<RouteEntry> entries, String systemName, long systemAddress) {
 		if (entries == null) {
 			return -1;
 		}
@@ -842,7 +853,7 @@ public class RouteTabPanel extends JPanel {
 		}
 		return -1;
 	}
-	private static int bestInsertionIndexByCoords(List<RouteEntry> entries, Double[] coords) {
+	static int bestInsertionIndexByCoords(List<RouteEntry> entries, Double[] coords) {
 		if (entries == null || entries.isEmpty()) {
 			return 0;
 		}
@@ -894,7 +905,7 @@ public class RouteTabPanel extends JPanel {
 		double dz = a[2] - b[2];
 		return dx * dx + dy * dy + dz * dz;
 	}
-	private static void recomputeLegDistances(List<RouteEntry> entries) {
+	static void recomputeLegDistances(List<RouteEntry> entries) {
 		if (entries == null) {
 			return;
 		}
@@ -923,7 +934,7 @@ public class RouteTabPanel extends JPanel {
 			cur.distanceLy = Math.sqrt(dx * dx + dy * dy + dz * dz);
 		}
 	}
-	private static void renumberDisplayIndexes(List<RouteEntry> entries) {
+	static void renumberDisplayIndexes(List<RouteEntry> entries) {
 		int n = 1;
 		for (RouteEntry e : entries) {
 			if (e == null) {
@@ -1400,7 +1411,7 @@ public class RouteTabPanel extends JPanel {
 		TARGET,
 		PENDING_JUMP
 	}
-	private static final class RouteEntry {
+	static final class RouteEntry {
 		public RouteEntry() {
 		}
 		public RouteEntry(int i, String systemNameIn, long systemAddressIn, String starClassIn, double dLy, ScanStatus scanStatusIn) {

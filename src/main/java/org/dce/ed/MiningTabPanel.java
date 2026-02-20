@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -748,8 +749,15 @@ return EdoUi.User.MAIN_TEXT;
 	 * Used to compare inventory at each ProspectorEvent and compute ton deltas for CSV logging.
 	 */
 	private Map<String, Double> buildInventoryTonsFromCargo(JsonObject cargo) {
+		return buildInventoryTonsFromCargo(cargo, this::toUiName);
+	}
+
+	/**
+	 * Static variant for unit tests; nameResolver maps raw item name to display name.
+	 */
+	static Map<String, Double> buildInventoryTonsFromCargo(JsonObject cargo, Function<String, String> nameResolver) {
 		Map<String, Double> out = new HashMap<>();
-		if (cargo == null) {
+		if (cargo == null || nameResolver == null) {
 			return out;
 		}
 		JsonArray inv = null;
@@ -800,13 +808,13 @@ return EdoUi.User.MAIN_TEXT;
 			if (count <= 0) {
 				continue;
 			}
-			String shownName = (localizedName != null && !localizedName.isBlank()) ? localizedName : toUiName(rawName);
+			String shownName = (localizedName != null && !localizedName.isBlank()) ? localizedName : nameResolver.apply(rawName);
 			out.merge(shownName, (double) count, Double::sum);
 		}
 		return out;
 	}
 
-	private static String csvEscape(String s) {
+	static String csvEscape(String s) {
 		if (s == null) {
 			return "";
 		}
