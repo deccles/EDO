@@ -87,6 +87,7 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_PROSPECTOR_MATERIALS = "mining.prospector.materials"; // comma-separated
     private static final String KEY_MINING_PROSPECTOR_MIN_PROP = "mining.prospector.minProportion"; // percent
     private static final String KEY_MINING_PROSPECTOR_MIN_AVG_VALUE = "mining.prospector.minAvgValuePerTon"; // credits/ton
+    private static final String KEY_MINING_PROSPECTOR_EMAIL = "mining.prospector.email"; // for CSV log
 
     // Mining value estimation (Mining tab)
     private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
@@ -441,6 +442,20 @@ public static Engine getSpeechEngine() {
             creditsPerTon = 0;
         }
         PREFS.put(KEY_MINING_PROSPECTOR_MIN_AVG_VALUE, Integer.toString(creditsPerTon));
+    }
+
+    /**
+     * Email address written into the prospector log CSV (e.g. for notifications).
+     */
+    public static String getProspectorEmail() {
+        return PREFS.get(KEY_MINING_PROSPECTOR_EMAIL, "").trim();
+    }
+
+    public static void setProspectorEmail(String email) {
+        if (email == null) {
+            email = "";
+        }
+        PREFS.put(KEY_MINING_PROSPECTOR_EMAIL, email.trim());
     }
 
     // --- UI Font (System / Route / Biology) ---

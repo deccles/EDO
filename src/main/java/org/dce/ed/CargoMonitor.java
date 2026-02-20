@@ -84,15 +84,14 @@ public class CargoMonitor {
 		}
 	}
 
-	public Snapshot getSnapshot() {
-		return snapshot;
-	}
-
 	/**
-	 * Forces a read of Cargo.json right now (on the calling thread) and returns the updated snapshot.
+	 * Returns the latest cargo snapshot. If none is cached yet, runs a single poll
+	 * so callers get data when Cargo.json is available.
 	 */
-	public Snapshot refreshNow() {
-		pollOnce();
+	public Snapshot getSnapshot() {
+		if (snapshot == null) {
+			pollOnce();
+		}
 		return snapshot;
 	}
 

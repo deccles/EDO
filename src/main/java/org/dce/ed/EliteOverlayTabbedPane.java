@@ -853,9 +853,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 
 		CargoMonitor.Snapshot snap = CargoMonitor.getInstance().getSnapshot();
-		if (snap == null) {
-			snap = CargoMonitor.getInstance().refreshNow();
-		}
 		int numLimpets = (snap == null) ? 0 : snap.getLimpetCount();
 
 		boolean lowLimpets = false;

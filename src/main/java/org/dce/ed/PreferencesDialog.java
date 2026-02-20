@@ -92,6 +92,7 @@ public class PreferencesDialog extends JDialog {
     private JTextField prospectorMaterialsField;
     private JSpinner prospectorMinPropSpinner;
     private JSpinner prospectorMinAvgValueSpinner;
+    private JTextField prospectorEmailField;
 
     // Mining tab: limpet reminder
     private JCheckBox miningLowLimpetReminderEnabledCheckBox;
@@ -563,6 +564,20 @@ public class PreferencesDialog extends JDialog {
     	prospectorMinAvgValueSpinner = new JSpinner(new SpinnerNumberModel(currentAvg, 0, 10_000_000, 1000));
     	((JSpinner.DefaultEditor) prospectorMinAvgValueSpinner.getEditor()).getTextField().setColumns(8);
     	prospectorBox.add(prospectorMinAvgValueSpinner, gbc);
+
+    	gbc.gridx = 0;
+    	gbc.gridy++;
+    	gbc.gridwidth = 1;
+    	JLabel emailLabel = new JLabel("Email (for prospector log CSV):");
+    	prospectorBox.add(emailLabel, gbc);
+
+    	gbc.gridx = 1;
+    	gbc.gridwidth = 3;
+    	gbc.fill = GridBagConstraints.HORIZONTAL;
+    	gbc.weightx = 1.0;
+    	prospectorEmailField = new JTextField(32);
+    	prospectorEmailField.setText(OverlayPreferences.getProspectorEmail());
+    	prospectorBox.add(prospectorEmailField, gbc);
 
     	gbc.gridx = 0;
     	gbc.gridy++;
@@ -1276,6 +1291,9 @@ content.add(speechUseAwsCheckBox, gbc);
             } catch (Exception e) {
                 // ignore
             }
+        }
+        if (prospectorEmailField != null) {
+            OverlayPreferences.setProspectorEmail(prospectorEmailField.getText());
         }
 
         if (miningLowLimpetReminderEnabledCheckBox != null) {

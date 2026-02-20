@@ -14,6 +14,10 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -89,7 +93,10 @@ public class MiningTabPanel extends JPanel {
 
 	private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
 
-private final TableScanState prospectorScan;
+	/** Inventory tons by commodity (display name) at the time of the previous ProspectedAsteroid event. */
+	private Map<String, Double> lastInventoryTonsAtProspector = new HashMap<>();
+
+	private final TableScanState prospectorScan;
 private final TableScanState cargoScan;
 private final JLayer<JTable> prospectorLayer;
 private final JLayer<JTable> cargoLayer;
@@ -735,6 +742,119 @@ return EdoUi.User.MAIN_TEXT;
 		return rows;
 	}
 
+	/**
+	 * Builds a map of commodity display name -> total tons from Cargo.json Inventory.
+	 * Used to compare inventory at each ProspectorEvent and compute ton deltas for CSV logging.
+	 */
+	private Map<String, Double> buildInventoryTonsFromCargo(JsonObject cargo) {
+		Map<String, Double> out = new HashMap<>();
+		if (cargo == null) {
+			return out;
+		}
+		JsonArray inv = null;
+		if (cargo.has("Inventory") && cargo.get("Inventory").isJsonArray()) {
+			inv = cargo.getAsJsonArray("Inventory");
+		} else if (cargo.has("inventory") && cargo.get("inventory").isJsonArray()) {
+			inv = cargo.get("inventory").getAsJsonArray();
+		}
+		if (inv == null) {
+			return out;
+		}
+		for (JsonElement e : inv) {
+			if (e == null || !e.isJsonObject()) {
+				continue;
+			}
+			JsonObject o = e.getAsJsonObject();
+			String rawName = null;
+			if (o.has("Name") && !o.get("Name").isJsonNull()) {
+				rawName = o.get("Name").getAsString();
+			} else if (o.has("name") && !o.get("name").isJsonNull()) {
+				rawName = o.get("name").getAsString();
+			}
+			if (rawName == null || rawName.isBlank()) {
+				continue;
+			}
+			String localizedName = null;
+			if (o.has("Name_Localised") && !o.get("Name_Localised").isJsonNull()) {
+				localizedName = o.get("Name_Localised").getAsString();
+			} else if (o.has("Name_Localized") && !o.get("Name_Localized").isJsonNull()) {
+				localizedName = o.get("Name_Localized").getAsString();
+			} else if (o.has("name_localised") && !o.get("name_localised").isJsonNull()) {
+				localizedName = o.get("name_localised").getAsString();
+			} else if (o.has("name_localized") && !o.get("name_localized").isJsonNull()) {
+				localizedName = o.get("name_localized").getAsString();
+			}
+			long count = 0;
+			if (o.has("Count") && !o.get("Count").isJsonNull()) {
+				try {
+					count = o.get("Count").getAsLong();
+				} catch (Exception ignored) {
+				}
+			} else if (o.has("count") && !o.get("count").isJsonNull()) {
+				try {
+					count = o.get("count").getAsLong();
+				} catch (Exception ignored) {
+				}
+			}
+			if (count <= 0) {
+				continue;
+			}
+			String shownName = (localizedName != null && !localizedName.isBlank()) ? localizedName : toUiName(rawName);
+			out.merge(shownName, (double) count, Double::sum);
+		}
+		return out;
+	}
+
+	private static String csvEscape(String s) {
+		if (s == null) {
+			return "";
+		}
+		if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0) {
+			return "\"" + s.replace("\"", "\"\"") + "\"";
+		}
+		return s;
+	}
+
+	private static final DateTimeFormatter PROSPECTOR_CSV_TIMESTAMP = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
+
+	private void appendProspectorCsv(ProspectedAsteroidEvent event, Map<String, Double> currentInventory) {
+		Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+		if (journalDir == null) {
+			return;
+		}
+		Path csvPath = journalDir.resolve("prospector_log.csv");
+		try {
+			boolean newFile = !Files.exists(csvPath);
+			Instant ts = event.getTimestamp();
+			String timestampStr = (ts == null) ? "" : ts.atZone(ZoneId.systemDefault()).format(PROSPECTOR_CSV_TIMESTAMP);
+			String email = OverlayPreferences.getProspectorEmail();
+			if (newFile) {
+				String header = "timestamp,material,percent,before amount,after amount,difference,email address";
+				Files.writeString(csvPath, header + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+			}
+			for (MaterialProportion mp : event.getMaterials()) {
+				if (mp == null || mp.getName() == null) {
+					continue;
+				}
+				String material = toUiName(mp.getName());
+				double pct = mp.getProportion();
+				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
+				double afterTons = currentInventory.getOrDefault(material, 0.0);
+				double difference = afterTons - beforeTons;
+				String line = csvEscape(timestampStr) + ","
+					+ csvEscape(material) + ","
+					+ String.format(Locale.US, "%.2f", pct) + ","
+					+ String.format(Locale.US, "%.2f", beforeTons) + ","
+					+ String.format(Locale.US, "%.2f", afterTons) + ","
+					+ String.format(Locale.US, "%.2f", difference) + ","
+					+ csvEscape(email);
+				Files.writeString(csvPath, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+			}
+		} catch (Exception e) {
+			// don't break UI on log failure
+		}
+	}
+
 	private Set<Integer> computeChangedInventoryModelRows(List<Row> newRows) {
 		if (newRows == null) {
 			return Set.of();
@@ -986,6 +1106,16 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 			headerLabel.setText("Mining (latest prospector)");
 			return;
 		}
+
+		// Snapshot current cargo so we can log inventory deltas since last ProspectorEvent (CargoMonitor already polls)
+		CargoMonitor.Snapshot cargoSnap = CargoMonitor.getInstance().getSnapshot();
+		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(cargoSnap != null ? cargoSnap.getCargoJson() : null);
+
+		// If we have a previous snapshot, append one CSV row per prospected material: commodity, percent, increase_tons
+		if (!lastInventoryTonsAtProspector.isEmpty()) {
+			appendProspectorCsv(event, currentInventory);
+		}
+		lastInventoryTonsAtProspector = new HashMap<>(currentInventory);
 
 		String motherlode = event.getMotherlodeMaterial();
 		String content = event.getContent();
