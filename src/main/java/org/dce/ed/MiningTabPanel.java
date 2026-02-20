@@ -908,9 +908,12 @@ return EdoUi.User.MAIN_TEXT;
 				if (difference <= 0) {
 					continue;
 				}
+				// Add 0.5 to before/after so we approximate material still in refinery (on average we're right, not low)
+				double beforeAdjusted = (Double.isNaN(beforeTons) ? 0.0 : beforeTons) + 0.5;
+				double afterAdjusted = (Double.isNaN(afterTons) ? 0.0 : afterTons) + 0.5;
 				String pctStr = Double.isNaN(pct) ? "0.00" : String.format(Locale.US, "%.2f", pct);
-				String beforeStr = Double.isNaN(beforeTons) ? "0.00" : String.format(Locale.US, "%.2f", beforeTons);
-				String afterStr = Double.isNaN(afterTons) ? "0.00" : String.format(Locale.US, "%.2f", afterTons);
+				String beforeStr = String.format(Locale.US, "%.2f", beforeAdjusted);
+				String afterStr = String.format(Locale.US, "%.2f", afterAdjusted);
 				String diffStr = Double.isNaN(difference) ? "0.00" : String.format(Locale.US, "%.2f", difference);
 				String line = csvEscape(timestampStr) + ","
 					+ csvEscape(material) + ","
@@ -1182,10 +1185,12 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 		CargoMonitor.Snapshot cargoSnap = CargoMonitor.getInstance().getSnapshot();
 		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(cargoSnap != null ? cargoSnap.getCargoJson() : null);
 
-		// Append one CSV row per prospected material (every event; first event uses 0 for "before" amounts)
-		appendProspectorCsv(event, currentInventory);
+		boolean isFirstProspector = lastInventoryTonsAtProspector.isEmpty();
+		if (!isFirstProspector) {
+			appendProspectorCsv(event, currentInventory);
+		}
+		// Update saved values from current inventory and this scan (first time: seed from inventory instead of zero)
 		lastInventoryTonsAtProspector = new HashMap<>(currentInventory);
-		// Store this scan's proportions as "last seen" for next CSV (so we log the % of the rock that was mined)
 		Map<String, Double> nextPercent = new HashMap<>();
 		for (MaterialProportion mp : event.getMaterials()) {
 			if (mp != null && mp.getName() != null) {
