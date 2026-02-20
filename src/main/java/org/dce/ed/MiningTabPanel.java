@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import javax.swing.BorderFactory;
@@ -77,6 +78,8 @@ public class MiningTabPanel extends JPanel {
 
 	private final GalacticAveragePrices prices;
 	private final MaterialNameMatcher matcher;
+	/** When non-null, we only write prospector CSV rows when this returns false (undocked). */
+	private final BooleanSupplier isDockedSupplier;
 
 	private final JLabel headerLabel;
 	private final JLabel inventoryLabel;
@@ -114,10 +117,14 @@ private final JLayer<JTable> cargoLayer;
 	private static final Color NON_CORE_GREEN = EdoUi.User.SUCCESS;
 
 	public MiningTabPanel(GalacticAveragePrices prices) {
+		this(prices, null);
+	}
+
+	public MiningTabPanel(GalacticAveragePrices prices, BooleanSupplier isDockedSupplier) {
 		super(new BorderLayout());
 		this.prices = prices;
+		this.isDockedSupplier = isDockedSupplier;
 
-		
 		this.matcher = new MaterialNameMatcher(prices);
 // Always render transparent so passthrough mode looks right.
 		setOpaque(false);
@@ -862,6 +869,10 @@ return EdoUi.User.MAIN_TEXT;
 	/** Write CSV rows for materials that increased; uses lastInventoryTonsAtProspector and lastPercentByMaterialAtProspector. */
 	private void appendProspectorCsvRows(Instant ts, Map<String, Double> currentInventory, Set<String> materialsToConsider, Map<String, Double> fallbackPercentByMaterial) {
 		if (materialsToConsider == null || materialsToConsider.isEmpty()) {
+			return;
+		}
+		// Only write when undocked (mining happens in the ring, not while docked)
+		if (isDockedSupplier != null && isDockedSupplier.getAsBoolean()) {
 			return;
 		}
 		Path edoDir = Paths.get(System.getProperty("user.home", ""), "EDO");

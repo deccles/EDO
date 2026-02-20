@@ -179,7 +179,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 		
 		this.biologyTab = new BiologyTabPanel();
 		this.biologyTab.setSystemTabPanel(systemTab);
-		this.miningTab = new MiningTabPanel(galacticAvgPrices);
+		this.miningTab = new MiningTabPanel(galacticAvgPrices, this::isCurrentlyDocked);
 
 		cardPanel.add(routeTab, CARD_ROUTE);
 		cardPanel.add(systemTab, CARD_SYSTEM);
