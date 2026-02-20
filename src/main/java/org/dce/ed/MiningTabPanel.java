@@ -53,6 +53,7 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.logreader.EliteLogFileLocator;
+import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
 import org.dce.ed.market.GalacticAveragePrices;
@@ -829,7 +830,44 @@ return EdoUi.User.MAIN_TEXT;
 
 	private static final DateTimeFormatter PROSPECTOR_CSV_TIMESTAMP = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
 
+	/**
+	 * Called on FSD jump: flush any pending mining gains to CSV (using last-seen percent), then reset
+	 * so the next prospector scan is treated like the first (new area).
+	 */
+	public void onFsdJump(FsdJumpEvent event) {
+		Instant ts = (event != null && event.getTimestamp() != null) ? event.getTimestamp() : Instant.now();
+		CargoMonitor.Snapshot snap = CargoMonitor.getInstance().getSnapshot();
+		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(snap != null ? snap.getCargoJson() : null);
+		Set<String> materials = new HashSet<>(lastInventoryTonsAtProspector.keySet());
+		materials.addAll(currentInventory.keySet());
+		appendProspectorCsvRows(ts, currentInventory, materials, null);
+		lastInventoryTonsAtProspector = new HashMap<>();
+		lastPercentByMaterialAtProspector = new HashMap<>();
+	}
+
 	private void appendProspectorCsv(ProspectedAsteroidEvent event, Map<String, Double> currentInventory) {
+		Instant ts = event != null ? event.getTimestamp() : null;
+		Set<String> materials = new HashSet<>();
+		Map<String, Double> fallbackPct = new HashMap<>();
+		if (event != null) {
+			for (MaterialProportion mp : event.getMaterials()) {
+				if (mp != null && mp.getName() != null) {
+					String name = toUiName(mp.getName());
+					if (name != null && !name.isBlank()) {
+						materials.add(name);
+						fallbackPct.put(name, mp.getProportion());
+					}
+				}
+			}
+		}
+		appendProspectorCsvRows(ts, currentInventory, materials, fallbackPct);
+	}
+
+	/** Write CSV rows for materials that increased; uses lastInventoryTonsAtProspector and lastPercentByMaterialAtProspector. */
+	private void appendProspectorCsvRows(Instant ts, Map<String, Double> currentInventory, Set<String> materialsToConsider, Map<String, Double> fallbackPercentByMaterial) {
+		if (materialsToConsider == null || materialsToConsider.isEmpty()) {
+			return;
+		}
 		Path edoDir = Paths.get(System.getProperty("user.home", ""), "EDO");
 		try {
 			Files.createDirectories(edoDir);
@@ -839,7 +877,6 @@ return EdoUi.User.MAIN_TEXT;
 		Path csvPath = edoDir.resolve("prospector_log.csv");
 		try {
 			boolean newFile = !Files.exists(csvPath);
-			Instant ts = event.getTimestamp();
 			String timestampStr = (ts == null) ? "" : ts.atZone(ZoneId.systemDefault()).format(PROSPECTOR_CSV_TIMESTAMP);
 			if (timestampStr == null || timestampStr.isBlank()) {
 				timestampStr = "-";
@@ -852,24 +889,18 @@ return EdoUi.User.MAIN_TEXT;
 				String header = "timestamp,material,percent,before amount,after amount,difference,email address";
 				Files.writeString(csvPath, header + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 			}
-			for (MaterialProportion mp : event.getMaterials()) {
-				if (mp == null || mp.getName() == null) {
-					continue;
-				}
-				String material = toUiName(mp.getName());
+			for (String material : materialsToConsider) {
 				if (material == null || material.isBlank()) {
 					material = "-";
 				}
-				// Use last-seen percent (from previous scan); that's when the mining happened
-				double pct = lastPercentByMaterialAtProspector.getOrDefault(material, mp.getProportion());
+				double pct = lastPercentByMaterialAtProspector.getOrDefault(material,
+					fallbackPercentByMaterial != null ? fallbackPercentByMaterial.getOrDefault(material, 0.0) : 0.0);
 				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
 				double afterTons = currentInventory.getOrDefault(material, 0.0);
 				double difference = afterTons - beforeTons;
-				// Only log rows where this material actually increased (skip zero/no gain)
 				if (difference <= 0) {
 					continue;
 				}
-				// Format numbers safely (avoid NaN/empty producing consecutive commas)
 				String pctStr = Double.isNaN(pct) ? "0.00" : String.format(Locale.US, "%.2f", pct);
 				String beforeStr = Double.isNaN(beforeTons) ? "0.00" : String.format(Locale.US, "%.2f", beforeTons);
 				String afterStr = Double.isNaN(afterTons) ? "0.00" : String.format(Locale.US, "%.2f", afterTons);
