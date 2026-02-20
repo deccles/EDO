@@ -562,7 +562,9 @@ public class EliteOverlayTabbedPane extends JPanel {
 		button.setFocusPainted(false);
 		button.setFont(button.getFont().deriveFont(Font.BOLD, 11f));
 
-		// Slightly translucent dark background so tabs are legible but not huge blocks
+		// Default: slightly translucent dark background when overlay is transparent.
+		// Selected tab gets an opaque background in applyTabButtonStyle to prevent
+		// adjacent tab text from peeking through (z-order/alpha bleed).
 		button.setOpaque(!OverlayPreferences.isOverlayTransparent());
 		button.setBackground(EdoUi.Internal.DARK_ALPHA_220);
 
@@ -610,6 +612,16 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 
 		Color c = button.isSelected() ? TAB_WHITE : EdoUi.Internal.MAIN_TEXT_ALPHA_220;
+
+		// Selected tab: force opaque background so adjacent tab labels don't show through
+		// (avoids "logy" / "ining" ghosting when overlay is transparent).
+		if (button.isSelected()) {
+			button.setOpaque(true);
+			button.setBackground(EdoUi.Internal.GRAY_180);
+		} else {
+			button.setOpaque(!OverlayPreferences.isOverlayTransparent());
+			button.setBackground(EdoUi.Internal.DARK_ALPHA_220);
+		}
 
 		// This restores size/padding compared to a bare LineBorder.
 		button.setMargin(TAB_PADDING);
@@ -799,6 +811,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		cardPanel.setOpaque(opaque);
 		cardPanel.setBackground(bgWithAlpha);
+
+		// Re-apply tab button opacity/background so selected tab stays opaque and no text bleeds through.
+		applyTabButtonStyle(routeButton);
+		applyTabButtonStyle(systemButton);
+		applyTabButtonStyle(biologyButton);
+		applyTabButtonStyle(miningButton);
 
 		revalidate();
 		repaint();
