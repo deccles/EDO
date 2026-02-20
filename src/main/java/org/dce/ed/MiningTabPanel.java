@@ -98,6 +98,9 @@ public class MiningTabPanel extends JPanel {
 	/** Inventory tons by commodity (display name) at the time of the previous ProspectedAsteroid event. */
 	private Map<String, Double> lastInventoryTonsAtProspector = new HashMap<>();
 
+	/** Last seen proportion (percent) per material from the previous ProspectedAsteroid event; used for CSV so we log the rock's % when the mining actually happened. */
+	private Map<String, Double> lastPercentByMaterialAtProspector = new HashMap<>();
+
 	private final TableScanState prospectorScan;
 private final TableScanState cargoScan;
 private final JLayer<JTable> prospectorLayer;
@@ -857,7 +860,8 @@ return EdoUi.User.MAIN_TEXT;
 				if (material == null || material.isBlank()) {
 					material = "-";
 				}
-				double pct = mp.getProportion();
+				// Use last-seen percent (from previous scan); that's when the mining happened
+				double pct = lastPercentByMaterialAtProspector.getOrDefault(material, mp.getProportion());
 				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
 				double afterTons = currentInventory.getOrDefault(material, 0.0);
 				double difference = afterTons - beforeTons;
@@ -1143,6 +1147,17 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 		// Append one CSV row per prospected material (every event; first event uses 0 for "before" amounts)
 		appendProspectorCsv(event, currentInventory);
 		lastInventoryTonsAtProspector = new HashMap<>(currentInventory);
+		// Store this scan's proportions as "last seen" for next CSV (so we log the % of the rock that was mined)
+		Map<String, Double> nextPercent = new HashMap<>();
+		for (MaterialProportion mp : event.getMaterials()) {
+			if (mp != null && mp.getName() != null) {
+				String name = toUiName(mp.getName());
+				if (name != null && !name.isBlank()) {
+					nextPercent.put(name, mp.getProportion());
+				}
+			}
+		}
+		lastPercentByMaterialAtProspector = nextPercent;
 
 		String motherlode = event.getMotherlodeMaterial();
 		String content = event.getContent();
