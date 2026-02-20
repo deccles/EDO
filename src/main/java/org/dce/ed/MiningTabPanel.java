@@ -838,7 +838,13 @@ return EdoUi.User.MAIN_TEXT;
 			boolean newFile = !Files.exists(csvPath);
 			Instant ts = event.getTimestamp();
 			String timestampStr = (ts == null) ? "" : ts.atZone(ZoneId.systemDefault()).format(PROSPECTOR_CSV_TIMESTAMP);
+			if (timestampStr == null || timestampStr.isBlank()) {
+				timestampStr = "-";
+			}
 			String email = OverlayPreferences.getProspectorEmail();
+			if (email == null || email.isBlank()) {
+				email = "-";
+			}
 			if (newFile) {
 				String header = "timestamp,material,percent,before amount,after amount,difference,email address";
 				Files.writeString(csvPath, header + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -848,20 +854,24 @@ return EdoUi.User.MAIN_TEXT;
 					continue;
 				}
 				String material = toUiName(mp.getName());
+				if (material == null || material.isBlank()) {
+					material = "-";
+				}
 				double pct = mp.getProportion();
 				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
 				double afterTons = currentInventory.getOrDefault(material, 0.0);
 				double difference = afterTons - beforeTons;
-				// Only log increases (e.g. by at least 1 ton)
-				if (difference < 1) {
-					continue;
-				}
+				// Format numbers safely (avoid NaN/empty producing consecutive commas)
+				String pctStr = Double.isNaN(pct) ? "0.00" : String.format(Locale.US, "%.2f", pct);
+				String beforeStr = Double.isNaN(beforeTons) ? "0.00" : String.format(Locale.US, "%.2f", beforeTons);
+				String afterStr = Double.isNaN(afterTons) ? "0.00" : String.format(Locale.US, "%.2f", afterTons);
+				String diffStr = Double.isNaN(difference) ? "0.00" : String.format(Locale.US, "%.2f", difference);
 				String line = csvEscape(timestampStr) + ","
 					+ csvEscape(material) + ","
-					+ String.format(Locale.US, "%.2f", pct) + ","
-					+ String.format(Locale.US, "%.2f", beforeTons) + ","
-					+ String.format(Locale.US, "%.2f", afterTons) + ","
-					+ String.format(Locale.US, "%.2f", difference) + ","
+					+ pctStr + ","
+					+ beforeStr + ","
+					+ afterStr + ","
+					+ diffStr + ","
 					+ csvEscape(email);
 				Files.writeString(csvPath, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 			}
@@ -1126,10 +1136,8 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 		CargoMonitor.Snapshot cargoSnap = CargoMonitor.getInstance().getSnapshot();
 		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(cargoSnap != null ? cargoSnap.getCargoJson() : null);
 
-		// If we have a previous snapshot, append one CSV row per prospected material: commodity, percent, increase_tons
-		if (!lastInventoryTonsAtProspector.isEmpty()) {
-			appendProspectorCsv(event, currentInventory);
-		}
+		// Append one CSV row per prospected material (every event; first event uses 0 for "before" amounts)
+		appendProspectorCsv(event, currentInventory);
 		lastInventoryTonsAtProspector = new HashMap<>(currentInventory);
 
 		String motherlode = event.getMotherlodeMaterial();

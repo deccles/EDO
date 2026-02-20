@@ -89,6 +89,9 @@ public class EliteOverlayTabbedPane extends JPanel {
 	// Restores the original "bigger" tab look (padding inside the outline)
 	private static final Insets TAB_PADDING = new Insets(4, 10, 4, 10);
 
+	/** Stored so the overlay can unregister when this pane is replaced (avoids duplicate prospector announcements). */
+	private Consumer<EliteLogEvent> journalListener;
+
 	
 	private final BooleanSupplier hoverSwitchEnabled;
 	
@@ -235,12 +238,13 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		add(tabBar, BorderLayout.NORTH);
 
-		// Hook live journal monitoring into tabs (existing behavior)
+		// Hook live journal monitoring into tabs (existing behavior).
+		// Listener is stored so OverlayContentPanel can call unregisterFromJournalMonitor() when
+		// replacing this pane (rebuildTabbedPane), preventing duplicate announcements.
 		try {
 			LiveJournalMonitor monitor = LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey);
 
-			monitor.addListener(event -> {
-
+			journalListener = event -> {
 				this.handleLogEvent(event);
 
 				if (event instanceof ProspectedAsteroidEvent) {
@@ -258,7 +262,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 				systemTab.handleLogEvent(event);
 				routeTab.handleLogEvent(event);
 				biologyTab.handleLogEvent(event);
-			});
+			};
+			monitor.addListener(journalListener);
 
 		} catch (Exception ex) {
 			ex.printStackTrace();
@@ -271,6 +276,18 @@ public class EliteOverlayTabbedPane extends JPanel {
 		watcherThread.start();
 
 		add(cardPanel, BorderLayout.CENTER);
+	}
+
+	/**
+	 * Unregisters this pane's journal listener. Call this when replacing the pane
+	 * (e.g. from rebuildTabbedPane) so the old pane stops receiving events and
+	 * we avoid duplicate prospector announcements.
+	 */
+	public void unregisterFromJournalMonitor() {
+		if (journalListener != null) {
+			LiveJournalMonitor.getInstance(EliteDangerousOverlay.clientKey).removeListener(journalListener);
+			journalListener = null;
+		}
 	}
 
 	public SystemTabPanel getSystemTabPanel() {
