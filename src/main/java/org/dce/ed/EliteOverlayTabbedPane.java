@@ -46,6 +46,7 @@ import org.dce.ed.logreader.EliteLogFileLocator;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
 import org.dce.ed.logreader.event.LoadoutEvent;
+import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
@@ -259,6 +260,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		if (event instanceof StartJumpEvent e) {
 			miningTab.onStartJump(e);
+		}
+		if (event instanceof LocationEvent le) {
+			miningTab.updateFromLocation(le);
+		}
+		if (event instanceof StatusEvent se) {
+			miningTab.updateFromStatus(se);
 		}
 
 		if (event instanceof StatusEvent) {

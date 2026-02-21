@@ -89,6 +89,11 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_PROSPECTOR_MIN_AVG_VALUE = "mining.prospector.minAvgValuePerTon"; // credits/ton
     private static final String KEY_MINING_PROSPECTOR_EMAIL = "mining.prospector.email"; // for CSV log
 
+    // Mining log / spreadsheet: backend (local vs Google Sheets) and run counter
+    private static final String KEY_MINING_LOG_BACKEND = "mining.log.backend"; // "local" | "google"
+    private static final String KEY_MINING_GOOGLE_SHEETS_URL = "mining.googleSheets.url";
+    private static final String KEY_MINING_LOG_RUN_COUNTER = "mining.log.runCounter"; // incremented on FSD jump
+
     // Mining value estimation (Mining tab)
     private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
     private static final String KEY_MINING_EST_TONS_MED = "mining.estimate.tons.medium";
@@ -456,6 +461,53 @@ public static Engine getSpeechEngine() {
             email = "";
         }
         PREFS.put(KEY_MINING_PROSPECTOR_EMAIL, email.trim());
+    }
+
+    /**
+     * Prospector log backend: "local" (CSV file) or "google" (Google Sheets).
+     */
+    public static String getMiningLogBackend() {
+        String v = PREFS.get(KEY_MINING_LOG_BACKEND, "local").trim();
+        return "google".equalsIgnoreCase(v) ? "google" : "local";
+    }
+
+    public static void setMiningLogBackend(String backend) {
+        if (backend == null) {
+            backend = "local";
+        }
+        PREFS.put(KEY_MINING_LOG_BACKEND, "google".equalsIgnoreCase(backend.trim()) ? "google" : "local");
+    }
+
+    /**
+     * Google Sheets URL for prospector log when backend is "google".
+     */
+    public static String getMiningGoogleSheetsUrl() {
+        return PREFS.get(KEY_MINING_GOOGLE_SHEETS_URL, "").trim();
+    }
+
+    public static void setMiningGoogleSheetsUrl(String url) {
+        PREFS.put(KEY_MINING_GOOGLE_SHEETS_URL, url != null ? url.trim() : "");
+    }
+
+    /**
+     * Run counter for prospector log; incremented on each FSD jump.
+     */
+    public static int getMiningLogRunCounter() {
+        int v = PREFS.getInt(KEY_MINING_LOG_RUN_COUNTER, 1);
+        return v < 1 ? 1 : v;
+    }
+
+    public static void setMiningLogRunCounter(int run) {
+        PREFS.putInt(KEY_MINING_LOG_RUN_COUNTER, run < 1 ? 1 : run);
+    }
+
+    /**
+     * Increment the run counter and return the new value (for use after FSD jump).
+     */
+    public static int incrementMiningLogRunCounter() {
+        int next = getMiningLogRunCounter() + 1;
+        setMiningLogRunCounter(next);
+        return next;
     }
 
     // --- UI Font (System / Route / Biology) ---

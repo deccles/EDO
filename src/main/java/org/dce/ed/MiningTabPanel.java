@@ -2,19 +2,17 @@ package org.dce.ed;
 
 import java.awt.AlphaComposite;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.util.Collections;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -33,12 +31,14 @@ import java.util.function.Function;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JLayer;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JToggleButton;
 import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -52,10 +52,15 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
+import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
 import org.dce.ed.logreader.event.StartJumpEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.market.GalacticAveragePrices;
+import org.dce.ed.mining.ProspectorLogBackend;
+import org.dce.ed.mining.ProspectorLogBackendFactory;
+import org.dce.ed.mining.ProspectorLogRow;
 import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
@@ -92,6 +97,14 @@ public class MiningTabPanel extends JPanel {
 	private final JScrollPane materialsScroller;
 	private final JScrollPane cargoScroller;
 
+	private final JLabel spreadsheetLabel;
+	private final JTable spreadsheetTable;
+	private final ProspectorLogTableModel spreadsheetModel;
+	private final JScrollPane spreadsheetScroller;
+	private final ProspectorLogScatterPanel spreadsheetScatterPanel;
+	private final JPanel spreadsheetCardPanel;
+	private static final int SPREADSHEET_REFRESH_MS = 45_000;
+	private final Timer spreadsheetRefreshTimer;
 
 	private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
 
@@ -100,6 +113,10 @@ public class MiningTabPanel extends JPanel {
 
 	/** Last seen proportion (percent) per material from the previous ProspectedAsteroid event; used for CSV so we log the rock's % when the mining actually happened. */
 	private Map<String, Double> lastPercentByMaterialAtProspector = new HashMap<>();
+
+	/** Current system and body for prospector log rows (updated from LocationEvent / StatusEvent). */
+	private volatile String currentSystemName = "";
+	private volatile String currentBodyName = "";
 
 	private final TableScanState prospectorScan;
 private final TableScanState cargoScan;
@@ -397,6 +414,66 @@ private final JLayer<JTable> cargoLayer;
 		Dimension invPref = inventoryLabel.getPreferredSize();
 		inventoryLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, invPref.height));
 
+		// Spreadsheet (prospector log) panel
+		spreadsheetModel = new ProspectorLogTableModel();
+		spreadsheetTable = new JTable(spreadsheetModel) {
+			@Override
+			public boolean isCellEditable(int row, int column) { return false; }
+			@Override
+			public boolean editCellAt(int row, int column, java.util.EventObject e) { return false; }
+		};
+		spreadsheetTable.setDefaultEditor(Object.class, null);
+		spreadsheetTable.setFocusable(false);
+		spreadsheetTable.setRowSelectionAllowed(false);
+		spreadsheetTable.setOpaque(false);
+		spreadsheetTable.setBackground(EdoUi.Internal.TRANSPARENT);
+		spreadsheetTable.setForeground(EdoUi.User.MAIN_TEXT);
+		spreadsheetScroller = new JScrollPane(spreadsheetTable);
+		spreadsheetScroller.setOpaque(false);
+		spreadsheetScroller.setBackground(EdoUi.Internal.TRANSPARENT);
+		spreadsheetScroller.getViewport().setOpaque(false);
+		spreadsheetScroller.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
+		spreadsheetScroller.setBorder(null);
+		spreadsheetScroller.setViewportBorder(null);
+		JViewport spreadHeaderViewport = spreadsheetScroller.getColumnHeader();
+		if (spreadHeaderViewport != null) {
+			spreadHeaderViewport.setOpaque(false);
+			spreadHeaderViewport.setBackground(EdoUi.Internal.TRANSPARENT);
+			spreadHeaderViewport.setBorder(null);
+		}
+		configureOverlayScroller(spreadsheetScroller);
+		spreadsheetScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
+		spreadsheetScatterPanel = new ProspectorLogScatterPanel();
+		spreadsheetScatterPanel.setOpaque(false);
+		spreadsheetScatterPanel.setBackground(EdoUi.Internal.TRANSPARENT);
+		spreadsheetScatterPanel.setForeground(EdoUi.User.MAIN_TEXT);
+		spreadsheetCardPanel = new JPanel(new CardLayout());
+		spreadsheetCardPanel.setOpaque(false);
+		spreadsheetCardPanel.setBackground(EdoUi.Internal.TRANSPARENT);
+		spreadsheetCardPanel.add(spreadsheetScroller, "table");
+		spreadsheetCardPanel.add(spreadsheetScatterPanel, "scatter");
+		spreadsheetCardPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JToggleButton tableViewBtn = new JToggleButton("Table", true);
+		JToggleButton scatterViewBtn = new JToggleButton("Scatter", false);
+		tableViewBtn.setOpaque(false);
+		scatterViewBtn.setOpaque(false);
+		ButtonGroup spreadsheetViewGroup = new ButtonGroup();
+		spreadsheetViewGroup.add(tableViewBtn);
+		spreadsheetViewGroup.add(scatterViewBtn);
+		tableViewBtn.addActionListener(e -> ((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, "table"));
+		scatterViewBtn.addActionListener(e -> ((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, "scatter"));
+		JPanel spreadsheetToolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		spreadsheetToolbar.setOpaque(false);
+		spreadsheetToolbar.add(tableViewBtn);
+		spreadsheetToolbar.add(scatterViewBtn);
+		spreadsheetToolbar.setAlignmentX(Component.LEFT_ALIGNMENT);
+		spreadsheetLabel = new JLabel("Prospector log");
+		spreadsheetLabel.setForeground(EdoUi.User.MAIN_TEXT);
+		spreadsheetLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 4));
+		spreadsheetLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		Dimension spreadPref = spreadsheetLabel.getPreferredSize();
+		spreadsheetLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, spreadPref.height));
+
 		// Leave about 10 rows for each table.
 		updateScrollerHeights();
 
@@ -404,16 +481,27 @@ private final JLayer<JTable> cargoLayer;
 		centerPanel.setOpaque(false);
 		centerPanel.setBackground(EdoUi.Internal.TRANSPARENT);
 		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
-		
-		centerPanel.add(prospectorLabel);
-		centerPanel.add(Box.createVerticalStrut(4)); // small gap, optional
-		centerPanel.add(materialsScroller);
-		centerPanel.add(Box.createVerticalStrut(8));
+		// Order: Inventory, then Prospector, then Spreadsheet
 		centerPanel.add(inventoryLabel);
 		centerPanel.add(Box.createVerticalStrut(2));
 		centerPanel.add(cargoScroller);
+		centerPanel.add(Box.createVerticalStrut(8));
+		centerPanel.add(prospectorLabel);
+		centerPanel.add(Box.createVerticalStrut(4));
+		centerPanel.add(materialsScroller);
+		centerPanel.add(Box.createVerticalStrut(8));
+		centerPanel.add(spreadsheetLabel);
+		centerPanel.add(Box.createVerticalStrut(2));
+		centerPanel.add(spreadsheetToolbar);
+		centerPanel.add(Box.createVerticalStrut(2));
+		centerPanel.add(spreadsheetCardPanel);
 
 		add(centerPanel, BorderLayout.CENTER);
+
+		refreshSpreadsheetFromBackend();
+		spreadsheetRefreshTimer = new Timer(SPREADSHEET_REFRESH_MS, e -> refreshSpreadsheetFromBackend());
+		spreadsheetRefreshTimer.setRepeats(true);
+		spreadsheetRefreshTimer.start();
 
 		CargoMonitor.getInstance().addListener(snap -> SwingUtilities.invokeLater(() -> updateFromCargoSnapshot(snap)));
 		updateFromCargoSnapshot(CargoMonitor.getInstance().getSnapshot());
@@ -573,7 +661,8 @@ return EdoUi.User.MAIN_TEXT;
 		
 		prospectorLabel.setFont(headerFont);
 		inventoryLabel.setFont(headerFont);
-		
+		spreadsheetLabel.setFont(headerFont);
+
 		uiFont = font;
 
 		headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
@@ -618,6 +707,12 @@ return EdoUi.User.MAIN_TEXT;
 	private void updateScrollerHeights() {
 		updateScrollerHeight(materialsScroller, table);
 		updateScrollerHeight(cargoScroller, cargoTable);
+		updateScrollerHeight(spreadsheetScroller, spreadsheetTable);
+		if (spreadsheetScatterPanel != null && spreadsheetScroller != null) {
+			Dimension d = spreadsheetScroller.getPreferredSize();
+			spreadsheetScatterPanel.setPreferredSize(new Dimension(Integer.MAX_VALUE, d.height));
+			spreadsheetScatterPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, d.height));
+		}
 	}
 
 	private static void updateScrollerHeight(JScrollPane scroller, JTable tbl) {
@@ -821,7 +916,7 @@ return EdoUi.User.MAIN_TEXT;
 		return out;
 	}
 
-	static String csvEscape(String s) {
+	public static String csvEscape(String s) {
 		if (s == null) {
 			return "";
 		}
@@ -830,8 +925,6 @@ return EdoUi.User.MAIN_TEXT;
 		}
 		return s;
 	}
-
-	private static final DateTimeFormatter PROSPECTOR_CSV_TIMESTAMP = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
 
 	/**
 	 * Called on FSD jump: flush any pending mining gains to CSV (using last-seen percent), then reset
@@ -846,6 +939,29 @@ return EdoUi.User.MAIN_TEXT;
 		appendProspectorCsvRows(ts, currentInventory, materials, null);
 		lastInventoryTonsAtProspector = new HashMap<>();
 		lastPercentByMaterialAtProspector = new HashMap<>();
+		OverlayPreferences.incrementMiningLogRunCounter();
+	}
+
+	/** Update cached location from Location event (system + body). */
+	public void updateFromLocation(LocationEvent event) {
+		if (event == null) {
+			return;
+		}
+		String sys = event.getStarSystem();
+		String body = event.getBody();
+		currentSystemName = (sys != null) ? sys : "";
+		currentBodyName = (body != null) ? body : "";
+	}
+
+	/** Update cached body name from Status event. */
+	public void updateFromStatus(StatusEvent event) {
+		if (event == null) {
+			return;
+		}
+		String body = event.getBodyName();
+		if (body != null) {
+			currentBodyName = body;
+		}
 	}
 
 	private void appendProspectorCsv(ProspectedAsteroidEvent event, Map<String, Double> currentInventory) {
@@ -866,7 +982,7 @@ return EdoUi.User.MAIN_TEXT;
 		appendProspectorCsvRows(ts, currentInventory, materials, fallbackPct);
 	}
 
-	/** Write CSV rows for materials that increased; uses lastInventoryTonsAtProspector and lastPercentByMaterialAtProspector. */
+	/** Write log rows for materials that increased; uses lastInventoryTonsAtProspector and lastPercentByMaterialAtProspector. */
 	private void appendProspectorCsvRows(Instant ts, Map<String, Double> currentInventory, Set<String> materialsToConsider, Map<String, Double> fallbackPercentByMaterial) {
 		if (materialsToConsider == null || materialsToConsider.isEmpty()) {
 			return;
@@ -875,58 +991,69 @@ return EdoUi.User.MAIN_TEXT;
 		if (isDockedSupplier != null && isDockedSupplier.getAsBoolean()) {
 			return;
 		}
-		Path edoDir = Paths.get(System.getProperty("user.home", ""), "EDO");
-		try {
-			Files.createDirectories(edoDir);
-		} catch (Exception e) {
+		String sys = currentSystemName != null ? currentSystemName : "";
+		String body = currentBodyName != null ? currentBodyName : "";
+		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
+		int run = OverlayPreferences.getMiningLogRunCounter();
+		String email = OverlayPreferences.getProspectorEmail();
+		if (email == null || email.isBlank()) {
+			email = "-";
+		}
+		List<ProspectorLogRow> rows = new ArrayList<>();
+		for (String material : materialsToConsider) {
+			if (material == null || material.isBlank()) {
+				material = "-";
+			}
+			double pct = lastPercentByMaterialAtProspector.getOrDefault(material,
+				fallbackPercentByMaterial != null ? fallbackPercentByMaterial.getOrDefault(material, 0.0) : 0.0);
+			double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
+			double afterTons = currentInventory.getOrDefault(material, 0.0);
+			double difference = afterTons - beforeTons;
+			if (difference <= 0) {
+				continue;
+			}
+			// Add 0.5 to before/after so we approximate material still in refinery
+			double beforeAdjusted = (Double.isNaN(beforeTons) ? 0.0 : beforeTons) + 0.5;
+			double afterAdjusted = (Double.isNaN(afterTons) ? 0.0 : afterTons) + 0.5;
+			rows.add(new ProspectorLogRow(run, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, email));
+		}
+		if (rows.isEmpty()) {
 			return;
 		}
-		Path csvPath = edoDir.resolve("prospector_log.csv");
 		try {
-			boolean newFile = !Files.exists(csvPath);
-			String timestampStr = (ts == null) ? "" : ts.atZone(ZoneId.systemDefault()).format(PROSPECTOR_CSV_TIMESTAMP);
-			if (timestampStr == null || timestampStr.isBlank()) {
-				timestampStr = "-";
-			}
-			String email = OverlayPreferences.getProspectorEmail();
-			if (email == null || email.isBlank()) {
-				email = "-";
-			}
-			if (newFile) {
-				String header = "timestamp,material,percent,before amount,after amount,difference,email address";
-				Files.writeString(csvPath, header + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-			}
-			for (String material : materialsToConsider) {
-				if (material == null || material.isBlank()) {
-					material = "-";
-				}
-				double pct = lastPercentByMaterialAtProspector.getOrDefault(material,
-					fallbackPercentByMaterial != null ? fallbackPercentByMaterial.getOrDefault(material, 0.0) : 0.0);
-				double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
-				double afterTons = currentInventory.getOrDefault(material, 0.0);
-				double difference = afterTons - beforeTons;
-				if (difference <= 0) {
-					continue;
-				}
-				// Add 0.5 to before/after so we approximate material still in refinery (on average we're right, not low)
-				double beforeAdjusted = (Double.isNaN(beforeTons) ? 0.0 : beforeTons) + 0.5;
-				double afterAdjusted = (Double.isNaN(afterTons) ? 0.0 : afterTons) + 0.5;
-				String pctStr = Double.isNaN(pct) ? "0.00" : String.format(Locale.US, "%.2f", pct);
-				String beforeStr = String.format(Locale.US, "%.2f", beforeAdjusted);
-				String afterStr = String.format(Locale.US, "%.2f", afterAdjusted);
-				String diffStr = Double.isNaN(difference) ? "0.00" : String.format(Locale.US, "%.2f", difference);
-				String line = csvEscape(timestampStr) + ","
-					+ csvEscape(material) + ","
-					+ pctStr + ","
-					+ beforeStr + ","
-					+ afterStr + ","
-					+ diffStr + ","
-					+ csvEscape(email);
-				Files.writeString(csvPath, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-			}
+			ProspectorLogBackend backend = ProspectorLogBackendFactory.create();
+			backend.appendRows(rows);
+			refreshSpreadsheetFromBackend();
 		} catch (Exception e) {
 			// don't break UI on log failure
 		}
+	}
+
+	/** Load rows from backend and update spreadsheet table on EDT. */
+	void refreshSpreadsheetFromBackend() {
+		new javax.swing.SwingWorker<List<ProspectorLogRow>, Void>() {
+			@Override
+			protected List<ProspectorLogRow> doInBackground() {
+				try {
+					return ProspectorLogBackendFactory.create().loadRows();
+				} catch (Exception e) {
+					return Collections.emptyList();
+				}
+			}
+			@Override
+			protected void done() {
+				try {
+					List<ProspectorLogRow> rows = get();
+					if (rows != null && spreadsheetModel != null) {
+						spreadsheetModel.setRows(rows);
+						if (spreadsheetScatterPanel != null) {
+							spreadsheetScatterPanel.setRows(rows);
+						}
+					}
+				} catch (Exception ignored) {
+				}
+			}
+		}.execute();
 	}
 
 	private Set<Integer> computeChangedInventoryModelRows(List<Row> newRows) {
@@ -1840,4 +1967,110 @@ private static final class TransparentTableHeader extends JTableHeader {
 			 g2.dispose();
 		 }
 	 }
+
+	/** Scatter plot panel: X = Percentage, Y = Actual (difference). */
+	private static final class ProspectorLogScatterPanel extends JPanel {
+		private static final int PAD = 24;
+		private static final double POINT_RADIUS = 3.0;
+		private List<ProspectorLogRow> rows = new ArrayList<>();
+
+		void setRows(List<ProspectorLogRow> rows) {
+			this.rows = (rows != null) ? new ArrayList<>(rows) : new ArrayList<>();
+			repaint();
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			super.paintComponent(g);
+			if (rows.isEmpty()) {
+				return;
+			}
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+			int w = getWidth();
+			int h = getHeight();
+			if (w <= 2 * PAD || h <= 2 * PAD) {
+				g2.dispose();
+				return;
+			}
+			double minPct = Double.MAX_VALUE, maxPct = -Double.MAX_VALUE;
+			double minAct = Double.MAX_VALUE, maxAct = -Double.MAX_VALUE;
+			for (ProspectorLogRow r : rows) {
+				double p = r.getPercent();
+				double a = r.getDifference();
+				if (p < minPct) minPct = p;
+				if (p > maxPct) maxPct = p;
+				if (a < minAct) minAct = a;
+				if (a > maxAct) maxAct = a;
+			}
+			if (minPct >= maxPct) maxPct = minPct + 1.0;
+			if (minAct >= maxAct) maxAct = minAct + 1.0;
+			int plotW = w - 2 * PAD;
+			int plotH = h - 2 * PAD;
+			g2.setColor(EdoUi.User.MAIN_TEXT);
+			g2.drawRect(PAD, PAD, plotW, plotH);
+			g2.setFont(g2.getFont().deriveFont(10f));
+			g2.drawString("Percentage", PAD + plotW / 2 - 25, h - 4);
+			g2.drawString("Actual", 4, PAD + plotH / 2);
+			g2.setColor(EdoUi.User.VALUABLE);
+			for (ProspectorLogRow r : rows) {
+				double p = r.getPercent();
+				double a = r.getDifference();
+				double nx = (p - minPct) / (maxPct - minPct);
+				double ny = 1.0 - (a - minAct) / (maxAct - minAct);
+				int x = PAD + (int) (nx * plotW);
+				int y = PAD + (int) (ny * plotH);
+				g2.fillOval((int) (x - POINT_RADIUS), (int) (y - POINT_RADIUS), (int) (2 * POINT_RADIUS), (int) (2 * POINT_RADIUS));
+			}
+			g2.dispose();
+		}
+	}
+
+	/** Table model for prospector log rows: Run, Body, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Email Address. */
+	private static final class ProspectorLogTableModel extends AbstractTableModel {
+		private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
+		private static final String[] COLUMNS = { "Run", "Body", "Timestamp", "Type", "Percentage", "Before Amount", "After Amount", "Actual", "Email Address" };
+		private List<ProspectorLogRow> rows = new ArrayList<>();
+
+		void setRows(List<ProspectorLogRow> rows) {
+			this.rows = (rows != null) ? new ArrayList<>(rows) : new ArrayList<>();
+			fireTableDataChanged();
+		}
+
+		@Override
+		public int getRowCount() {
+			return rows.size();
+		}
+
+		@Override
+		public int getColumnCount() {
+			return COLUMNS.length;
+		}
+
+		@Override
+		public String getColumnName(int column) {
+			return COLUMNS[column];
+		}
+
+		@Override
+		public Object getValueAt(int rowIndex, int columnIndex) {
+			if (rowIndex < 0 || rowIndex >= rows.size()) {
+				return "";
+			}
+			ProspectorLogRow r = rows.get(rowIndex);
+			switch (columnIndex) {
+				case 0: return r.getRun();
+				case 1: return r.getFullBodyName();
+				case 2: return r.getTimestamp() != null ? r.getTimestamp().atZone(ZoneId.systemDefault()).format(TS_FMT) : "";
+				case 3: return r.getMaterial();
+				case 4: return String.format(Locale.US, "%.2f", r.getPercent());
+				case 5: return String.format(Locale.US, "%.2f", r.getBeforeAmount());
+				case 6: return String.format(Locale.US, "%.2f", r.getAfterAmount());
+				case 7: return String.format(Locale.US, "%.2f", r.getDifference());
+				case 8: return r.getEmailAddress();
+				default: return "";
+			}
+		}
+	}
 }

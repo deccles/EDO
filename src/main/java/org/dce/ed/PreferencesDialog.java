@@ -94,6 +94,11 @@ public class PreferencesDialog extends JDialog {
     private JSpinner prospectorMinAvgValueSpinner;
     private JTextField prospectorEmailField;
 
+    // Mining tab: log / spreadsheet backend (local vs Google Sheets)
+    private JRadioButton miningLogBackendLocalRadio;
+    private JRadioButton miningLogBackendGoogleRadio;
+    private JTextField miningGoogleSheetsUrlField;
+
     // Mining tab: limpet reminder
     private JCheckBox miningLowLimpetReminderEnabledCheckBox;
     private JRadioButton miningLowLimpetReminderCountRadio;
@@ -586,6 +591,54 @@ public class PreferencesDialog extends JDialog {
     	prospectorBox.add(hint, gbc);
 
     	outer.add(prospectorBox);
+    	outer.add(Box.createVerticalStrut(10));
+
+    	// -----------------------------------------------------------------
+    	// Log / Spreadsheet (local CSV vs Google Sheets)
+    	// -----------------------------------------------------------------
+    	JPanel logBackendBox = new JPanel(new GridBagLayout());
+    	logBackendBox.setOpaque(false);
+    	logBackendBox.setBorder(
+    			BorderFactory.createTitledBorder(
+    				BorderFactory.createLineBorder(EdoUi.Internal.GRAY_120),
+    				"Prospector log / Spreadsheet"
+    			)
+    		);
+    	GridBagConstraints gbcLog = new GridBagConstraints();
+    	gbcLog.gridx = 0;
+    	gbcLog.gridy = 0;
+    	gbcLog.anchor = GridBagConstraints.WEST;
+    	gbcLog.insets = new Insets(6, 8, 6, 8);
+
+    	ButtonGroup logBackendGroup = new ButtonGroup();
+    	miningLogBackendLocalRadio = new JRadioButton("Local CSV (file in ~/EDO/)");
+    	miningLogBackendLocalRadio.setOpaque(false);
+    	miningLogBackendGoogleRadio = new JRadioButton("Google Sheets");
+    	miningLogBackendGoogleRadio.setOpaque(false);
+    	logBackendGroup.add(miningLogBackendLocalRadio);
+    	logBackendGroup.add(miningLogBackendGoogleRadio);
+    	boolean useGoogle = "google".equals(OverlayPreferences.getMiningLogBackend());
+    	miningLogBackendLocalRadio.setSelected(!useGoogle);
+    	miningLogBackendGoogleRadio.setSelected(useGoogle);
+
+    	logBackendBox.add(miningLogBackendLocalRadio, gbcLog);
+    	gbcLog.gridy++;
+    	logBackendBox.add(miningLogBackendGoogleRadio, gbcLog);
+    	gbcLog.gridy++;
+    	gbcLog.gridx = 0;
+    	JLabel urlLabel = new JLabel("Google Sheets URL (edit link from browser):");
+    	logBackendBox.add(urlLabel, gbcLog);
+    	gbcLog.gridx = 1;
+    	gbcLog.fill = GridBagConstraints.HORIZONTAL;
+    	gbcLog.weightx = 1.0;
+    	miningGoogleSheetsUrlField = new JTextField(40);
+    	miningGoogleSheetsUrlField.setText(OverlayPreferences.getMiningGoogleSheetsUrl());
+    	miningGoogleSheetsUrlField.setEnabled(useGoogle);
+    	logBackendBox.add(miningGoogleSheetsUrlField, gbcLog);
+    	miningLogBackendGoogleRadio.addActionListener(e -> miningGoogleSheetsUrlField.setEnabled(miningLogBackendGoogleRadio.isSelected()));
+    	miningLogBackendLocalRadio.addActionListener(e -> miningGoogleSheetsUrlField.setEnabled(miningLogBackendGoogleRadio.isSelected()));
+
+    	outer.add(logBackendBox);
     	outer.add(Box.createVerticalStrut(10));
     	
     	// -----------------------------------------------------------------
@@ -1294,6 +1347,12 @@ content.add(speechUseAwsCheckBox, gbc);
         }
         if (prospectorEmailField != null) {
             OverlayPreferences.setProspectorEmail(prospectorEmailField.getText());
+        }
+        if (miningLogBackendLocalRadio != null && miningLogBackendGoogleRadio != null) {
+            OverlayPreferences.setMiningLogBackend(miningLogBackendGoogleRadio.isSelected() ? "google" : "local");
+        }
+        if (miningGoogleSheetsUrlField != null) {
+            OverlayPreferences.setMiningGoogleSheetsUrl(miningGoogleSheetsUrlField.getText());
         }
 
         if (miningLowLimpetReminderEnabledCheckBox != null) {

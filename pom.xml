@@ -81,6 +81,18 @@
 			<version>2.25.66</version>
 		</dependency>
 
+		<!-- Google Sheets API (prospector log backend) -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-sheets</artifactId>
+			<version>v4-rev20240514-2.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.25.0</version>
+		</dependency>
+
 		<!-- optional but recommended so the SDK can log nicely -->
 		<dependency>
 			<groupId>org.slf4j</groupId>
