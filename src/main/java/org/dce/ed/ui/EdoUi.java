@@ -29,6 +29,8 @@ public final class EdoUi {
 
         // Special/meaningful
         public static Color VALUABLE = new Color(212, 175, 55); // gold
+        /** Mining tab: color for discovered core (motherlode) materials. */
+        public static Color CORE_BLUE = new Color(100, 180, 255);
     }
 
     /**

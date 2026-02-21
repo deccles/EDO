@@ -133,7 +133,7 @@ private final JLayer<JTable> cargoLayer;
 	private static final int VISIBLE_ROWS = 10;
 
 	// Row colors for mining tables.
-	private static final Color CORE_COLOR = EdoUi.User.VALUABLE;
+	private static final Color CORE_COLOR = EdoUi.User.CORE_BLUE;
 	private static final Color NON_CORE_GREEN = EdoUi.User.SUCCESS;
 
 	public MiningTabPanel(GalacticAveragePrices prices) {
