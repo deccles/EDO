@@ -181,9 +181,9 @@ public class RouteTabPanel extends JPanel {
 		table.getTableHeader().setReorderingAllowed(false);
 		table.getTableHeader().setResizingAllowed(true);
 		JTableHeader routeHeader = table.getTableHeader();
-		routeHeader.setOpaque(true);
+		routeHeader.setOpaque(false);
 		routeHeader.setForeground(EdoUi.User.MAIN_TEXT);
-		routeHeader.setBackground(EdoUi.User.BACKGROUND);
+		routeHeader.setBackground(EdoUi.Internal.TRANSPARENT);
 		routeHeader.setFont(uiFont.deriveFont(Font.BOLD));
 		routeHeader.setDefaultRenderer(new DefaultTableCellRenderer() {
 			private static final long serialVersionUID = 1L;
@@ -195,8 +195,8 @@ public class RouteTabPanel extends JPanel {
 					int row,
 					int column) {
 				JLabel l = (JLabel) super.getTableCellRendererComponent(tbl, value, false, false, row, column);
-				l.setOpaque(true);
-				l.setBackground(EdoUi.User.BACKGROUND);
+				l.setOpaque(false);
+				l.setBackground(EdoUi.Internal.TRANSPARENT);
 				l.setForeground(EdoUi.User.MAIN_TEXT);
 				l.setFont(uiFont.deriveFont(Font.BOLD));
 				l.setBorder(new EmptyBorder(3, 4, 3, 4));

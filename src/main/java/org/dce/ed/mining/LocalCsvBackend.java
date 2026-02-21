@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -17,11 +18,12 @@ import org.dce.ed.MiningTabPanel;
 
 /**
  * Prospector log backend that writes to and reads from a local CSV file.
- * CSV columns: run,body,timestamp,material,percent,before amount,after amount,difference,email address
+ * Column order: Run, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Body, Commander.
+ * Legacy 7-column files (timestamp,material,percent,before,after,difference,email) are supported; run is inferred from >10 min gaps.
  */
 public final class LocalCsvBackend implements ProspectorLogBackend {
 
-    private static final String HEADER = "run,body,timestamp,material,percent,before amount,after amount,difference,email address";
+    private static final String HEADER = "run,timestamp,material,percent,before amount,after amount,difference,body,commander";
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
 
     private final Path csvPath;
@@ -59,14 +61,14 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                     tsStr = "-";
                 }
                 String line = r.getRun() + ","
-                    + MiningTabPanel.csvEscape(r.getFullBodyName()) + ","
                     + MiningTabPanel.csvEscape(tsStr) + ","
                     + MiningTabPanel.csvEscape(r.getMaterial()) + ","
                     + formatDouble(r.getPercent()) + ","
                     + formatDouble(r.getBeforeAmount()) + ","
                     + formatDouble(r.getAfterAmount()) + ","
                     + formatDouble(r.getDifference()) + ","
-                    + MiningTabPanel.csvEscape(r.getEmailAddress());
+                    + MiningTabPanel.csvEscape(r.getFullBodyName()) + ","
+                    + MiningTabPanel.csvEscape(r.getCommanderName());
                 Files.writeString(csvPath, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             }
         } catch (Exception e) {
@@ -92,32 +94,126 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
             if (header == null) {
                 return List.of();
             }
-            // Skip header; column order: run,body,timestamp,material,percent,before amount,after amount,difference,email address
-            String line;
-            while ((line = reader.readLine()) != null) {
-                List<String> cols = parseCsvLine(line);
-                if (cols.size() < 9) {
-                    continue;
+            boolean legacy = isLegacyFormat(header);
+            if (legacy) {
+                List<String[]> rawRows = new ArrayList<>();
+                if (!looksLikeLegacyHeader(header)) {
+                    List<String> cols = parseCsvLine(header);
+                    if (cols.size() >= 7) {
+                        rawRows.add(cols.toArray(new String[0]));
+                    }
                 }
-                try {
-                    int run = Integer.parseInt(cols.get(0).trim());
-                    String fullBodyName = cols.get(1).trim();
-                    Instant ts = parseTimestamp(cols.get(2).trim());
-                    String material = cols.get(3).trim();
-                    double percent = parseDouble(cols.get(4), 0.0);
-                    double before = parseDouble(cols.get(5), 0.0);
-                    double after = parseDouble(cols.get(6), 0.0);
-                    double diff = parseDouble(cols.get(7), 0.0);
-                    String email = cols.get(8).trim();
-                    out.add(new ProspectorLogRow(run, fullBodyName, ts, material, percent, before, after, diff, email));
-                } catch (Exception e) {
-                    // skip malformed line
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    List<String> cols = parseCsvLine(line);
+                    if (cols.size() >= 7) {
+                        rawRows.add(cols.toArray(new String[0]));
+                    }
+                }
+                out.addAll(inferRunsFromLegacy(rawRows));
+            } else {
+                // New 9-column: run,timestamp,material,percent,before amount,after amount,difference,body,commander
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    List<String> cols = parseCsvLine(line);
+                    if (cols.size() < 9) {
+                        continue;
+                    }
+                    try {
+                        int run = Integer.parseInt(cols.get(0).trim());
+                        Instant ts = parseTimestamp(cols.get(1).trim());
+                        String material = cols.get(2).trim();
+                        double percent = parseDouble(cols.get(3), 0.0);
+                        double before = parseDouble(cols.get(4), 0.0);
+                        double after = parseDouble(cols.get(5), 0.0);
+                        double diff = parseDouble(cols.get(6), 0.0);
+                        String fullBodyName = cols.get(7).trim();
+                        String commander = cols.get(8).trim();
+                        out.add(new ProspectorLogRow(run, fullBodyName, ts, material, percent, before, after, diff, commander));
+                    } catch (Exception e) {
+                        // skip malformed line
+                    }
                 }
             }
         } catch (Exception e) {
             // return what we have so far, or empty
         }
         return out;
+    }
+
+    /** True if header looks like legacy (no "run" or 7 columns). */
+    private static boolean isLegacyFormat(String header) {
+        if (header == null) return false;
+        String lower = header.toLowerCase(Locale.ROOT);
+        if (lower.contains("run") && lower.contains("body")) {
+            return false;
+        }
+        List<String> cols = parseCsvLine(header);
+        return cols.size() <= 7;
+    }
+
+    /** True if the first line looks like a legacy header row (e.g. "timestamp,material,...") so we skip it. */
+    private static boolean looksLikeLegacyHeader(String firstLine) {
+        if (firstLine == null || firstLine.isBlank()) return true;
+        List<String> cols = parseCsvLine(firstLine);
+        if (cols.isEmpty()) return true;
+        String first = cols.get(0).toLowerCase(Locale.ROOT);
+        return first.contains("timestamp") || first.contains("date") || first.contains("time");
+    }
+
+    private static final long GAP_MINUTES = 10;
+    private static final long GAP_MS = GAP_MINUTES * 60 * 1000;
+
+    /** Parse legacy 7-col rows: timestamp,material,percent,before,after,difference,email. Sort by time, assign run by >10 min gap. */
+    private static List<ProspectorLogRow> inferRunsFromLegacy(List<String[]> rawRows) {
+        List<LegacyRow> rows = new ArrayList<>();
+        for (String[] cols : rawRows) {
+            if (cols.length < 7) continue;
+            try {
+                Instant ts = parseTimestamp(cols[0].trim());
+                String material = cols[1].trim();
+                double percent = parseDouble(cols[2], 0.0);
+                double before = parseDouble(cols[3], 0.0);
+                double after = parseDouble(cols[4], 0.0);
+                double diff = parseDouble(cols[5], 0.0);
+                String commander = cols[6].trim();
+                rows.add(new LegacyRow(ts, material, percent, before, after, diff, commander));
+            } catch (Exception ignored) {
+            }
+        }
+        rows.sort(Comparator.comparing(LegacyRow::getTs, Comparator.nullsLast(Comparator.naturalOrder())));
+        int run = 1;
+        Instant lastTs = null;
+        List<ProspectorLogRow> out = new ArrayList<>();
+        for (LegacyRow r : rows) {
+            if (lastTs != null && r.ts != null && r.ts.toEpochMilli() - lastTs.toEpochMilli() > GAP_MS) {
+                run++;
+            }
+            lastTs = r.ts;
+            out.add(new ProspectorLogRow(run, "", r.ts, r.material, r.percent, r.before, r.after, r.diff, r.commander));
+        }
+        return out;
+    }
+
+    private static final class LegacyRow {
+        final Instant ts;
+        final String material;
+        final double percent, before, after, diff;
+        final String commander;
+
+        LegacyRow(Instant ts, String material, double percent, double before, double after, double diff, String commander) {
+            this.ts = ts;
+            this.material = material;
+            this.percent = percent;
+            this.before = before;
+            this.after = after;
+            this.diff = diff;
+            this.commander = commander != null ? commander : "";
+        }
+
+        Instant getTs() {
+            return ts;
+        }
     }
 
     private static Instant parseTimestamp(String s) {

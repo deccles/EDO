@@ -27,6 +27,8 @@ import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JSlider;
@@ -40,6 +42,7 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
 import org.dce.ed.exobiology.audit.ExoPredictionDebuggerMain;
+import org.dce.ed.mining.GoogleSheetsAuth;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
@@ -92,12 +95,16 @@ public class PreferencesDialog extends JDialog {
     private JTextField prospectorMaterialsField;
     private JSpinner prospectorMinPropSpinner;
     private JSpinner prospectorMinAvgValueSpinner;
-    private JTextField prospectorEmailField;
+    private JTextField miningLogCommanderNameField;
 
     // Mining tab: log / spreadsheet backend (local vs Google Sheets)
     private JRadioButton miningLogBackendLocalRadio;
     private JRadioButton miningLogBackendGoogleRadio;
     private JTextField miningGoogleSheetsUrlField;
+    private JTextField miningGoogleClientIdField;
+    private JTextField miningGoogleClientSecretField;
+    private JButton miningGoogleConnectButton;
+    private JButton miningGoogleSetupHelpButton;
 
     // Mining tab: limpet reminder
     private JCheckBox miningLowLimpetReminderEnabledCheckBox;
@@ -572,20 +579,6 @@ public class PreferencesDialog extends JDialog {
 
     	gbc.gridx = 0;
     	gbc.gridy++;
-    	gbc.gridwidth = 1;
-    	JLabel emailLabel = new JLabel("Email (for prospector log CSV):");
-    	prospectorBox.add(emailLabel, gbc);
-
-    	gbc.gridx = 1;
-    	gbc.gridwidth = 3;
-    	gbc.fill = GridBagConstraints.HORIZONTAL;
-    	gbc.weightx = 1.0;
-    	prospectorEmailField = new JTextField(32);
-    	prospectorEmailField.setText(OverlayPreferences.getProspectorEmail());
-    	prospectorBox.add(prospectorEmailField, gbc);
-
-    	gbc.gridx = 0;
-    	gbc.gridy++;
     	gbc.gridwidth = 4;
     	JLabel hint = new JLabel("Tip: leave materials blank to announce ANY material above the thresholds.");
     	prospectorBox.add(hint, gbc);
@@ -621,6 +614,18 @@ public class PreferencesDialog extends JDialog {
     	miningLogBackendLocalRadio.setSelected(!useGoogle);
     	miningLogBackendGoogleRadio.setSelected(useGoogle);
 
+    	JLabel commanderNameLabel = new JLabel("Commander name:");
+    	logBackendBox.add(commanderNameLabel, gbcLog);
+    	gbcLog.gridx = 1;
+    	gbcLog.fill = GridBagConstraints.HORIZONTAL;
+    	gbcLog.weightx = 1.0;
+    	miningLogCommanderNameField = new JTextField(32);
+    	miningLogCommanderNameField.setText(OverlayPreferences.getMiningLogCommanderName());
+    	logBackendBox.add(miningLogCommanderNameField, gbcLog);
+    	gbcLog.gridx = 0;
+    	gbcLog.gridy++;
+    	gbcLog.fill = GridBagConstraints.NONE;
+    	gbcLog.weightx = 0;
     	logBackendBox.add(miningLogBackendLocalRadio, gbcLog);
     	gbcLog.gridy++;
     	logBackendBox.add(miningLogBackendGoogleRadio, gbcLog);
@@ -637,6 +642,62 @@ public class PreferencesDialog extends JDialog {
     	logBackendBox.add(miningGoogleSheetsUrlField, gbcLog);
     	miningLogBackendGoogleRadio.addActionListener(e -> miningGoogleSheetsUrlField.setEnabled(miningLogBackendGoogleRadio.isSelected()));
     	miningLogBackendLocalRadio.addActionListener(e -> miningGoogleSheetsUrlField.setEnabled(miningLogBackendGoogleRadio.isSelected()));
+
+    	gbcLog.gridx = 0;
+    	gbcLog.gridy++;
+    	gbcLog.fill = GridBagConstraints.NONE;
+    	gbcLog.weightx = 0;
+    	JLabel clientIdLabel = new JLabel("Client ID (from Google Cloud Console):");
+    	logBackendBox.add(clientIdLabel, gbcLog);
+    	gbcLog.gridx = 1;
+    	gbcLog.fill = GridBagConstraints.HORIZONTAL;
+    	gbcLog.weightx = 1.0;
+    	miningGoogleClientIdField = new JTextField(36);
+    	miningGoogleClientIdField.setText(OverlayPreferences.getMiningGoogleSheetsClientId());
+    	miningGoogleClientIdField.setEnabled(useGoogle);
+    	logBackendBox.add(miningGoogleClientIdField, gbcLog);
+    	gbcLog.gridx = 0;
+    	gbcLog.gridy++;
+    	gbcLog.fill = GridBagConstraints.NONE;
+    	gbcLog.weightx = 0;
+    	JLabel clientSecretLabel = new JLabel("Client Secret:");
+    	logBackendBox.add(clientSecretLabel, gbcLog);
+    	gbcLog.gridx = 1;
+    	gbcLog.fill = GridBagConstraints.HORIZONTAL;
+    	gbcLog.weightx = 1.0;
+    	miningGoogleClientSecretField = new JTextField(24);
+    	miningGoogleClientSecretField.setText(OverlayPreferences.getMiningGoogleSheetsClientSecret());
+    	miningGoogleClientSecretField.setEnabled(useGoogle);
+    	logBackendBox.add(miningGoogleClientSecretField, gbcLog);
+    	gbcLog.gridx = 0;
+    	gbcLog.gridy++;
+    	gbcLog.gridwidth = 2;
+    	JPanel googleButtonsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+    	googleButtonsRow.setOpaque(false);
+    	miningGoogleSetupHelpButton = new JButton("How to set up Google Sheets");
+    	miningGoogleSetupHelpButton.addActionListener(e -> showGoogleSheetsSetupInstructions());
+    	googleButtonsRow.add(miningGoogleSetupHelpButton);
+    	miningGoogleConnectButton = new JButton("Connect to Google");
+    	miningGoogleConnectButton.setEnabled(useGoogle);
+    	miningGoogleConnectButton.addActionListener(e -> connectToGoogleAndStoreToken());
+    	googleButtonsRow.add(miningGoogleConnectButton);
+    	logBackendBox.add(googleButtonsRow, gbcLog);
+    	miningLogBackendGoogleRadio.addActionListener(ev -> {
+    		boolean on = miningLogBackendGoogleRadio.isSelected();
+    		miningGoogleSheetsUrlField.setEnabled(on);
+    		miningGoogleClientIdField.setEnabled(on);
+    		miningGoogleClientSecretField.setEnabled(on);
+    		miningGoogleConnectButton.setEnabled(on);
+    		miningGoogleSetupHelpButton.setEnabled(on);
+    	});
+    	miningLogBackendLocalRadio.addActionListener(ev -> {
+    		boolean on = miningLogBackendGoogleRadio.isSelected();
+    		miningGoogleSheetsUrlField.setEnabled(on);
+    		miningGoogleClientIdField.setEnabled(on);
+    		miningGoogleClientSecretField.setEnabled(on);
+    		miningGoogleConnectButton.setEnabled(on);
+    		miningGoogleSetupHelpButton.setEnabled(on);
+    	});
 
     	outer.add(logBackendBox);
     	outer.add(Box.createVerticalStrut(10));
@@ -1215,6 +1276,40 @@ content.add(speechUseAwsCheckBox, gbc);
         return panel;
     }
 
+    private void showGoogleSheetsSetupInstructions() {
+        String msg = "To use Google Sheets for the prospector log:\n\n"
+            + "1. Open Google Cloud Console: https://console.cloud.google.com/\n"
+            + "2. Create a project (or select an existing one).\n"
+            + "3. Enable the Google Sheets API: APIs & Services → Library → search \"Google Sheets API\" → Enable.\n"
+            + "4. Configure OAuth consent screen: APIs & Services → OAuth consent screen. Choose \"External\" if others will use this. Add your app name and support email.\n"
+            + "5. Create credentials: APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID.\n"
+            + "6. Application type: \"Desktop app\". Name it (e.g. \"EDO Overlay\") and click Create.\n"
+            + "7. Copy the Client ID and Client Secret from the credentials page into the fields above.\n"
+            + "8. Paste your Google Sheet edit URL (from the browser) into the URL field. The sheet should have a header row: Run, Body, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Email Address (or the app will append it).\n"
+            + "9. Click \"Connect to Google\". A browser will open; sign in and allow access. The refresh token is stored so you only need to do this once.\n\n"
+            + "No cost: creating a project and using the Sheets API within normal quotas is free.";
+        JTextArea area = new JTextArea(msg, 22, 60);
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        JOptionPane.showMessageDialog(this, new JScrollPane(area), "Google Sheets setup", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void connectToGoogleAndStoreToken() {
+        String clientId = miningGoogleClientIdField != null ? miningGoogleClientIdField.getText().trim() : "";
+        String clientSecret = miningGoogleClientSecretField != null ? miningGoogleClientSecretField.getText().trim() : "";
+        if (clientId.isEmpty() || clientSecret.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter Client ID and Client Secret first, then click Connect to Google.", "Setup required", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        boolean ok = GoogleSheetsAuth.runOAuthFlowAndStoreToken(clientId, clientSecret);
+        if (ok) {
+            JOptionPane.showMessageDialog(this, "Connected. Your prospector log will sync to the selected Google Sheet.", "Success", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, "Could not complete sign-in. Check Client ID and Secret, and try again.", "Connection failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void applyAndSavePreferences() {
         // Overlay tab
         if (normalBgColorButton != null) {
@@ -1345,14 +1440,20 @@ content.add(speechUseAwsCheckBox, gbc);
                 // ignore
             }
         }
-        if (prospectorEmailField != null) {
-            OverlayPreferences.setProspectorEmail(prospectorEmailField.getText());
+        if (miningLogCommanderNameField != null) {
+            OverlayPreferences.setMiningLogCommanderName(miningLogCommanderNameField.getText());
         }
         if (miningLogBackendLocalRadio != null && miningLogBackendGoogleRadio != null) {
             OverlayPreferences.setMiningLogBackend(miningLogBackendGoogleRadio.isSelected() ? "google" : "local");
         }
         if (miningGoogleSheetsUrlField != null) {
             OverlayPreferences.setMiningGoogleSheetsUrl(miningGoogleSheetsUrlField.getText());
+        }
+        if (miningGoogleClientIdField != null) {
+            OverlayPreferences.setMiningGoogleSheetsClientId(miningGoogleClientIdField.getText());
+        }
+        if (miningGoogleClientSecretField != null) {
+            OverlayPreferences.setMiningGoogleSheetsClientSecret(miningGoogleClientSecretField.getText());
         }
 
         if (miningLowLimpetReminderEnabledCheckBox != null) {

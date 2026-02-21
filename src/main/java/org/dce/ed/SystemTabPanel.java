@@ -183,7 +183,7 @@ public class SystemTabPanel extends JPanel {
         JTableHeader header = table.getTableHeader();
         header.setOpaque(false);
         header.setForeground(EdoUi.User.MAIN_TEXT);
-        header.setBackground(EdoUi.User.BACKGROUND);
+        header.setBackground(EdoUi.Internal.TRANSPARENT);
         header.setFont(uiFont.deriveFont(Font.BOLD));
         header.setBorder(null);
         
@@ -198,8 +198,8 @@ public class SystemTabPanel extends JPanel {
                 JLabel label = (JLabel) super.getTableCellRendererComponent(
                         table, value, false, false, row, column);
 
-                label.setOpaque(true);
-                label.setBackground(EdoUi.User.BACKGROUND);
+                label.setOpaque(false);
+                label.setBackground(EdoUi.Internal.TRANSPARENT);
                 label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);

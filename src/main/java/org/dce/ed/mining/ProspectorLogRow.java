@@ -3,7 +3,8 @@ package org.dce.ed.mining;
 import java.time.Instant;
 
 /**
- * One row of prospector log data (run, body, timestamp, material, amounts, email).
+ * One row of prospector log data (run, body, timestamp, material, amounts, commander name).
+ * Column order: Run, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Body, Commander.
  */
 public final class ProspectorLogRow {
 
@@ -15,11 +16,11 @@ public final class ProspectorLogRow {
     private final double beforeAmount;
     private final double afterAmount;
     private final double difference;
-    private final String emailAddress;
+    private final String commanderName;
 
     public ProspectorLogRow(int run, String fullBodyName, Instant timestamp, String material,
                            double percent, double beforeAmount, double afterAmount, double difference,
-                           String emailAddress) {
+                           String commanderName) {
         this.run = run;
         this.fullBodyName = fullBodyName != null ? fullBodyName : "";
         this.timestamp = timestamp;
@@ -28,7 +29,7 @@ public final class ProspectorLogRow {
         this.beforeAmount = beforeAmount;
         this.afterAmount = afterAmount;
         this.difference = difference;
-        this.emailAddress = emailAddress != null ? emailAddress : "";
+        this.commanderName = commanderName != null ? commanderName : "";
     }
 
     public int getRun() {
@@ -63,7 +64,12 @@ public final class ProspectorLogRow {
         return difference;
     }
 
+    public String getCommanderName() {
+        return commanderName;
+    }
+
+    /** @deprecated Use {@link #getCommanderName()}. */
     public String getEmailAddress() {
-        return emailAddress;
+        return commanderName;
     }
 }

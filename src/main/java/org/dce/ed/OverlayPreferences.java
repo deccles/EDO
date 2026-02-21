@@ -92,7 +92,11 @@ public final class OverlayPreferences {
     // Mining log / spreadsheet: backend (local vs Google Sheets) and run counter
     private static final String KEY_MINING_LOG_BACKEND = "mining.log.backend"; // "local" | "google"
     private static final String KEY_MINING_GOOGLE_SHEETS_URL = "mining.googleSheets.url";
+    private static final String KEY_MINING_GOOGLE_CLIENT_ID = "mining.googleSheets.clientId";
+    private static final String KEY_MINING_GOOGLE_CLIENT_SECRET = "mining.googleSheets.clientSecret";
+    private static final String KEY_MINING_GOOGLE_REFRESH_TOKEN = "mining.googleSheets.refreshToken";
     private static final String KEY_MINING_LOG_RUN_COUNTER = "mining.log.runCounter"; // incremented on FSD jump
+    private static final String KEY_MINING_LOG_COMMANDER_NAME = "mining.log.commanderName";
 
     // Mining value estimation (Mining tab)
     private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
@@ -489,6 +493,33 @@ public static Engine getSpeechEngine() {
         PREFS.put(KEY_MINING_GOOGLE_SHEETS_URL, url != null ? url.trim() : "");
     }
 
+    /** OAuth 2.0 Client ID from Google Cloud Console (Desktop app). */
+    public static String getMiningGoogleSheetsClientId() {
+        return PREFS.get(KEY_MINING_GOOGLE_CLIENT_ID, "").trim();
+    }
+
+    public static void setMiningGoogleSheetsClientId(String clientId) {
+        PREFS.put(KEY_MINING_GOOGLE_CLIENT_ID, clientId != null ? clientId.trim() : "");
+    }
+
+    /** OAuth 2.0 Client Secret from Google Cloud Console. */
+    public static String getMiningGoogleSheetsClientSecret() {
+        return PREFS.get(KEY_MINING_GOOGLE_CLIENT_SECRET, "").trim();
+    }
+
+    public static void setMiningGoogleSheetsClientSecret(String clientSecret) {
+        PREFS.put(KEY_MINING_GOOGLE_CLIENT_SECRET, clientSecret != null ? clientSecret.trim() : "");
+    }
+
+    /** Stored refresh token after user signs in (opaque string). */
+    public static String getMiningGoogleSheetsRefreshToken() {
+        return PREFS.get(KEY_MINING_GOOGLE_REFRESH_TOKEN, "").trim();
+    }
+
+    public static void setMiningGoogleSheetsRefreshToken(String refreshToken) {
+        PREFS.put(KEY_MINING_GOOGLE_REFRESH_TOKEN, refreshToken != null ? refreshToken.trim() : "");
+    }
+
     /**
      * Run counter for prospector log; incremented on each FSD jump.
      */
@@ -508,6 +539,21 @@ public static Engine getSpeechEngine() {
         int next = getMiningLogRunCounter() + 1;
         setMiningLogRunCounter(next);
         return next;
+    }
+
+    /**
+     * Commander name written into the prospector log (CSV / Google Sheets). Shown in Log/Spreadsheet block.
+     */
+    public static String getMiningLogCommanderName() {
+        String v = PREFS.get(KEY_MINING_LOG_COMMANDER_NAME, "").trim();
+        if (v.isEmpty()) {
+            v = getProspectorEmail();
+        }
+        return v;
+    }
+
+    public static void setMiningLogCommanderName(String name) {
+        PREFS.put(KEY_MINING_LOG_COMMANDER_NAME, name != null ? name.trim() : "");
     }
 
     // --- UI Font (System / Route / Biology) ---
