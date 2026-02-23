@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import javax.swing.Icon;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -168,6 +169,7 @@ public class SystemTabPanel extends JPanel {
         table.setShowVerticalLines(false);
         table.setIntercellSpacing(new Dimension(0, 0));
         table.setGridColor(EdoUi.Internal.TRANSPARENT);
+        table.setBackground(EdoUi.Internal.TRANSPARENT);
         
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
@@ -180,10 +182,12 @@ public class SystemTabPanel extends JPanel {
         table.setColumnSelectionAllowed(false);
         table.setCellSelectionEnabled(false);
         
+        table.setTableHeader(new org.dce.ed.ui.TransparentTableHeader(table.getColumnModel()));
         JTableHeader header = table.getTableHeader();
+        header.setUI(org.dce.ed.ui.TransparentTableHeaderUI.createUI(header));
         header.setOpaque(false);
         header.setForeground(EdoUi.User.MAIN_TEXT);
-        header.setBackground(EdoUi.Internal.TRANSPARENT);
+        header.setBackground(EdoUi.User.BACKGROUND);
         header.setFont(uiFont.deriveFont(Font.BOLD));
         header.setBorder(null);
         
@@ -197,9 +201,9 @@ public class SystemTabPanel extends JPanel {
                                                            int column) {
                 JLabel label = (JLabel) super.getTableCellRendererComponent(
                         table, value, false, false, row, column);
-
-                label.setOpaque(false);
-                label.setBackground(EdoUi.Internal.TRANSPARENT);
+                boolean transparent = OverlayPreferences.isOverlayTransparent();
+                label.setOpaque(!transparent);
+                label.setBackground(transparent ? EdoUi.Internal.TRANSPARENT : EdoUi.User.BACKGROUND);
                 label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setFont(uiFont.deriveFont(Font.BOLD));
                 label.setHorizontalAlignment(LEFT);
@@ -208,7 +212,6 @@ public class SystemTabPanel extends JPanel {
                 return label;
             }
         });
-
         DefaultTableCellRenderer cellRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
@@ -245,6 +248,10 @@ public class SystemTabPanel extends JPanel {
                     c.setForeground(EdoUi.User.MAIN_TEXT);
                 }
 
+                if (c instanceof JComponent) {
+                    ((JComponent) c).setOpaque(false);
+                }
+                c.setBackground(EdoUi.Internal.TRANSPARENT);
                 return c;
             }
         };
@@ -286,6 +293,10 @@ public class SystemTabPanel extends JPanel {
                     c.setForeground(EdoUi.User.MAIN_TEXT);
                 }
 
+                if (c instanceof JComponent) {
+                    ((JComponent) c).setOpaque(false);
+                }
+                c.setBackground(EdoUi.Internal.TRANSPARENT);
                 return c;
             }
         };
@@ -299,11 +310,14 @@ public class SystemTabPanel extends JPanel {
         scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
+        scrollPane.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
         
         JViewport headerViewport = scrollPane.getColumnHeader();
         if (headerViewport != null) {
+            headerViewport.setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
             headerViewport.setOpaque(false);
             headerViewport.setBackground(EdoUi.Internal.TRANSPARENT);
+            headerViewport.setUI(org.dce.ed.ui.TransparentViewportUI.createUI(headerViewport));
         }
 
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -779,6 +793,8 @@ public class SystemTabPanel extends JPanel {
                                                        int column) {
 
             JLabel c = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            c.setOpaque(false);
+            c.setBackground(EdoUi.Internal.TRANSPARENT);
 
             Row r = tableModel.getRowAt(row);
             boolean isDetailRow = (r != null && r.detail);

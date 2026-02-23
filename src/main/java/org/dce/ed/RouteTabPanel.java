@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.swing.Icon;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -223,6 +224,10 @@ public class RouteTabPanel extends JPanel {
 						false,
 						row,
 						column);
+				if (c instanceof JComponent) {
+					((JComponent) c).setOpaque(false);
+				}
+				c.setBackground(EdoUi.Internal.TRANSPARENT);
 				if (c instanceof JLabel) {
 					c.setForeground(EdoUi.User.MAIN_TEXT);
 					// Add a bit of vertical padding for readability
@@ -277,6 +282,10 @@ public class RouteTabPanel extends JPanel {
 						false,
 						row,
 						column);
+				if (c instanceof JComponent) {
+					((JComponent) c).setOpaque(false);
+				}
+				c.setBackground(EdoUi.Internal.TRANSPARENT);
 				c.setForeground(EdoUi.User.MAIN_TEXT);
 				if (c instanceof JLabel) {
 					// Slight right padding for numbers
@@ -1722,6 +1731,8 @@ public class RouteTabPanel extends JPanel {
 					false,
 					row,
 					column);
+			label.setOpaque(false);
+			label.setBackground(EdoUi.Internal.TRANSPARENT);
 			label.setBorder(new EmptyBorder(3, 0, 3, 0));
 			label.setText("");
 			label.setIcon(null);
@@ -1784,6 +1795,10 @@ public class RouteTabPanel extends JPanel {
 					false,
 					row,
 					column);
+			if (c instanceof JComponent) {
+				((JComponent) c).setOpaque(false);
+			}
+			c.setBackground(EdoUi.Internal.TRANSPARENT);
 			if (c instanceof JLabel) {
 				JLabel l = (JLabel) c;
 				l.setOpaque(false);
@@ -1821,6 +1836,8 @@ public class RouteTabPanel extends JPanel {
 				boolean hasFocus, int row, int column) {
 			JLabel l = (JLabel) super.getTableCellRendererComponent(
 					table, "", false, false, row, column);
+			l.setOpaque(false);
+			l.setBackground(EdoUi.Internal.TRANSPARENT);
 			l.setHorizontalAlignment(SwingConstants.CENTER);
 			l.setBorder(new EmptyBorder(3, 0, 3, 0));
 			Icon icon = null;

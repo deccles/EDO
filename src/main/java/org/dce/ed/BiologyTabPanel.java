@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -107,6 +108,7 @@ private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough 
         table.setShowGrid(false);
 
         table.setOpaque(false);
+        table.setBackground(EdoUi.Internal.TRANSPARENT);
         table.setDefaultRenderer(Object.class, new BioTextCellRenderer(model));
 
         // Columns: Bio | Credits | Min (m) | Samples
@@ -122,6 +124,12 @@ private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough 
         scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
+        scroll.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
+        if (scroll.getColumnHeader() != null) {
+            scroll.getColumnHeader().setOpaque(false);
+            scroll.getColumnHeader().setBackground(EdoUi.Internal.TRANSPARENT);
+            scroll.getColumnHeader().setUI(org.dce.ed.ui.TransparentViewportUI.createUI(scroll.getColumnHeader()));
+        }
 
         mapPanel.setOpaque(false);
 
@@ -677,6 +685,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
     }
 
     private static void styleHeader(JTable table) {
+        table.setTableHeader(new org.dce.ed.ui.TransparentTableHeader(table.getColumnModel()));
         JTableHeader th = table.getTableHeader();
         if (th == null) {
             return;
@@ -684,7 +693,7 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
         th.setOpaque(false);
         th.setForeground(EdoUi.User.MAIN_TEXT);
-        th.setBackground(EdoUi.Internal.TRANSPARENT);
+        th.setBackground(EdoUi.User.BACKGROUND);
 
         th.setDefaultRenderer(new DefaultTableCellRenderer() {
 
@@ -700,8 +709,9 @@ private static List<BioRow> buildRows(BodyInfo body) {
                     int column) {
 
                 JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
-                label.setOpaque(false);
-                label.setBackground(EdoUi.Internal.TRANSPARENT);
+                boolean transparent = OverlayPreferences.isOverlayTransparent();
+                label.setOpaque(!transparent);
+                label.setBackground(transparent ? EdoUi.Internal.TRANSPARENT : EdoUi.User.BACKGROUND);
                 label.setForeground(EdoUi.User.MAIN_TEXT);
                 label.setBorder(new EmptyBorder(0, 6, 0, 6));
                 return label;
@@ -872,10 +882,11 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 int column) {
 
             JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            label.setOpaque(false);
+            label.setBackground(EdoUi.Internal.TRANSPARENT);
 
-            if (!isSelected) {
-                label.setOpaque(false);
-            } else {
+            if (isSelected) {
+                label.setBackground(EdoUi.Internal.WHITE_ALPHA_64);
                 label.setOpaque(true);
             }
 
@@ -910,8 +921,14 @@ private static List<BioRow> buildRows(BodyInfo body) {
             if (!(value instanceof BioRow)) {
                 DefaultTableCellRenderer fallback = new DefaultTableCellRenderer();
                 fallback.setOpaque(false);
+                fallback.setBackground(EdoUi.Internal.TRANSPARENT);
                 fallback.setForeground(EdoUi.User.MAIN_TEXT);
-                return fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                Component comp = fallback.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (comp instanceof JComponent) {
+                    ((JComponent) comp).setOpaque(false);
+                }
+                comp.setBackground(EdoUi.Internal.TRANSPARENT);
+                return comp;
             }
 
             BioRow r = (BioRow) value;

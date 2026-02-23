@@ -9,6 +9,7 @@ import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -52,6 +53,8 @@ import javax.swing.plaf.LayerUI;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.logreader.event.LocationEvent;
@@ -247,13 +250,14 @@ private final JLayer<JTable> cargoLayer;
 		table.setBackground(EdoUi.Internal.TRANSPARENT);
 		table.setRowHeight(22);
 
-		table.setTableHeader(new TransparentTableHeader(table.getColumnModel()));
+		table.setTableHeader(new org.dce.ed.ui.TransparentTableHeader(table.getColumnModel()));
 
 		JTableHeader th = table.getTableHeader();
 		if (th != null) {
-			th.setOpaque(false);
+			th.setUI(org.dce.ed.ui.TransparentTableHeaderUI.createUI(th));
+			th.setOpaque(!OverlayPreferences.isOverlayTransparent());
 			th.setForeground(EdoUi.User.MAIN_TEXT);
-			th.setBackground(EdoUi.Internal.TRANSPARENT);
+			th.setBackground(EdoUi.User.BACKGROUND);
 			th.setBorder(null);
 			th.setReorderingAllowed(false);
 			th.setFocusable(false);
@@ -304,8 +308,12 @@ private final JLayer<JTable> cargoLayer;
 					l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
 					l.setBorder(new EmptyBorder(3, 4, 3, 4));
 					l.setOpaque(false);
+					l.setBackground(EdoUi.Internal.TRANSPARENT);
 				}
-
+				if (c instanceof JComponent) {
+					((JComponent) c).setOpaque(false);
+				}
+				c.setBackground(EdoUi.Internal.TRANSPARENT);
 				return c;
 			}
 
@@ -340,9 +348,11 @@ private final JLayer<JTable> cargoLayer;
 
 		JViewport headerViewport = materialsScroller.getColumnHeader();
 		if (headerViewport != null) {
+			headerViewport.setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
 			headerViewport.setOpaque(false);
 			headerViewport.setBackground(EdoUi.Internal.TRANSPARENT);
 			headerViewport.setBorder(null);
+			headerViewport.setUI(org.dce.ed.ui.TransparentViewportUI.createUI(headerViewport));
 		}
 
 		configureOverlayScroller(materialsScroller);
@@ -369,10 +379,11 @@ private final JLayer<JTable> cargoLayer;
 		cargoTable.setBackground(EdoUi.Internal.TRANSPARENT);
 		cargoTable.setRowHeight(22);
 
-		cargoTable.setTableHeader(new TransparentTableHeader(cargoTable.getColumnModel()));
+		cargoTable.setTableHeader(new org.dce.ed.ui.TransparentTableHeader(cargoTable.getColumnModel()));
 
 		JTableHeader cargoHeader = cargoTable.getTableHeader();
 		if (cargoHeader != null) {
+			cargoHeader.setUI(org.dce.ed.ui.TransparentTableHeaderUI.createUI(cargoHeader));
 			cargoHeader.setOpaque(false);
 			cargoHeader.setForeground(EdoUi.User.MAIN_TEXT);
 			cargoHeader.setBackground(EdoUi.Internal.TRANSPARENT);
@@ -406,8 +417,10 @@ private final JLayer<JTable> cargoLayer;
 
 		JViewport cargoHeaderViewport = cargoScroller.getColumnHeader();
 		if (cargoHeaderViewport != null) {
+			cargoHeaderViewport.setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
 			cargoHeaderViewport.setOpaque(false);
 			cargoHeaderViewport.setBackground(EdoUi.Internal.TRANSPARENT);
+			cargoHeaderViewport.setUI(org.dce.ed.ui.TransparentViewportUI.createUI(cargoHeaderViewport));
 			cargoHeaderViewport.setBorder(null);
 		}
 
@@ -435,6 +448,10 @@ private final JLayer<JTable> cargoLayer;
 			@Override
 			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
 				Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+				if (c instanceof JComponent) {
+					((JComponent) c).setOpaque(false);
+				}
+				c.setBackground(EdoUi.Internal.TRANSPARENT);
 				if (spreadsheetModel != null && spreadsheetModel.isSummaryRow(row)) {
 					c.setFont(c.getFont().deriveFont(Font.BOLD).deriveFont(c.getFont().getSize2D() + 1f));
 				}
@@ -442,11 +459,16 @@ private final JLayer<JTable> cargoLayer;
 			}
 		};
 		spreadsheetTable.setDefaultRenderer(Object.class, spreadCellRenderer);
+		spreadsheetTable.setTableHeader(new org.dce.ed.ui.TransparentTableHeader(spreadsheetTable.getColumnModel()));
 		JTableHeader spreadHeader = spreadsheetTable.getTableHeader();
 		if (spreadHeader != null) {
+			spreadHeader.setUI(org.dce.ed.ui.TransparentTableHeaderUI.createUI(spreadHeader));
 			spreadHeader.setOpaque(false);
 			spreadHeader.setBackground(EdoUi.Internal.TRANSPARENT);
 			spreadHeader.setForeground(EdoUi.User.MAIN_TEXT);
+			spreadHeader.putClientProperty("JTableHeader.focusCellBackground", null);
+			spreadHeader.putClientProperty("JTableHeader.cellBorder", null);
+			spreadHeader.setDefaultRenderer(new HeaderRenderer());
 		}
 		spreadsheetScroller = new JScrollPane(spreadsheetTable);
 		spreadsheetScroller.setOpaque(false);
@@ -457,8 +479,10 @@ private final JLayer<JTable> cargoLayer;
 		spreadsheetScroller.setViewportBorder(null);
 		JViewport spreadHeaderViewport = spreadsheetScroller.getColumnHeader();
 		if (spreadHeaderViewport != null) {
+			spreadHeaderViewport.setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
 			spreadHeaderViewport.setOpaque(false);
 			spreadHeaderViewport.setBackground(EdoUi.Internal.TRANSPARENT);
+			spreadHeaderViewport.setUI(org.dce.ed.ui.TransparentViewportUI.createUI(spreadHeaderViewport));
 			spreadHeaderViewport.setBorder(null);
 		}
 		configureOverlayScroller(spreadsheetScroller);
@@ -1149,6 +1173,12 @@ return EdoUi.User.MAIN_TEXT;
         table.setOpaque(false);
         cargoTable.setOpaque(false);
         spreadsheetTable.setOpaque(false);
+        // Keep headers non-opaque in transparent mode so backing shows through.
+        if (!opaque) {
+            if (table.getTableHeader() != null) table.getTableHeader().setOpaque(false);
+            if (cargoTable.getTableHeader() != null) cargoTable.getTableHeader().setOpaque(false);
+            if (spreadsheetTable.getTableHeader() != null) spreadsheetTable.getTableHeader().setOpaque(false);
+        }
 
         repaint();
     }
@@ -1924,21 +1954,6 @@ String getName() {
 		}
 	}
 
-private static final class TransparentTableHeader extends JTableHeader {
-		 private static final long serialVersionUID = 1L;
-
-		 TransparentTableHeader(TableColumnModel cm) {
-			 super(cm);
-			 setOpaque(false);
-			 setBackground(EdoUi.Internal.TRANSPARENT);
-		 }
-
-		 @Override
-		 protected void paintComponent(Graphics g) {
-			 super.paintComponent(g);
-		 }
-	 }
-
 	 private static final class HeaderRenderer extends DefaultTableCellRenderer {
 		 private static final long serialVersionUID = 1L;
 
@@ -1955,27 +1970,53 @@ private static final class TransparentTableHeader extends JTableHeader {
 					 false,
 					 row,
 					 column);
-
-			 label.setOpaque(false);
-			 label.setBackground(EdoUi.Internal.TRANSPARENT);
+			 boolean transparent = OverlayPreferences.isOverlayTransparent();
+			 label.setOpaque(!transparent);
+			 label.setBackground(transparent ? EdoUi.Internal.TRANSPARENT : EdoUi.User.BACKGROUND);
 			 label.setForeground(EdoUi.Internal.tableHeaderForeground());
 			 label.setFont(label.getFont().deriveFont(Font.BOLD));
 			 label.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
-			 label.setBorder(new CompoundBorder(
-					 new MatteBorder(2, 0, 0, 0, EdoUi.Internal.tableHeaderTopBorder()),
-					 new EmptyBorder(0, 4, 0, 4)
-			 ));
+			 label.setBorder(transparent
+					 ? new EmptyBorder(2, 4, 0, 4)  // no MatteBorder when transparent so no opaque paint
+					 : new CompoundBorder(
+							 new MatteBorder(2, 0, 0, 0, EdoUi.Internal.tableHeaderTopBorder()),
+							 new EmptyBorder(0, 4, 0, 4)));
 			 return label;
 		 }
 
 		 @Override
 		 protected void paintComponent(Graphics g) {
+			 boolean transparent = OverlayPreferences.isOverlayTransparent();
+			 setOpaque(!transparent);
+			 setBackground(transparent ? EdoUi.Internal.TRANSPARENT : EdoUi.User.BACKGROUND);
 			 Graphics2D g2 = (Graphics2D) g.create();
 			 g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
 					 RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
-
-			 super.paintComponent(g2);
-
+			 if (!transparent) {
+				 g2.setColor(EdoUi.User.BACKGROUND);
+				 g2.fillRect(0, 0, getWidth(), getHeight());
+				 super.paintComponent(g2);
+			 } else {
+				 // Do not call super: avoid any LAF background. Paint only text and line.
+				 String text = getText();
+				 if (text != null && !text.isEmpty()) {
+					 g2.setFont(getFont());
+					 g2.setColor(getForeground());
+					 FontMetrics fm = g2.getFontMetrics();
+					 int top = 2;
+					 int pad = 4;
+					 int y = top + (getHeight() - top) / 2 + fm.getAscent() / 2 - fm.getDescent() / 2;
+					 int x;
+					 if (getHorizontalAlignment() == SwingConstants.RIGHT) {
+						 x = getWidth() - pad - fm.stringWidth(text);
+					 } else if (getHorizontalAlignment() == SwingConstants.CENTER) {
+						 x = (getWidth() - fm.stringWidth(text)) / 2;
+					 } else {
+						 x = pad;
+					 }
+					 g2.drawString(text, x, y);
+				 }
+			 }
 			 g2.setColor(EdoUi.ED_ORANGE_TRANS);
 			 int y = getHeight() - 1;
 			 g2.drawLine(0, y, getWidth(), y);
