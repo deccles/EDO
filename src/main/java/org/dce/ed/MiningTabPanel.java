@@ -1451,7 +1451,19 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 
 	}
 
+	/** For tests: number of rows in the prospector (latest scan) table. */
+	public int getProspectorTableRowCount() {
+		return model.getRowCount();
+	}
 
+	/** For tests: displayed cell value at (row, column) in the prospector table; columns 0=Material, 1=Percent, 2=Avg Cr/t, 3=Est. Tons, 4=Est. Value. */
+	public String getProspectorTableValueAt(int row, int column) {
+		if (row < 0 || row >= model.getRowCount() || column < 0 || column >= model.getColumnCount()) {
+			return null;
+		}
+		Object v = model.getValueAt(row, column);
+		return v != null ? v.toString() : null;
+	}
 
 	/**
 	 * Use the INARA CSV display name if present; fall back to a friendly formatting of the journal token.
@@ -1723,11 +1735,11 @@ String getName() {
 				 }
 				 return pctFmt.format(r.getProportionPercent());
 			 case 2:
-				 return r.getAvgSell() <= 0 ? "" : intFmt.format(r.getAvgSell());
+				 return r.getAvgSell() <= 0 ? "0" : intFmt.format(r.getAvgSell());
 			 case 3:
 				 return tonsFmt.format(r.getExpectedTons());
 			 case 4:
-				 return r.getAvgSell() <= 0 ? "" : intFmt.format(Math.round(r.getEstimatedValue()));
+				 return r.getAvgSell() <= 0 ? "0" : intFmt.format(Math.round(r.getEstimatedValue()));
 			 default:
 				 return "";
 			 }
