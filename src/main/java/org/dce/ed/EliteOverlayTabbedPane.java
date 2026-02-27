@@ -101,7 +101,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private final BiologyTabPanel biologyTab;
 	private final MiningTabPanel miningTab;
 
-	private final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
+	private static final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 
 	private final GalacticAveragePrices galacticAvgPrices = GalacticAveragePrices.loadDefault();
 
@@ -924,7 +924,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (!lowLimpets) {
 			return;
 		}
-		TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 		tts.speakf("Did you forget your limpets again commander?");
 	}
 
