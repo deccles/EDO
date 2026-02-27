@@ -339,11 +339,20 @@ public class EliteOverlayTabbedPane extends JPanel {
         }
 
         if (event instanceof org.dce.ed.logreader.event.StatusEvent se) {
+        	boolean wasDocked = currentlyDocked;
         	setCurrentlyDocked(se.isDocked());
+        	if (wasDocked && !se.isDocked()) {
+        		SwingUtilities.invokeLater(() -> maybeRemindAboutLimpets());
+        	}
         } else if (event instanceof org.dce.ed.logreader.event.LocationEvent le) {
         	setCurrentlyDocked(le.isDocked());
         }
 
+
+		if (event.getType() == EliteEventType.UNDOCKED) {
+			setCurrentlyDocked(false);
+			SwingUtilities.invokeLater(() -> maybeRemindAboutLimpets());
+		}
 
 		if (event instanceof FsdJumpEvent e) {
 			if (e.getDocked() == null || e.getDocked()) {
@@ -363,10 +372,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 		    }
 		}
 
-		if (event.getType() == EliteEventType.UNDOCKED) {
-			setCurrentlyDocked(false);
-			SwingUtilities.invokeLater(() -> maybeRemindAboutLimpets());
-		}
 	}
 	private void showMiningTabFromStatusWatcher() {
 	    SwingUtilities.invokeLater(() -> selectTab(CARD_MINING, miningButton));
