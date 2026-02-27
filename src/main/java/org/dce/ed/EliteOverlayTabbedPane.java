@@ -287,6 +287,13 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 	private static volatile boolean currentlyDocked = false;
 	private final CopyOnWriteArrayList<Consumer<Boolean>> dockedListeners = new CopyOnWriteArrayList<>();
+	private final CopyOnWriteArrayList<Runnable> loadoutChangeListeners = new CopyOnWriteArrayList<>();
+
+	public void addLoadoutChangeListener(Runnable listener) {
+		if (listener != null) {
+			loadoutChangeListeners.add(listener);
+		}
+	}
 
 	public boolean isCurrentlyDocked() {
 		return currentlyDocked;
@@ -326,6 +333,9 @@ public class EliteOverlayTabbedPane extends JPanel {
 	public void handleLogEvent(EliteLogEvent event) {
         if (event instanceof LoadoutEvent e) {
         	loadoutEventx = e;
+        	for (Runnable r : loadoutChangeListeners) {
+        		SwingUtilities.invokeLater(r);
+        	}
         }
 
         if (event instanceof org.dce.ed.logreader.event.StatusEvent se) {
@@ -355,7 +365,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		if (event.getType() == EliteEventType.UNDOCKED) {
 			setCurrentlyDocked(false);
-			maybeRemindAboutLimpets();
+			SwingUtilities.invokeLater(() -> maybeRemindAboutLimpets());
 		}
 	}
 	private void showMiningTabFromStatusWatcher() {

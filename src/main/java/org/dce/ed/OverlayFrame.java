@@ -425,6 +425,7 @@ private void installLowLimpetStatusUpdater() {
             lastDocked = docked;
             updateLeftStatusLabel();
         });
+        tp.addLoadoutChangeListener(this::updateLeftStatusLabel);
     }
 
     CargoMonitor.getInstance().addListener(snap -> {
