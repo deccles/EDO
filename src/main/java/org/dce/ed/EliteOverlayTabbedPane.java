@@ -918,10 +918,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 
 		if (!hasMiningEquipment(loadout)) {
+			System.out.println("Not a mining ship");
 			return;
 		}
 
 		if (!lowLimpets) {
+			System.out.println("Not low limpets");
 			return;
 		}
 		tts.speakf("Did you forget your limpets again commander?");
