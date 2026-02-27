@@ -881,11 +881,22 @@ public class EliteOverlayTabbedPane extends JPanel {
 		CargoMonitor.Snapshot snap = CargoMonitor.getInstance().getSnapshot();
 		int numLimpets = (snap == null) ? 0 : snap.getLimpetCount();
 
+		// Use loadout from journal if not yet set (e.g. Undocked fired before Loadout when switching ships)
+		LoadoutEvent loadout = getLatestLoadout();
+		if (loadout == null) {
+			try {
+				EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+				loadout = (LoadoutEvent) r.findMostRecentEvent(EliteEventType.LOADOUT, 1);
+			} catch (IOException e) {
+				// ignore; we'll skip the reminder
+			}
+		}
+
 		boolean lowLimpets = false;
 		if (OverlayPreferences.getMiningLowLimpetReminderMode() == MiningLimpetReminderMode.COUNT) {
 			lowLimpets = numLimpets < OverlayPreferences.getMiningLowLimpetReminderThreshold();
 		} else {
-			Integer cargoCapacity = (getLatestLoadout() == null) ? 0 : getLatestLoadout().getCargoCapacity();
+			Integer cargoCapacity = (loadout == null) ? null : loadout.getCargoCapacity();
 
 			if (cargoCapacity == null || cargoCapacity <= 0) {
 				// Without CargoCapacity, the percent threshold is meaningless.
@@ -896,7 +907,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 			lowLimpets = percentage < OverlayPreferences.getMiningLowLimpetReminderThresholdPercent();
 		}
 
-		if (!hasMiningEquipment(loadoutEventx)) {
+		if (!hasMiningEquipment(loadout)) {
 			return;
 		}
 
