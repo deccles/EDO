@@ -215,7 +215,9 @@ private void installCarrierJumpTitleUpdater() {
             if (event instanceof CarrierJumpRequestEvent) {
                 CarrierJumpRequestEvent e = (CarrierJumpRequestEvent) event;
                 if (e.getDepartureTime() != null) {
-                    startCarrierJumpCountdown(e.getDepartureTime(), e.getSystemName());
+                    Instant dep = e.getDepartureTime();
+                    String sys = e.getSystemName();
+                    SwingUtilities.invokeLater(() -> startCarrierJumpCountdown(dep, sys));
                 }
                 if (OverlayPreferences.isTextNotificationsEnabled()) {
 					try {
@@ -233,13 +235,13 @@ private void installCarrierJumpTitleUpdater() {
             }
 
             if (event.getType() == EliteEventType.CARRIER_JUMP_CANCELLED) {
-                clearCarrierJumpCountdown();
+                SwingUtilities.invokeLater(this::clearCarrierJumpCountdown);
                 return;
             }
 
             if (event.getType() == EliteEventType.CARRIER_JUMP) {
-                clearCarrierJumpCountdown();
-                
+                SwingUtilities.invokeLater(this::clearCarrierJumpCountdown);
+
                 CarrierJumpEvent e = (CarrierJumpEvent) event;
                 
                 if (OverlayPreferences.isTextNotificationsEnabled()) {
