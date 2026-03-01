@@ -352,7 +352,10 @@ private void installCarrierJumpTitleUpdater() {
             }
 
             if (event.getType() == EliteEventType.CARRIER_JUMP) {
-                SwingUtilities.invokeLater(this::clearCarrierJumpCountdown);
+                SwingUtilities.invokeLater(() -> {
+                    clearCarrierJumpCountdownStateOnly();
+                    startCarrierJumpCooldown();
+                });
             }
         });
     } catch (Exception ex) {
