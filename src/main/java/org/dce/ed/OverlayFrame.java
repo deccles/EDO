@@ -466,7 +466,7 @@ private void clearCarrierJumpCountdown() {
 }
 
 private void updateRightStatusDefault() {
-    if (carrierJumpDepartureTime != null) {
+    if (carrierJumpDepartureTime != null || carrierJumpCooldownEndTime != null) {
         return;
     }
     publishRightStatusText(formatExoCredits(exoCreditsTotal));
@@ -474,7 +474,7 @@ private void updateRightStatusDefault() {
 
 private static String formatExoCredits(long credits) {
     if (credits <= 0) {
-        return "Bio: 0 Cr";
+        return "";
     }
 
     double d = credits;
