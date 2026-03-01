@@ -33,6 +33,8 @@ import javax.swing.border.LineBorder;
 
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.logreader.EliteEventType;
+import org.dce.ed.session.EdoSessionPersistence;
+import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.CarrierJumpEvent;
@@ -100,6 +102,9 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private boolean carrierJumpTextNotificationSent;
 
     private long exoCreditsTotal;
+
+    /** Debounced save of session state (500 ms after last tab change). */
+    private final Timer sessionSaveTimer = new Timer(500, e -> saveSessionState());
     
     public static OverlayFrame overlayFrame = null;
     
@@ -146,10 +151,11 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         setResizable(true);
         setMinimumSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
 
-        // Save bounds on close
+        // Save bounds and session state on close
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
+                saveSessionState();
                 closeOverlay();
             }
         });
@@ -181,6 +187,69 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         installExoCreditsTracker();
         installTabbedPaneJournalListener();
         installLowLimpetStatusUpdater();
+        sessionSaveTimer.setRepeats(false);
+        installSessionPersistence();
+    }
+
+    private void installSessionPersistence() {
+        EliteOverlayTabbedPane tabs = (contentPanel != null) ? contentPanel.getTabbedPane() : null;
+        if (tabs == null) return;
+        Runnable debouncedSave = () -> {
+            sessionSaveTimer.stop();
+            sessionSaveTimer.start();
+        };
+        tabs.getRouteTabPanel().setSessionStateChangeCallback(debouncedSave);
+        tabs.getSystemTabPanel().setSessionStateChangeCallback(debouncedSave);
+        restoreSessionState();
+    }
+
+    private void saveSessionState() {
+        EliteOverlayTabbedPane tabs = (contentPanel != null) ? contentPanel.getTabbedPane() : null;
+        if (tabs == null) return;
+        EdoSessionState state = new EdoSessionState();
+        tabs.getRouteTabPanel().fillSessionState(state);
+        tabs.getSystemTabPanel().fillSessionState(state);
+        fillCarrierSessionState(state);
+        EdoSessionPersistence.save(state);
+    }
+
+    private void fillCarrierSessionState(EdoSessionState state) {
+        if (state == null) return;
+        if (carrierJumpDepartureTime != null) {
+            state.setCarrierJumpDepartureTime(carrierJumpDepartureTime.toString());
+        }
+        state.setCarrierJumpTargetSystem(carrierJumpTargetSystem);
+        state.setCarrierJumpTextNotificationSent(carrierJumpTextNotificationSent);
+    }
+
+    private void restoreSessionState() {
+        EdoSessionState state = EdoSessionPersistence.load();
+        EliteOverlayTabbedPane tabs = (contentPanel != null) ? contentPanel.getTabbedPane() : null;
+        if (tabs == null) return;
+        tabs.getRouteTabPanel().applySessionState(state);
+        tabs.getSystemTabPanel().applySessionState(state);
+        applyCarrierSessionState(state);
+    }
+
+    private void applyCarrierSessionState(EdoSessionState state) {
+        if (state == null || state.getCarrierJumpDepartureTime() == null || state.getCarrierJumpDepartureTime().isBlank()) return;
+        try {
+            Instant departure = Instant.parse(state.getCarrierJumpDepartureTime());
+            if (departure.isAfter(Instant.now())) {
+                carrierJumpDepartureTime = departure;
+                carrierJumpTargetSystem = state.getCarrierJumpTargetSystem();
+                carrierJumpTextNotificationSent = Boolean.TRUE.equals(state.getCarrierJumpTextNotificationSent());
+                if (carrierJumpCountdownTimer != null) {
+                    carrierJumpCountdownTimer.stop();
+                }
+                carrierJumpCountdownTimer = new Timer(500, e -> updateCarrierJumpCountdown());
+                carrierJumpCountdownTimer.setRepeats(true);
+                carrierJumpCountdownTimer.start();
+                updateCarrierJumpCountdown();
+            }
+        } catch (Exception e) {
+            // ignore invalid or old timestamp
+        }
     }
 
     /** Single journal listener that delegates to the current tabbed pane. Prevents duplicate prospector/CSV handling. */
@@ -275,6 +344,7 @@ private void startCarrierJumpCountdown(Instant departureTime, String targetSyste
     carrierJumpCountdownTimer.start();
 
     updateCarrierJumpCountdown();
+    saveSessionState();
 }
 
 private void updateCarrierJumpCountdown() {
@@ -327,6 +397,7 @@ private void clearCarrierJumpCountdown() {
     }
 
     updateRightStatusDefault();
+    saveSessionState();
 }
 
 private void updateRightStatusDefault() {
@@ -532,6 +603,7 @@ private void updateLeftStatusLabel() {
 
         if (contentPanel != null) {
             contentPanel.rebuildTabbedPane();
+            installSessionPersistence();
         }
 
         repaint();
