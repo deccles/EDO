@@ -23,6 +23,7 @@ import java.text.NumberFormat;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import java.util.prefs.Preferences;
 
 import javax.swing.JComponent;
@@ -40,7 +41,6 @@ import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
-import org.dce.ed.notifications.TextNotificationSender;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 
@@ -51,7 +51,6 @@ import com.sun.jna.platform.win32.User32;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser;
 
-import jakarta.mail.MessagingException;
 import org.dce.ed.ui.EdoUi;
 
 public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
@@ -105,6 +104,46 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
 
     /** Debounced save of session state (500 ms after last tab change). */
     private final Timer sessionSaveTimer = new Timer(500, e -> saveSessionState());
+
+    /** Single entry point for right-hand status: whichever window is visible gets updates. */
+    private Consumer<String> rightStatusListener = this::setRightStatusTextOnTitleBar;
+
+    public void setRightStatusListener(Consumer<String> listener) {
+        this.rightStatusListener = listener != null ? listener : this::setRightStatusTextOnTitleBar;
+    }
+
+    private void setRightStatusTextOnTitleBar(String text) {
+        if (titleBar != null) titleBar.setRightStatusText(text);
+    }
+
+    private void publishRightStatusText(String text) {
+        rightStatusListener.accept(text);
+    }
+
+    public void refreshRightStatusDisplay() {
+        publishRightStatusText(getRightStatusText());
+    }
+
+    public String getRightStatusText() {
+        if (carrierJumpDepartureTime != null) {
+            long seconds = Math.max(0, carrierJumpDepartureTime.getEpochSecond() - Instant.now().getEpochSecond());
+            long minutes = seconds / 60;
+            long secs = seconds % 60;
+            String countdown;
+            if (minutes >= 60) {
+                long hours = minutes / 60;
+                minutes = minutes % 60;
+                countdown = String.format(Locale.US, "FC jump T-%d:%02d:%02d", hours, minutes, secs);
+            } else {
+                countdown = String.format(Locale.US, "FC jump T-%d:%02d", minutes, secs);
+            }
+            if (carrierJumpTargetSystem != null && !carrierJumpTargetSystem.isBlank()) {
+                countdown += " → " + carrierJumpTargetSystem;
+            }
+            return countdown;
+        }
+        return formatExoCredits(exoCreditsTotal);
+    }
     
     public static OverlayFrame overlayFrame = null;
     
@@ -284,45 +323,20 @@ private void installCarrierJumpTitleUpdater() {
             if (event instanceof CarrierJumpRequestEvent) {
                 CarrierJumpRequestEvent e = (CarrierJumpRequestEvent) event;
                 if (e.getDepartureTime() != null) {
-                    startCarrierJumpCountdown(e.getDepartureTime(), e.getSystemName());
-                }
-                if (OverlayPreferences.isTextNotificationsEnabled()) {
-					try {
-						TextNotificationSender.sendText(
-						        OverlayPreferences.getTextNotificationAddress(),
-						        "EDO",
-						        "Fleet Carrier jumping to " + e.getBody() + " in 15 minutes"
-						);
-					} catch (MessagingException e1) {
-						// TODO Auto-generated catch block
-						e1.printStackTrace();
-					}
+                    Instant dep = e.getDepartureTime();
+                    String sys = e.getSystemName();
+                    SwingUtilities.invokeLater(() -> startCarrierJumpCountdown(dep, sys));
                 }
                 return;
             }
 
             if (event.getType() == EliteEventType.CARRIER_JUMP_CANCELLED) {
-                clearCarrierJumpCountdown();
+                SwingUtilities.invokeLater(this::clearCarrierJumpCountdown);
                 return;
             }
 
             if (event.getType() == EliteEventType.CARRIER_JUMP) {
-                clearCarrierJumpCountdown();
-                
-                CarrierJumpEvent e = (CarrierJumpEvent) event;
-                
-                if (OverlayPreferences.isTextNotificationsEnabled()) {
-					try {
-						TextNotificationSender.sendText(
-						        OverlayPreferences.getTextNotificationAddress(),
-						        "EDO",
-						        "Fleet Carrier " + e.getStationName() + " arriving at " + e.getBody()
-						);
-					} catch (MessagingException e1) {
-						// TODO Auto-generated catch block
-						e1.printStackTrace();
-					}
-                }
+                SwingUtilities.invokeLater(this::clearCarrierJumpCountdown);
             }
         });
     } catch (Exception ex) {
@@ -353,7 +367,7 @@ private void updateCarrierJumpCountdown() {
     }
 
     if (carrierJumpDepartureTime == null) {
-        titleBar.setRightStatusText("");
+        publishRightStatusText("");
         return;
     }
 
@@ -378,7 +392,7 @@ private void updateCarrierJumpCountdown() {
         countdown += " → " + carrierJumpTargetSystem;
     }
 
-    titleBar.setRightStatusText(countdown);
+    publishRightStatusText(countdown);
 
     if (Instant.now().isAfter(carrierJumpDepartureTime.plusSeconds(5))) {
         maybeSendCarrierJumpTextNotification();
@@ -401,16 +415,10 @@ private void clearCarrierJumpCountdown() {
 }
 
 private void updateRightStatusDefault() {
-    if (titleBar == null) {
-        return;
-    }
-
-    // Carrier countdown always wins.
     if (carrierJumpDepartureTime != null) {
         return;
     }
-
-    titleBar.setRightStatusText(formatExoCredits(exoCreditsTotal));
+    publishRightStatusText(formatExoCredits(exoCreditsTotal));
 }
 
 private static String formatExoCredits(long credits) {
