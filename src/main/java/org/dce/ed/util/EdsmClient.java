@@ -44,7 +44,7 @@ import com.google.gson.reflect.TypeToken;
 
 public class EdsmClient {
 
-	private static final boolean DEBUG_SPHERE_SYSTEMS = true;
+	private static final boolean DEBUG_SPHERE_SYSTEMS = false;
 	
     private static final String BASE_URL = "https://www.edsm.net";
 
@@ -257,18 +257,43 @@ public class EdsmClient {
 
         // EDSM sometimes returns {} instead of [] when broken, so detect "no data"
         if (result == null || result.length == 0) {
-            // 1. Reverse-lookup system name from coordinates
-            //    (calls your existing "getSystem" by proximity—works if EDSM knows coords)
             SystemResponse center = systemFromCoords(x, y, z);
-            if (center != null && center.name != null) {
+            if (center != null && center.name != null && !center.name.trim().isEmpty()) {
+                // Retry with same endpoint using systemName (official API)
+                int radius = Math.min(radiusLy, 100);
+                String urlByName = BASE_URL + "/api-v1/sphere-systems"
+                        + "?systemName=" + encode(center.name.trim())
+                        + "&radius=" + radius
+                        + "&showCoordinates=1&showId=1&showInformation=1";
+                SphereSystemsResponse[] byName = getSphereSystems(urlByName);
+                if (byName != null && byName.length > 0) {
+                    return byName;
+                }
+                // Last resort: legacy prefix-based workaround (same sector only)
                 return sphereSystemsLocal(center.name, radiusLy);
             }
-
-            // If systemFromCoords doesn't exist, return empty
             return new SphereSystemsResponse[0];
         }
 
         return result;
+    }
+
+    /**
+     * Query systems within a radius of a system by name (official EDSM sphere-systems API).
+     * Use this when the caller already has the system name to avoid coordinate lookup.
+     */
+    public SphereSystemsResponse[] sphereSystems(String systemName, int radiusLy)
+            throws IOException, InterruptedException {
+        if (systemName == null || systemName.trim().isEmpty()) {
+            return new SphereSystemsResponse[0];
+        }
+        int radius = Math.min(radiusLy, 100);
+        String url = BASE_URL + "/api-v1/sphere-systems"
+                + "?systemName=" + encode(systemName.trim())
+                + "&radius=" + radius
+                + "&showCoordinates=1&showId=1&showInformation=1";
+        SphereSystemsResponse[] result = getSphereSystems(url);
+        return result != null ? result : new SphereSystemsResponse[0];
     }
 
     // ----------------- Bodies -----------------
@@ -504,8 +529,9 @@ public class EdsmClient {
         return Math.sqrt(dx*dx + dy*dy + dz*dz);
     }
     /**
-     * Local sphere search using name prefix + coordinate filtering.
-     * This bypasses EDSM's broken /sphere-systems endpoint.
+     * Legacy fallback: local sphere search using sector name prefix + coordinate filtering.
+     * Only used when the official sphere-systems API (by coords and by systemName) returns empty.
+     * May be removed once EDSM sphere-systems is confirmed stable; results are limited to same sector.
      */
     public SphereSystemsResponse[] sphereSystemsLocal(String centerSystemName, int radiusLy)
             throws IOException, InterruptedException {
