@@ -42,6 +42,7 @@ import javax.swing.table.TableCellRenderer;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
+import org.dce.ed.logreader.event.SaasignalsFoundEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.BodyInfo;
@@ -188,7 +189,7 @@ if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
             return;
         }
 
-        if (event instanceof BioScanPredictionEvent || event instanceof ScanOrganicEvent) {
+        if (event instanceof BioScanPredictionEvent || event instanceof ScanOrganicEvent || event instanceof SaasignalsFoundEvent) {
             refreshTableForCurrentBody();
         }
     }
@@ -311,6 +312,10 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
         Map<String, BioCandidate> candByKey = new HashMap<>();
 
+        // If DSS has revealed which genera are present, only show predictions for those genera.
+        // If we've scanned species on the planet, for that genus only show the identified species (not other predictions).
+        Set<String> observedGenusLower = observedGenusSet(body);
+        Map<String, Set<String>> observedSpeciesByGenus = observedSpeciesByGenus(body);
         List<BioCandidate> preds = body.getPredictions();
         if (preds != null) {
             for (BioCandidate c : preds) {
@@ -320,6 +325,27 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 String dn = c.getDisplayName();
                 if (dn == null || dn.isBlank()) {
                     continue;
+                }
+                String predGenus = genusFromDisplayName(dn);
+                String predGenusNorm = normalizeGenus(predGenus);
+                if (!observedGenusLower.isEmpty()) {
+                    boolean genusMatch = false;
+                    for (String obs : observedGenusLower) {
+                        if (predGenusNorm.equals(normalizeGenus(obs))) {
+                            genusMatch = true;
+                            break;
+                        }
+                    }
+                    if (!genusMatch) {
+                        continue;
+                    }
+                }
+                // For genera where we've identified species by scanning, only show those species.
+                Set<String> identifiedForGenus = observedSpeciesByGenus.get(predGenusNorm);
+                if (identifiedForGenus != null && !identifiedForGenus.isEmpty()) {
+                    if (!identifiedForGenus.contains(canonicalBioKey(dn))) {
+                        continue;
+                    }
                 }
                 rows.add(new BioRow(dn));
                 candByKey.put(canonicalBioKey(dn), c);
@@ -395,7 +421,9 @@ private static List<BioRow> buildRows(BodyInfo body) {
 
         collapseRowsByGenus(body, rows, candByKey);
 
-        // Complete first, then in-progress, then unstarted
+        // Complete first, then in-progress, then unstarted; within each group sort by value (credits) desc, then name.
+        final boolean firstBonusForSort = firstBonus;
+        final Map<String, BioCandidate> candByKeyForSort = candByKey;
         Collections.sort(rows, new Comparator<BioRow>() {
             @Override
             public int compare(BioRow a, BioRow b) {
@@ -403,6 +431,12 @@ private static List<BioRow> buildRows(BodyInfo body) {
                 int rb = rank(b.sampleCount);
                 if (ra != rb) {
                     return Integer.compare(ra, rb);
+                }
+                long aCr = creditsForRow(a, candByKeyForSort, firstBonusForSort);
+                long bCr = creditsForRow(b, candByKeyForSort, firstBonusForSort);
+                int cmp = Long.compare(bCr, aCr);
+                if (cmp != 0) {
+                    return cmp;
                 }
                 return a.displayName.compareToIgnoreCase(b.displayName);
             }
@@ -419,6 +453,58 @@ private static List<BioRow> buildRows(BodyInfo body) {
         });
 
         return rows;
+    }
+
+    private static long creditsForRow(BioRow r, Map<String, BioCandidate> candByKey, boolean firstBonus) {
+        if (r == null || candByKey == null) {
+            return Long.MIN_VALUE;
+        }
+        BioCandidate c = candByKey.get(canonicalBioKey(r.displayName));
+        return (c != null) ? c.getEstimatedPayout(firstBonus) : Long.MIN_VALUE;
+    }
+
+    private static Set<String> observedGenusSet(BodyInfo body) {
+        Set<String> set = new HashSet<>();
+        if (body.getObservedGenusPrefixes() == null) {
+            return set;
+        }
+        for (String g : body.getObservedGenusPrefixes()) {
+            if (g != null && !g.isBlank()) {
+                set.add(g.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        return set;
+    }
+
+    /** Genus (normalized) -> canonical display names of species we've scanned on the planet. */
+    private static Map<String, Set<String>> observedSpeciesByGenus(BodyInfo body) {
+        Map<String, Set<String>> byGenus = new HashMap<>();
+        if (body.getObservedBioDisplayNames() == null) {
+            return byGenus;
+        }
+        for (String displayName : body.getObservedBioDisplayNames()) {
+            if (displayName == null || displayName.isBlank()) {
+                continue;
+            }
+            String genus = genusFromDisplayName(displayName);
+            String genusNorm = normalizeGenus(genus);
+            byGenus.computeIfAbsent(genusNorm, k -> new HashSet<>()).add(canonicalBioKey(displayName));
+        }
+        return byGenus;
+    }
+
+    private static String normalizeGenus(String s) {
+        if (s == null) {
+            return "";
+        }
+        String x = s.trim().toLowerCase(Locale.ROOT);
+        if (x.equals("bacteria")) {
+            return "bacterium";
+        }
+        if (x.equals("strata")) {
+            return "stratum";
+        }
+        return x;
     }
 
     private static void collapseRowsByGenus(
