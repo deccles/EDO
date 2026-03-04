@@ -123,6 +123,9 @@ public class PreferencesDialog extends JDialog {
     private JCheckBox textNotificationsEnabledCheckBox;
     private JTextField textNotificationAddressField;
 
+    private JSpinner nearbySphereRadiusSpinner;
+    private JSpinner nearbyMinValueMillionSpinner;
+
     private boolean okPressed;
     private final Font originalUiFont;
     private final int originalNormalBgRgb;
@@ -965,6 +968,36 @@ public class PreferencesDialog extends JDialog {
         gbc.gridy++;
         content.add(textNotifPanel, gbc);
 
+        // --- Nearby tab (exobiology sphere search) ---
+        JPanel nearbyPanel = new JPanel(new GridBagLayout());
+        nearbyPanel.setOpaque(false);
+        nearbyPanel.setBorder(BorderFactory.createTitledBorder("Nearby tab (exobiology)"));
+
+        GridBagConstraints npc = new GridBagConstraints();
+        npc.gridx = 0;
+        npc.gridy = 0;
+        npc.anchor = GridBagConstraints.WEST;
+        npc.insets = new Insets(4, 4, 4, 4);
+
+        nearbyPanel.add(new JLabel("Sphere radius (ly):"), npc);
+        npc.gridx = 1;
+        nearbySphereRadiusSpinner = new JSpinner(new SpinnerNumberModel(
+                OverlayPreferences.getNearbySphereRadiusLy(), 1, 100, 1));
+        ((JSpinner.DefaultEditor) nearbySphereRadiusSpinner.getEditor()).getTextField().setColumns(4);
+        nearbyPanel.add(nearbySphereRadiusSpinner, npc);
+
+        npc.gridx = 0;
+        npc.gridy++;
+        nearbyPanel.add(new JLabel("Min value (million credits):"), npc);
+        npc.gridx = 1;
+        nearbyMinValueMillionSpinner = new JSpinner(new SpinnerNumberModel(
+                OverlayPreferences.getNearbyMinValueMillionCredits(), 0.0, 1000.0, 0.5));
+        ((JSpinner.DefaultEditor) nearbyMinValueMillionSpinner.getEditor()).getTextField().setColumns(6);
+        nearbyPanel.add(nearbyMinValueMillionSpinner, npc);
+
+        gbc.gridy++;
+        content.add(nearbyPanel, gbc);
+
         gbc.gridy++;
         gbc.weighty = 1.0;
         content.add(new JLabel(""), gbc);
@@ -1527,6 +1560,23 @@ if (miningTonsLowSpinner != null) {
         }
         if (textNotificationAddressField != null) {
             OverlayPreferences.setTextNotificationAddress(textNotificationAddressField.getText());
+        }
+
+        if (nearbySphereRadiusSpinner != null) {
+            try {
+                int r = ((Number) nearbySphereRadiusSpinner.getValue()).intValue();
+                OverlayPreferences.setNearbySphereRadiusLy(r);
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        if (nearbyMinValueMillionSpinner != null) {
+            try {
+                double v = ((Number) nearbyMinValueMillionSpinner.getValue()).doubleValue();
+                OverlayPreferences.setNearbyMinValueMillionCredits(v);
+            } catch (Exception e) {
+                // ignore
+            }
         }
 
 // Other tabs can be wired into OverlayPreferences later as needed.

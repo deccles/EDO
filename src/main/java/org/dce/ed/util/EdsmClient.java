@@ -53,6 +53,8 @@ public class EdsmClient {
     
     // Last raw JSON returned by the EDSM API (for debugging / query tool)
     private volatile String lastRawJson;
+    /** Last HTTP status from getSphereSystems (so retry logic can see 503). */
+    private volatile int lastSphereSystemsStatus = 0;
     public EdsmClient() {
         this.client = HttpClient.newHttpClient();
         this.gson = new GsonBuilder().create();
@@ -243,15 +245,25 @@ public class EdsmClient {
     }
 
     /**
-     * Sphere search by coordinates. When EDSM sphere-systems is unavailable (e.g. 503),
-     * uses fallback. If preferredCenterName is non-null and non-empty, that system is
-     * used as the center for the fallback so results are consistent (e.g. when the user
-     * ran Get System first and the name field has the actual system).
+     * Sphere search by center system name. EDSM accepts either systemName or x/y/z;
+     * the systemName form often works when the coordinate form returns 503.
      */
-    public SphereSystemsResponse[] sphereSystems(double x, double y, double z, int radiusLy, String preferredCenterName)
+    public SphereSystemsResponse[] sphereSystemsByName(String centerSystemName, int radiusLy)
+            throws IOException, InterruptedException {
+        if (centerSystemName == null || centerSystemName.trim().isEmpty()) {
+            return new SphereSystemsResponse[0];
+        }
+        String url = BASE_URL + "/api-v1/sphere-systems"
+                + "?systemName=" + encode(centerSystemName.trim())
+                + "&radius=" + Math.min(radiusLy, 100)
+                + "&showCoordinates=1&showId=1&showInformation=1";
+        return getSphereSystemsWithRetry(url);
+    }
+
+    public SphereSystemsResponse[] sphereSystems(double x, double y, double z, int radiusLy)
             throws IOException, InterruptedException {
 
-        // First try the official EDSM endpoint
+        // First try the official EDSM endpoint (retry on 503 - EDSM is often temporarily unavailable)
         String url = BASE_URL + "/api-v1/sphere-systems"
                 + "?x=" + x
                 + "&y=" + y
@@ -259,69 +271,26 @@ public class EdsmClient {
                 + "&radius=" + Math.min(radiusLy, 100)
                 + "&showCoordinates=1&showId=1&showInformation=1";
 
-        SphereSystemsResponse[] result = getSphereSystems(url);
-
-        // EDSM sometimes returns {} instead of [] when broken, so detect "no data"
+        SphereSystemsResponse[] result = getSphereSystemsWithRetry(url);
         if (result == null || result.length == 0) {
-            String centerName = null;
-            if (preferredCenterName != null && !preferredCenterName.trim().isEmpty()) {
-                centerName = preferredCenterName.trim();
-            }
-            if (centerName == null) {
-                SystemResponse center = systemFromCoords(x, y, z);
-                if (center != null && center.name != null && !center.name.trim().isEmpty()) {
-                    centerName = center.name.trim();
-                }
-            }
-            if (centerName != null && !centerName.isEmpty()) {
-                // Retry with same endpoint using systemName (official API)
-                int radius = Math.min(radiusLy, 100);
-                String urlByName = BASE_URL + "/api-v1/sphere-systems"
-                        + "?systemName=" + encode(centerName)
-                        + "&radius=" + radius
-                        + "&showCoordinates=1&showId=1&showInformation=1";
-                SphereSystemsResponse[] byName = getSphereSystems(urlByName);
-                if (byName != null && byName.length > 0) {
-                    return byName;
-                }
-                // Last resort: legacy prefix-based workaround (same sector only)
-                SphereSystemsResponse[] localResult = sphereSystemsLocal(centerName, radiusLy);
-                lastRawJson = gson.toJson(localResult);
-                return localResult;
-            }
             return new SphereSystemsResponse[0];
         }
-
         return result;
-    }
-
-    public SphereSystemsResponse[] sphereSystems(double x, double y, double z, int radiusLy)
-            throws IOException, InterruptedException {
-        return sphereSystems(x, y, z, radiusLy, null);
     }
 
     /**
      * Query systems within a radius of a system by name (official EDSM sphere-systems API).
-     * When the API returns empty (e.g. 503), falls back to sphereSystemsLocal for the same system.
      */
     public SphereSystemsResponse[] sphereSystems(String systemName, int radiusLy)
             throws IOException, InterruptedException {
         if (systemName == null || systemName.trim().isEmpty()) {
             return new SphereSystemsResponse[0];
         }
-        String name = systemName.trim();
-        int radius = Math.min(radiusLy, 100);
-        String url = BASE_URL + "/api-v1/sphere-systems"
-                + "?systemName=" + encode(name)
-                + "&radius=" + radius
-                + "&showCoordinates=1&showId=1&showInformation=1";
-        SphereSystemsResponse[] result = getSphereSystems(url);
+        SphereSystemsResponse[] result = sphereSystemsByName(systemName.trim(), radiusLy);
         if (result != null && result.length > 0) {
             return result;
         }
-        SphereSystemsResponse[] localResult = sphereSystemsLocal(name, radiusLy);
-        lastRawJson = gson.toJson(localResult);
-        return localResult;
+        return new SphereSystemsResponse[0];
     }
 
     // ----------------- Bodies -----------------
@@ -433,6 +402,25 @@ public class EdsmClient {
      * and occasionally an error object. This helper normalizes that
      * into a SphereSystemsResponse[] so callers don't have to care.
      */
+    private static final int SPHERE_RETRY_ATTEMPTS = 3;
+    private static final int SPHERE_RETRY_DELAY_MS = 2000;
+
+    private SphereSystemsResponse[] getSphereSystemsWithRetry(String url) throws IOException, InterruptedException {
+        for (int attempt = 0; attempt < SPHERE_RETRY_ATTEMPTS; attempt++) {
+            SphereSystemsResponse[] result = getSphereSystems(url);
+            if (lastSphereSystemsStatus != 503 || attempt == SPHERE_RETRY_ATTEMPTS - 1) {
+                return result;
+            }
+            try {
+                Thread.sleep(SPHERE_RETRY_DELAY_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted during retry", e);
+            }
+        }
+        return new SphereSystemsResponse[0];
+    }
+
     private SphereSystemsResponse[] getSphereSystems(String url) throws IOException, InterruptedException {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -441,6 +429,7 @@ public class EdsmClient {
                 .build();
 
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        lastSphereSystemsStatus = resp.statusCode();
         String body = resp.body();
         lastRawJson = body;
 
@@ -513,159 +502,6 @@ public class EdsmClient {
             System.out.println("[EDSM] sphere-systems unknown structure, treating as empty: " + body);
         }
         return new SphereSystemsResponse[0];
-    }
-    /**
-     * Extract a sector prefix from a full system name.
-     * Example: "PLOEA EURL EU-R b49-0" -> "PLOEA EURL"
-     */
-    private String extractSectorPrefix(String systemName) {
-        if (systemName == null) {
-            return null;
-        }
-        String[] parts = systemName.trim().split(" ");
-        if (parts.length < 2) {
-            return systemName.trim();
-        }
-        return parts[0] + " " + parts[1]; // e.g. "PLOEA EURL"
-    }
-
-    /**
-     * Query EDSM systems by name prefix.
-     * Returns the raw JSON string EDSM gives us.
-     */
-    private String fetchSystemsByPrefix(String prefix) throws IOException, InterruptedException {
-        String encoded = URLEncoder.encode(prefix, StandardCharsets.UTF_8);
-        String url = BASE_URL + "/api-v1/systems"
-                + "?systemName=" + encoded
-                + "&showCoordinates=1&showId=1&showInformation=1";
-
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "EDO-Tool")
-                .GET()
-                .build();
-
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        return resp.body();
-    }
-    /**
-     * Compute Euclidean distance in light-years for two system coords.
-     */
-    private double distance(double x1, double y1, double z1, double x2, double y2, double z2) {
-        double dx = x1 - x2;
-        double dy = y1 - y2;
-        double dz = z1 - z2;
-        return Math.sqrt(dx*dx + dy*dy + dz*dz);
-    }
-    /**
-     * Legacy fallback: local sphere search using sector name prefix + coordinate filtering.
-     * Only used when the official sphere-systems API (by coords and by systemName) returns empty.
-     * May be removed once EDSM sphere-systems is confirmed stable; results are limited to same sector.
-     */
-    public SphereSystemsResponse[] sphereSystemsLocal(String centerSystemName, int radiusLy)
-            throws IOException, InterruptedException {
-
-        // 1. Resolve center system coords via getSystem
-        SystemResponse center = getSystem(centerSystemName);
-        if (center == null || center.coords == null) {
-            return new SphereSystemsResponse[0];
-        }
-
-        double cx = center.coords.x;
-        double cy = center.coords.y;
-        double cz = center.coords.z;
-
-        // 2. Extract prefix (sector)
-        String prefix = extractSectorPrefix(centerSystemName);
-        if (prefix == null || prefix.isEmpty()) {
-            return new SphereSystemsResponse[0];
-        }
-
-        // 3. Query systems with that prefix
-        String raw = fetchSystemsByPrefix(prefix);
-        if (raw == null || raw.isEmpty()) {
-            return new SphereSystemsResponse[0];
-        }
-
-        JsonElement root = JsonParser.parseString(raw);
-        if (!root.isJsonArray()) {
-            return new SphereSystemsResponse[0];
-        }
-
-        JsonArray arr = root.getAsJsonArray();
-
-        List<SphereSystemsResponse> out = new ArrayList<>();
-
-        // 4. Convert & distance-filter locally
-        for (JsonElement el : arr) {
-            if (!el.isJsonObject()) {
-                continue;
-            }
-            JsonObject obj = el.getAsJsonObject();
-
-            JsonObject coords = obj.getAsJsonObject("coords");
-            if (coords == null) {
-                continue;
-            }
-
-            double x = coords.has("x") ? coords.get("x").getAsDouble() : Double.NaN;
-            double y = coords.has("y") ? coords.get("y").getAsDouble() : Double.NaN;
-            double z = coords.has("z") ? coords.get("z").getAsDouble() : Double.NaN;
-
-            if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) {
-                continue;
-            }
-
-            double d = distance(cx, cy, cz, x, y, z);
-            if (d > radiusLy) {
-                continue;
-            }
-
-            // Convert into your SphereSystemsResponse type
-            SphereSystemsResponse s = gson.fromJson(obj, SphereSystemsResponse.class);
-            s.distance = d; // ensure distance is filled, if your DTO has a field for it
-            out.add(s);
-        }
-
-        // 5. Sort by distance
-        out.sort(Comparator.comparingDouble(ss -> ss.distance));
-
-        return out.toArray(new SphereSystemsResponse[0]);
-    }
-    /**
-     * Try to resolve a system name from coordinates.
-     * EDSM has /api-v1/systems?x=...&y=...&z=...
-     * (Documented but only returns exact matches.)
-     */
-    private SystemResponse systemFromCoords(double x, double y, double z)
-            throws IOException, InterruptedException {
-
-        String url = BASE_URL + "/api-v1/systems?x=" + x + "&y=" + y + "&z=" + z;
-
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "EDO-Tool")
-                .GET()
-                .build();
-
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        String body = resp.body();
-
-        if (body == null || body.trim().isEmpty()) {
-            return null;
-        }
-
-        JsonElement root = JsonParser.parseString(body);
-        if (!root.isJsonArray()) {
-            return null;
-        }
-
-        JsonArray arr = root.getAsJsonArray();
-        if (arr.size() == 0) {
-            return null;
-        }
-
-        return gson.fromJson(arr.get(0), SystemResponse.class);
     }
 
     /**

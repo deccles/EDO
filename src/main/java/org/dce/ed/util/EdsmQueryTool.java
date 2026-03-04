@@ -354,7 +354,13 @@ public class EdsmQueryTool extends JFrame {
                     runQueryAsync(systemOutputPanel,
                             "sphereSystems(" + x + "," + y + "," + z + "," + radius + ")",
                             () -> {
-                                SphereSystemsResponse[] resp = client.sphereSystems(x, y, z, radius, preferredName.isEmpty() ? null : preferredName);
+                                SphereSystemsResponse[] resp = null;
+                                if (preferredName != null && !preferredName.isEmpty()) {
+                                    resp = client.sphereSystemsByName(preferredName, radius);
+                                }
+                                if (resp == null || resp.length == 0) {
+                                    resp = client.sphereSystems(x, y, z, radius);
+                                }
                                 return toJsonOrMessage(resp);
                             });
                 } catch (NumberFormatException ex) {

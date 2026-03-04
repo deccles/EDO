@@ -82,6 +82,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private static final String CARD_SYSTEM = "SYSTEM";
 	private static final String CARD_BIOLOGY = "BIOLOGY";
 	private static final String CARD_MINING = "MINING";
+	private static final String CARD_NEARBY = "NEARBY";
 	private static final String CARD_LOG = "LOG";
 
 	private static final int TAB_HOVER_DELAY_MS = 500;	private static final Color TAB_WHITE = EdoUi.Internal.WHITE_ALPHA_230;
@@ -100,6 +101,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private final SystemTabPanel systemTab;
 	private final BiologyTabPanel biologyTab;
 	private final MiningTabPanel miningTab;
+	private final NearbyTabPanel nearbyTab;
 
 	private static final TtsSprintf tts = new TtsSprintf(new PollyTtsCached());
 
@@ -111,6 +113,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	private JButton systemButton;
 	private JButton biologyButton;
 	private JButton miningButton;
+	private JButton nearbyButton;
 
 	public EliteOverlayTabbedPane() {
 		this(() -> true);
@@ -134,16 +137,19 @@ public class EliteOverlayTabbedPane extends JPanel {
 		systemButton = createTabButton("System");
 		biologyButton = createTabButton("Biology");
 		miningButton = createTabButton("Mining");
+		nearbyButton = createTabButton("Nearby");
 
 		group.add(routeButton);
 		group.add(systemButton);
 		group.add(biologyButton);
 		group.add(miningButton);
+		group.add(nearbyButton);
 
 		tabBar.add(routeButton);
 		tabBar.add(systemButton);
 		tabBar.add(biologyButton);
 		tabBar.add(miningButton);
+		tabBar.add(nearbyButton);
 
 		// ----- Card area with the actual tab contents -----
 		cardLayout = new CardLayout();
@@ -181,17 +187,20 @@ public class EliteOverlayTabbedPane extends JPanel {
 		this.biologyTab = new BiologyTabPanel();
 		this.biologyTab.setSystemTabPanel(systemTab);
 		this.miningTab = new MiningTabPanel(galacticAvgPrices, this::isCurrentlyDocked);
+		this.nearbyTab = new NearbyTabPanel(systemTab);
 
 		cardPanel.add(routeTab, CARD_ROUTE);
 		cardPanel.add(systemTab, CARD_SYSTEM);
 		cardPanel.add(biologyTab, CARD_BIOLOGY);
 		cardPanel.add(miningTab, CARD_MINING);
+		cardPanel.add(nearbyTab, CARD_NEARBY);
 
 		systemButton.setSelected(true);
 		applyTabButtonStyle(routeButton);
 		applyTabButtonStyle(systemButton);
 		applyTabButtonStyle(biologyButton);
 		applyTabButtonStyle(miningButton);
+		applyTabButtonStyle(nearbyButton);
 		systemTab.refreshFromCache();
 
 		// Wire up buttons to show cards
@@ -223,11 +232,20 @@ public class EliteOverlayTabbedPane extends JPanel {
 			}
 		});
 
+		nearbyButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				selectTab(CARD_NEARBY, nearbyButton);
+				nearbyTab.onTabFirstShown();
+			}
+		});
+
 		// Hover-to-switch: resting over a tab for a short time activates it
 		installHoverSwitch(routeButton, TAB_HOVER_DELAY_MS, () -> routeButton.doClick(), hoverSwitchEnabled);
 		installHoverSwitch(systemButton, TAB_HOVER_DELAY_MS, () -> systemButton.doClick(), hoverSwitchEnabled);
 		installHoverSwitch(biologyButton, TAB_HOVER_DELAY_MS, () -> biologyButton.doClick(), hoverSwitchEnabled);
 		installHoverSwitch(miningButton, TAB_HOVER_DELAY_MS, () -> miningButton.doClick(), hoverSwitchEnabled);
+		installHoverSwitch(nearbyButton, TAB_HOVER_DELAY_MS, () -> nearbyButton.doClick(), hoverSwitchEnabled);
 
 
 		// Select Route tab by default
@@ -278,6 +296,11 @@ public class EliteOverlayTabbedPane extends JPanel {
 		systemTab.handleLogEvent(event);
 		routeTab.handleLogEvent(event);
 		biologyTab.handleLogEvent(event);
+
+		if (event instanceof FsdJumpEvent) {
+			FsdJumpEvent e = (FsdJumpEvent) event;
+			nearbyTab.onCurrentSystemChanged(e.getStarSystem(), e.getSystemAddress());
+		}
 	}
 
 	public SystemTabPanel getSystemTabPanel() {
@@ -628,11 +651,15 @@ public class EliteOverlayTabbedPane extends JPanel {
 		if (miningButton != null) {
 			miningButton.setSelected(selectedButton == miningButton);
 		}
+		if (nearbyButton != null) {
+			nearbyButton.setSelected(selectedButton == nearbyButton);
+		}
 
 		applyTabButtonStyle(routeButton);
 		applyTabButtonStyle(systemButton);
 		applyTabButtonStyle(biologyButton);
 		applyTabButtonStyle(miningButton);
+		applyTabButtonStyle(nearbyButton);
 		
 		cardLayout.show(cardPanel, cardName);
 	}
@@ -848,6 +875,11 @@ public class EliteOverlayTabbedPane extends JPanel {
 		applyTabButtonStyle(systemButton);
 		applyTabButtonStyle(biologyButton);
 		applyTabButtonStyle(miningButton);
+		applyTabButtonStyle(nearbyButton);
+
+		if (nearbyTab != null) {
+			nearbyTab.applyOverlayBackground(bgWithAlpha);
+		}
 
 		revalidate();
 		repaint();
@@ -1058,6 +1090,7 @@ public static boolean hasMiningEquipment(LoadoutEvent loadout) {
 		routeTab.applyUiFontPreferences();
 		biologyTab.applyUiFontPreferences();
 		miningTab.applyUiFontPreferences();
+		nearbyTab.applyUiFontPreferences();
 		revalidate();
 		repaint();
 	}
@@ -1067,6 +1100,7 @@ public static boolean hasMiningEquipment(LoadoutEvent loadout) {
 		routeTab.applyUiFont(font);
 		biologyTab.applyUiFont(font);
 		miningTab.applyUiFont(font);
+		nearbyTab.applyUiFont(font);
 		revalidate();
 		repaint();
 	}
