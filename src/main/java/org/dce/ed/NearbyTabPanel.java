@@ -6,6 +6,7 @@ import java.awt.Component;
 import java.awt.Font;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
@@ -68,7 +69,7 @@ public class NearbyTabPanel extends JPanel {
         Font base = OverlayPreferences.getUiFont();
         headerLabel.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 2));
 
-        tableModel = new DefaultTableModel(new Object[]{"System", "Planets", "Value (cr)"}, 0) {
+        tableModel = new DefaultTableModel(new Object[]{"System", "Planets", "Value (cr)", "ValueCr"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -84,6 +85,9 @@ public class NearbyTabPanel extends JPanel {
         table.setRowSelectionAllowed(false);
         table.getTableHeader().setForeground(EdoUi.User.MAIN_TEXT);
         table.getTableHeader().setBackground(EdoUi.User.BACKGROUND);
+        table.getColumnModel().getColumn(3).setMinWidth(0);
+        table.getColumnModel().getColumn(3).setMaxWidth(0);
+        table.getColumnModel().getColumn(3).setWidth(0);
         DefaultTableCellRenderer cellRenderer = new DefaultTableCellRenderer() {
             {
                 setOpaque(false);
@@ -96,7 +100,15 @@ public class NearbyTabPanel extends JPanel {
                 if (c instanceof JLabel) {
                     ((JLabel) c).setOpaque(false);
                     ((JLabel) c).setBackground(EdoUi.Internal.TRANSPARENT);
-                    ((JLabel) c).setForeground(EdoUi.User.MAIN_TEXT);
+                    long minValueCr = (long) (OverlayPreferences.getNearbyMinValueMillionCredits() * 1_000_000);
+                    boolean highValue = false;
+                    if (tableModel.getRowCount() > row && tableModel.getColumnCount() > 3) {
+                        Object valObj = tableModel.getValueAt(row, 3);
+                        if (valObj instanceof Number) {
+                            highValue = ((Number) valObj).longValue() >= minValueCr;
+                        }
+                    }
+                    ((JLabel) c).setForeground(highValue ? EdoUi.User.SUCCESS : EdoUi.User.MAIN_TEXT);
                 }
                 return c;
             }
@@ -243,18 +255,17 @@ public class NearbyTabPanel extends JPanel {
                             systemTotal += bv.valueCr;
                             names.add(bv.bodyName);
                         }
-                        if (systemTotal < minValueCr) {
-                            continue;
-                        }
                         rows.add(new Object[]{
                                 sys.name,
                                 String.join(", ", names),
-                                String.format(Locale.ROOT, "%,d", systemTotal)
+                                String.format(Locale.ROOT, "%,d", systemTotal),
+                                Long.valueOf(systemTotal)
                         });
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
+                rows.sort(Comparator.comparingLong((Object[] row) -> ((Long) row[3]).longValue()).reversed());
                 return rows;
             }
 
@@ -265,7 +276,7 @@ public class NearbyTabPanel extends JPanel {
                     SwingUtilities.invokeLater(() -> {
                         tableModel.setRowCount(0);
                         if (result == null || result.isEmpty()) {
-                            tableModel.addRow(new Object[]{"—", "No high-value systems in range", "—"});
+                            tableModel.addRow(new Object[]{"—", "No systems with exobiology in range", "—", Long.valueOf(0L)});
                         } else {
                             for (Object[] row : result) {
                                 tableModel.addRow(row);
@@ -276,13 +287,13 @@ public class NearbyTabPanel extends JPanel {
                     Thread.currentThread().interrupt();
                     SwingUtilities.invokeLater(() -> {
                         tableModel.setRowCount(0);
-                        tableModel.addRow(new Object[]{"—", "Interrupted", "—"});
+                        tableModel.addRow(new Object[]{"—", "Interrupted", "—", Long.valueOf(0L)});
                     });
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     SwingUtilities.invokeLater(() -> {
                         tableModel.setRowCount(0);
-                        tableModel.addRow(new Object[]{"—", "Error: " + cause.getMessage(), "—"});
+                        tableModel.addRow(new Object[]{"—", "Error: " + cause.getMessage(), "—", Long.valueOf(0L)});
                     });
                 }
             }
