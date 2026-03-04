@@ -110,6 +110,10 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_LIMPET_REMINDER_THRESHOLD = "mining.limpetReminder.threshold"; // COUNT
     private static final String KEY_MINING_LIMPET_REMINDER_THRESHOLD_PERCENT = "mining.limpetReminder.thresholdPercent"; // PERCENT
 
+    // Nearby tab (exobiology sphere search)
+    private static final String KEY_NEARBY_SPHERE_RADIUS_LY = "nearby.sphereRadiusLy";
+    private static final String KEY_NEARBY_MIN_VALUE_MILLION_CREDITS = "nearby.minValueMillionCredits";
+
     // Reuse the same prefs node as OverlayFrame so everything is in one place.
     private static final Preferences PREFS = Preferences.userNodeForPackage(OverlayFrame.class);
 
@@ -554,6 +558,58 @@ public static Engine getSpeechEngine() {
 
     public static void setMiningLogCommanderName(String name) {
         PREFS.put(KEY_MINING_LOG_COMMANDER_NAME, name != null ? name.trim() : "");
+    }
+
+    // --- Nearby tab (exobiology sphere search) ---
+
+    /** Sphere search radius in ly (default 20). EDSM API caps at 100. */
+    public static int getNearbySphereRadiusLy() {
+        String s = PREFS.get(KEY_NEARBY_SPHERE_RADIUS_LY, "20");
+        try {
+            int v = Integer.parseInt(s.trim());
+            if (v < 1) {
+                v = 1;
+            }
+            if (v > 100) {
+                v = 100;
+            }
+            return v;
+        } catch (Exception e) {
+            return 20;
+        }
+    }
+
+    public static void setNearbySphereRadiusLy(int radiusLy) {
+        int v = radiusLy;
+        if (v < 1) {
+            v = 1;
+        }
+        if (v > 100) {
+            v = 100;
+        }
+        PREFS.put(KEY_NEARBY_SPHERE_RADIUS_LY, Integer.toString(v));
+    }
+
+    /** Minimum exobiology value (million credits) to show a system in the Nearby table (default 5). */
+    public static double getNearbyMinValueMillionCredits() {
+        String s = PREFS.get(KEY_NEARBY_MIN_VALUE_MILLION_CREDITS, "5");
+        try {
+            double v = Double.parseDouble(s.trim());
+            if (v < 0.0) {
+                v = 0.0;
+            }
+            return v;
+        } catch (Exception e) {
+            return 5.0;
+        }
+    }
+
+    public static void setNearbyMinValueMillionCredits(double millionCredits) {
+        double v = millionCredits;
+        if (v < 0.0) {
+            v = 0.0;
+        }
+        PREFS.put(KEY_NEARBY_MIN_VALUE_MILLION_CREDITS, Double.toString(v));
     }
 
     // --- UI Font (System / Route / Biology) ---
