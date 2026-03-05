@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory cache for Spansh landmark data keyed by (systemName, bodyName).
+ * In-memory cache for Spansh body exobiology info (landmarks + exclude-from-exobiology) keyed by (systemName, bodyName).
  * Used to avoid re-querying Spansh for the same body in one session.
  */
 public final class SpanshLandmarkCache {
@@ -14,7 +14,7 @@ public final class SpanshLandmarkCache {
 
     private static final SpanshLandmarkCache INSTANCE = new SpanshLandmarkCache();
 
-    private final Map<String, List<SpanshLandmark>> cache = new ConcurrentHashMap<>();
+    private final Map<String, SpanshBodyExobiologyInfo> cache = new ConcurrentHashMap<>();
     private final SpanshClient client = new SpanshClient();
 
     private SpanshLandmarkCache() {
@@ -31,16 +31,16 @@ public final class SpanshLandmarkCache {
     }
 
     /**
-     * Returns cached landmarks, or fetches from Spansh and caches on success.
-     * Returns null on API/search failure (not cached). Returns empty list when body has no landmarks.
+     * Returns cached exobiology info, or fetches from Spansh and caches on success.
+     * Returns null on API/search failure (not cached).
      */
-    public List<SpanshLandmark> getOrFetch(String systemName, String bodyName) {
+    public SpanshBodyExobiologyInfo getOrFetch(String systemName, String bodyName) {
         String k = key(systemName, bodyName);
-        List<SpanshLandmark> cached = cache.get(k);
+        SpanshBodyExobiologyInfo cached = cache.get(k);
         if (cached != null) {
             return cached;
         }
-        List<SpanshLandmark> result = client.getBodyLandmarks(systemName, bodyName);
+        SpanshBodyExobiologyInfo result = client.getBodyExobiologyInfo(systemName, bodyName);
         if (result != null) {
             cache.put(k, result);
         }

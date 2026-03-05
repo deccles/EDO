@@ -1568,7 +1568,8 @@ public class RouteTabPanel extends JPanel {
 		}
 		// Fallback: whatever SystemCache persisted last
 		try {
-			String fromCache = SystemCache.load().systemName;
+			CachedSystem cached = SystemCache.load();
+			String fromCache = (cached != null) ? cached.systemName : null;
 			if (fromCache != null && !fromCache.isBlank()) {
 				currentSystemName = fromCache;
 				return currentSystemName;
@@ -1581,7 +1582,11 @@ public class RouteTabPanel extends JPanel {
 	}
 	private String resolveCurrentSystemNameFromJournal() {
 	    try {
-	        EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+	        Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+	        if (journalDir == null || !java.nio.file.Files.isDirectory(journalDir)) {
+	            return null;
+	        }
+	        EliteJournalReader reader = new EliteJournalReader(journalDir);
 	        String systemName = null;
 	        List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(3);
 	        for (EliteLogEvent event : events) {
@@ -1778,8 +1783,17 @@ public class RouteTabPanel extends JPanel {
 					return "";
 				}
 				return e.displayIndex;
-			case COL_SYSTEM:
-				return e.systemName != null ? e.systemName : "";
+			case COL_SYSTEM: {
+				String name = e.systemName != null ? e.systemName : "";
+				// For body rows, strip the current system name prefix so we show e.g. "A 3" not "Sol A 3"
+				if (e.isBodyRow && currentSystemName != null && !currentSystemName.isEmpty()) {
+					String prefix = currentSystemName.trim() + " ";
+					if (name.startsWith(prefix)) {
+						name = name.substring(prefix.length()).trim();
+					}
+				}
+				return name;
+			}
 			case COL_CLASS:
 				if (e.isBodyRow) {
 					return "";

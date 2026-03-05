@@ -26,6 +26,7 @@ import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.util.EdsmClient;
 import org.dce.ed.util.FirstBonusHelper;
+import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
 
@@ -641,9 +642,10 @@ public class SystemEventProcessor {
                 info.setPredictions(filtered);
 
                 if (!Boolean.TRUE.equals(info.getWasFootfalled()) && info.getSpanshLandmarks() == null) {
-                    List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(info.getStarSystem(), info.getBodyName());
-                    if (landmarks != null) {
-                        info.setSpanshLandmarks(landmarks);
+                    SpanshBodyExobiologyInfo spanshInfo = SpanshLandmarkCache.getInstance().getOrFetch(info.getStarSystem(), info.getBodyName());
+                    if (spanshInfo != null) {
+                        info.setSpanshLandmarks(spanshInfo.getLandmarks());
+                        info.setSpanshExcludeFromExobiology(spanshInfo.isExcludeFromExobiology());
                     }
                 }
                 boolean bonusApplies = FirstBonusHelper.firstBonusApplies(info);
@@ -666,9 +668,10 @@ public class SystemEventProcessor {
         // *** FIX: publish to BodyInfo BEFORE dispatching the event ***
         info.setPredictions(candidates);
         if (!Boolean.TRUE.equals(info.getWasFootfalled()) && info.getSpanshLandmarks() == null) {
-            List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(info.getStarSystem(), info.getBodyName());
-            if (landmarks != null) {
-                info.setSpanshLandmarks(landmarks);
+            SpanshBodyExobiologyInfo spanshInfo = SpanshLandmarkCache.getInstance().getOrFetch(info.getStarSystem(), info.getBodyName());
+            if (spanshInfo != null) {
+                info.setSpanshLandmarks(spanshInfo.getLandmarks());
+                info.setSpanshExcludeFromExobiology(spanshInfo.isExcludeFromExobiology());
             }
         }
         boolean bonusApplies = FirstBonusHelper.firstBonusApplies(info);

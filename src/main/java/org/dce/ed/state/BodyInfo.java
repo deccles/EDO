@@ -138,6 +138,9 @@ public class BodyInfo {
 	/** Spansh exobiology landmarks for this body (null = not fetched). Used to derive first-bonus. */
 	private List<SpanshLandmark> spanshLandmarks = null;
 
+	/** True when Spansh has signals for this body but none are Biological; body should be excluded from exobiology lists. */
+	private Boolean spanshExcludeFromExobiology = null;
+
 	public void addObservedBioDisplayName(String name) {
 		if (name == null || name.isEmpty()) {
 			return;
@@ -395,6 +398,13 @@ public class BodyInfo {
 
 	public void setSpanshLandmarks(List<SpanshLandmark> spanshLandmarks) {
 		this.spanshLandmarks = spanshLandmarks;
+	}
+
+	public Boolean getSpanshExcludeFromExobiology() {
+		return spanshExcludeFromExobiology;
+	}
+	public void setSpanshExcludeFromExobiology(Boolean spanshExcludeFromExobiology) {
+		this.spanshExcludeFromExobiology = spanshExcludeFromExobiology;
 	}
 
 	public Boolean getWasMapped() {

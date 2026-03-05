@@ -1,6 +1,7 @@
 package org.dce.ed.logreader;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -21,6 +22,7 @@ import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.util.FirstBonusHelper;
+import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
 
@@ -82,8 +84,12 @@ public class RescanJournalsMain {
 	 *  - forcedCacheFile: if provided, sets a system property that SystemCache may honor.
 	 */
 	public static void rescanJournals(boolean forceFull, Path forcedJournalFile, Path forcedCacheFile) throws IOException {
-		EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-		Path journalDirectory = reader.getJournalDirectory();
+		Path journalDirectory = org.dce.ed.OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+		if (journalDirectory == null || !Files.isDirectory(journalDirectory)) {
+			System.out.println("Journal directory not found; skipping rescan.");
+			return;
+		}
+		EliteJournalReader reader = new EliteJournalReader(journalDirectory);
 
 		if (forcedCacheFile != null) {
 			System.setProperty(SystemCache.CACHE_PATH_PROPERTY, forcedCacheFile.toString());
@@ -179,9 +185,10 @@ public class RescanJournalsMain {
 					BodyInfo body = state.getBodies().get(so.getBodyId());
 					if (body != null) {
 						if (!Boolean.TRUE.equals(body.getWasFootfalled()) && body.getSpanshLandmarks() == null) {
-							List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(body.getStarSystem(), body.getBodyName());
-							if (landmarks != null) {
-								body.setSpanshLandmarks(landmarks);
+							SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(body.getStarSystem(), body.getBodyName());
+							if (info != null) {
+								body.setSpanshLandmarks(info.getLandmarks());
+								body.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
 							}
 						}
 						firstBonus = FirstBonusHelper.firstBonusApplies(body);

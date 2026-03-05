@@ -10,6 +10,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
@@ -85,6 +86,14 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         }
 
         SwingUtilities.invokeLater(() -> {
+            if (!OverlayPreferences.isJournalDirectoryAvailable(clientKey)) {
+                JOptionPane.showMessageDialog(null,
+                    "Elite Dangerous journal directory was not found.\n\n"
+                    + "The overlay will start without live journal data. You can still use features that don't require the game (e.g. route planning).\n\n"
+                    + "To use journal features, install Elite Dangerous or set a custom journal path in Settings.",
+                    "Journal directory not found",
+                    JOptionPane.WARNING_MESSAGE);
+            }
             EliteDangerousOverlay app = new EliteDangerousOverlay();
             app.start();
         });

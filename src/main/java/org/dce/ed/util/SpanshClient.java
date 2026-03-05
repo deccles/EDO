@@ -309,11 +309,15 @@ public class SpanshClient {
         }
     }
 
+    /** Exobiology signal type in Spansh/ED (Biological = exobiology). */
+    private static final String SIGNAL_TYPE_BIOLOGICAL = "biological";
+
     /**
-     * Fetches exobiology landmarks for a body from Spansh. Uses landmarks only (not signals).
-     * Returns empty list when the body exists but has no landmarks; returns null on API/search failure.
+     * Fetches body exobiology info from Spansh: landmarks plus whether to exclude from exobiology.
+     * excludeFromExobiology is true when Spansh has signals for the body and none are Biological.
+     * Returns null on API/search failure.
      */
-    public List<SpanshLandmark> getBodyLandmarks(String systemName, String bodyName) {
+    public SpanshBodyExobiologyInfo getBodyExobiologyInfo(String systemName, String bodyName) {
         String bodyId = resolveBodyId(systemName, bodyName);
         if (bodyId == null) {
             return null;
@@ -325,24 +329,62 @@ public class SpanshClient {
         try {
             JsonObject root = JsonParser.parseString(bodyJson).getAsJsonObject();
             JsonObject rec = root.has("record") ? root.getAsJsonObject("record") : root;
-            if (!rec.has("landmarks") || !rec.get("landmarks").isJsonArray()) {
-                return Collections.emptyList();
-            }
-            JsonArray arr = rec.getAsJsonArray("landmarks");
-            List<SpanshLandmark> list = new ArrayList<>(arr.size());
-            for (JsonElement el : arr) {
-                if (!el.isJsonObject()) continue;
-                JsonObject lm = el.getAsJsonObject();
-                String type = lm.has("type") ? lm.get("type").getAsString() : "";
-                String subtype = lm.has("subtype") ? lm.get("subtype").getAsString() : "";
-                double lat = lm.has("latitude") ? lm.get("latitude").getAsDouble() : 0.0;
-                double lon = lm.has("longitude") ? lm.get("longitude").getAsDouble() : 0.0;
-                list.add(new SpanshLandmark(type, subtype, lat, lon));
-            }
-            return list;
+            List<SpanshLandmark> landmarks = parseLandmarks(rec);
+            boolean excludeFromExobiology = computeExcludeFromExobiology(rec);
+            return new SpanshBodyExobiologyInfo(landmarks, excludeFromExobiology);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static List<SpanshLandmark> parseLandmarks(JsonObject rec) {
+        if (!rec.has("landmarks") || !rec.get("landmarks").isJsonArray()) {
+            return Collections.emptyList();
+        }
+        JsonArray arr = rec.getAsJsonArray("landmarks");
+        List<SpanshLandmark> list = new ArrayList<>(arr.size());
+        for (JsonElement el : arr) {
+            if (!el.isJsonObject()) continue;
+            JsonObject lm = el.getAsJsonObject();
+            String type = lm.has("type") ? lm.get("type").getAsString() : "";
+            String subtype = lm.has("subtype") ? lm.get("subtype").getAsString() : "";
+            double lat = lm.has("latitude") ? lm.get("latitude").getAsDouble() : 0.0;
+            double lon = lm.has("longitude") ? lm.get("longitude").getAsDouble() : 0.0;
+            list.add(new SpanshLandmark(type, subtype, lat, lon));
+        }
+        return list;
+    }
+
+    /**
+     * True when Spansh has signals listed and none are Biological (exobiology).
+     * Such bodies can be eliminated from exobiology lists.
+     */
+    private static boolean computeExcludeFromExobiology(JsonObject rec) {
+        if (!rec.has("signals") || !rec.get("signals").isJsonArray()) {
+            return false;
+        }
+        JsonArray signals = rec.getAsJsonArray("signals");
+        if (signals.isEmpty()) {
+            return false;
+        }
+        for (JsonElement el : signals) {
+            if (!el.isJsonObject()) continue;
+            JsonObject sig = el.getAsJsonObject();
+            String type = sig.has("type") ? sig.get("type").getAsString() : "";
+            if (type != null && type.trim().toLowerCase(Locale.ROOT).equals(SIGNAL_TYPE_BIOLOGICAL)) {
+                return false; // has at least one Biological signal -> do not exclude
+            }
+        }
+        return true; // has signals but none Biological -> exclude from exobiology
+    }
+
+    /**
+     * Fetches exobiology landmarks for a body from Spansh. Uses landmarks only (not signals).
+     * Returns empty list when the body exists but has no landmarks; returns null on API/search failure.
+     */
+    public List<SpanshLandmark> getBodyLandmarks(String systemName, String bodyName) {
+        SpanshBodyExobiologyInfo info = getBodyExobiologyInfo(systemName, bodyName);
+        return info != null ? info.getLandmarks() : null;
     }
 
     /**

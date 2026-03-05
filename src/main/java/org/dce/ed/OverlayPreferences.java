@@ -280,6 +280,16 @@ public final class OverlayPreferences {
         return EliteLogFileLocator.findDefaultJournalDirectory();
     }
 
+    /**
+     * Returns true if the journal directory is available (resolved and present on disk).
+     * Use this before creating {@link org.dce.ed.logreader.EliteJournalReader} when running
+     * on a machine that may not have Elite Dangerous installed.
+     */
+    public static boolean isJournalDirectoryAvailable(String clientKey) {
+        Path p = resolveJournalDirectory(clientKey);
+        return p != null && Files.isDirectory(p);
+    }
+
     // ----------------------------
     // Speech / Polly getters/setters
     // ----------------------------

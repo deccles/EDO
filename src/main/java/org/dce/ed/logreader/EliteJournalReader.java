@@ -40,8 +40,7 @@ public class EliteJournalReader {
      * Use a specific journal directory.
      */
     public EliteJournalReader(Path journalDirectory) {
-    	System.out.println(journalDirectory);
-    	if (journalDirectory == null || !Files.isDirectory(journalDirectory)) {
+        if (journalDirectory == null || !Files.isDirectory(journalDirectory)) {
             throw new IllegalStateException("Journal directory not found: " + journalDirectory);
         }
         this.journalDirectory = journalDirectory;

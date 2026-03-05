@@ -347,12 +347,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 	public static LoadoutEvent getLatestLoadout() {
 		if (loadoutEventx == null) {
-			EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-
-			try {
-				loadoutEventx = (LoadoutEvent) r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
-			} catch (IOException e) {
-				e.printStackTrace();
+			Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+			if (journalDir != null && Files.isDirectory(journalDir)) {
+				try {
+					EliteJournalReader r = new EliteJournalReader(journalDir);
+					loadoutEventx = (LoadoutEvent) r.findMostRecentEvent(EliteEventType.LOADOUT, 8);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			}
 		}
 		return loadoutEventx;
@@ -935,11 +937,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 		// Use loadout from journal if not yet set (e.g. Undocked fired before Loadout when switching ships)
 		LoadoutEvent loadout = getLatestLoadout();
 		if (loadout == null) {
-			try {
-				EliteJournalReader r = new EliteJournalReader(EliteDangerousOverlay.clientKey);
-				loadout = (LoadoutEvent) r.findMostRecentEvent(EliteEventType.LOADOUT, 1);
-			} catch (IOException e) {
-				// ignore; we'll skip the reminder
+			Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+			if (journalDir != null && Files.isDirectory(journalDir)) {
+				try {
+					EliteJournalReader r = new EliteJournalReader(journalDir);
+					loadout = (LoadoutEvent) r.findMostRecentEvent(EliteEventType.LOADOUT, 1);
+				} catch (IOException e) {
+					// ignore; we'll skip the reminder
+				}
 			}
 		}
 

@@ -82,6 +82,9 @@ public class CachedBody {
 	/** Spansh exobiology landmarks (null = not fetched). First bonus does not apply when non-empty. */
 	public List<SpanshLandmark> spanshLandmarks;
 
+	/** True when Spansh has signals but none Biological; body should be excluded from exobiology lists. */
+	public Boolean spanshExcludeFromExobiology;
+
 	public int getNumberOfBioSignals() {
 		return numberOfBioSignals;
 	}

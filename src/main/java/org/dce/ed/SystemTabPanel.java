@@ -462,7 +462,12 @@ public class SystemTabPanel extends JPanel {
 
     public void refreshFromCache() {
         try {
-            EliteJournalReader reader = new EliteJournalReader(EliteDangerousOverlay.clientKey);
+            java.nio.file.Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+            if (journalDir == null || !java.nio.file.Files.isDirectory(journalDir)) {
+                rebuildTable();
+                return;
+            }
+            EliteJournalReader reader = new EliteJournalReader(journalDir);
 
             String systemName = null;
             long systemAddress = 0L;
@@ -882,10 +887,11 @@ public class SystemTabPanel extends JPanel {
                 return c;
             }
 
-            boolean hasBio = b.hasBio();
+            boolean excludeFromExobiology = Boolean.TRUE.equals(b.getSpanshExcludeFromExobiology());
+            boolean hasBio = !excludeFromExobiology && b.hasBio();
             boolean hasGeo = b.hasGeo();
 
-            long maxPredictedBioValue = getMaxPredictedBioValue(b);
+            long maxPredictedBioValue = excludeFromExobiology ? Long.MIN_VALUE : getMaxPredictedBioValue(b);
             boolean showDollar = maxPredictedBioValue >= BIO_DOLLAR_THRESHOLD;
 
 // Icon stack: leaf, then optional dollar.
@@ -932,10 +938,14 @@ return c;
         }
 
         if (!Boolean.TRUE.equals(b.getWasFootfalled()) && b.getSpanshLandmarks() == null) {
-            List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
-            if (landmarks != null) {
-                b.setSpanshLandmarks(landmarks);
+            org.dce.ed.util.SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
+            if (info != null) {
+                b.setSpanshLandmarks(info.getLandmarks());
+                b.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
             }
+        }
+        if (Boolean.TRUE.equals(b.getSpanshExcludeFromExobiology())) {
+            return Long.MIN_VALUE; // Spansh has signals but none Biological — eliminate from exobiology
         }
         boolean firstBonus = FirstBonusHelper.firstBonusApplies(b);
 
@@ -1572,7 +1582,8 @@ static class Row {
                     atmo = atmo.replaceAll("atmosphere",  "");
                     return atmo;
                 case 2:
-                    // CHANGED: remove bare "Bio" label – only show Geo / Bio+Geo
+                    // Spansh has signals but none Biological → eliminate from exobiology display
+                    if (Boolean.TRUE.equals(b.getSpanshExcludeFromExobiology())) return "";
                     if (b.hasBio() && b.hasGeo()) return "Bio + Geo";
                     if (b.hasGeo()) return "Geo";
                     return "";

@@ -44,6 +44,7 @@ import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.util.FirstBonusHelper;
+import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
 
@@ -535,9 +536,10 @@ private void installExoCreditsTracker() {
                     BodyInfo body = st.getBodies().get(so.getBodyId());
                     if (body != null) {
                         if (!Boolean.TRUE.equals(body.getWasFootfalled()) && body.getSpanshLandmarks() == null) {
-                            List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(body.getStarSystem(), body.getBodyName());
-                            if (landmarks != null) {
-                                body.setSpanshLandmarks(landmarks);
+                            SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(body.getStarSystem(), body.getBodyName());
+                            if (info != null) {
+                                body.setSpanshLandmarks(info.getLandmarks());
+                                body.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
                             }
                         }
                         firstBonus = FirstBonusHelper.firstBonusApplies(body);

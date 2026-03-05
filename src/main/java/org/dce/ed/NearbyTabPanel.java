@@ -4,6 +4,8 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -28,11 +30,16 @@ import com.google.gson.JsonParser;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.TableColumnModelEvent;
+import javax.swing.event.TableColumnModelListener;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
 
 import org.dce.ed.cache.CachedBody;
 import org.dce.ed.cache.CachedSystem;
@@ -47,9 +54,11 @@ import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.exobiology.ExobiologyData.PlanetType;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.util.EdsmClient;
 import org.dce.ed.util.FirstBonusHelper;
 import org.dce.ed.util.SpanshClient;
+import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
 
@@ -73,8 +82,11 @@ public class NearbyTabPanel extends JPanel {
     private final DefaultTableModel tableModel;
     private final JScrollPane scrollPane;
 
+    private static final int COL_SYSTEM = 0;
+
     private final AtomicBoolean firstShowDone = new AtomicBoolean(false);
     private volatile boolean refreshRequested;
+    private SystemTableHoverCopyManager systemTableHoverCopyManager;
 
     public NearbyTabPanel(SystemTabPanel systemTabPanel) {
         this.systemTabPanel = systemTabPanel;
@@ -104,6 +116,7 @@ public class NearbyTabPanel extends JPanel {
         table.setDefaultEditor(Object.class, null);
         table.setFocusable(false);
         table.setRowSelectionAllowed(false);
+        table.getTableHeader().setOpaque(true);
         table.getTableHeader().setForeground(EdoUi.User.MAIN_TEXT);
         table.getTableHeader().setBackground(EdoUi.User.BACKGROUND);
         table.getColumnModel().getColumn(5).setMinWidth(0);
@@ -139,10 +152,54 @@ public class NearbyTabPanel extends JPanel {
 
         scrollPane = new JScrollPane(table);
         scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        scrollPane.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
+        JViewport mainViewport = scrollPane.getViewport();
+        mainViewport.setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
+        mainViewport.setOpaque(false);
+        mainViewport.setBackground(EdoUi.Internal.TRANSPARENT);
+        JViewport headerViewport = scrollPane.getColumnHeader();
+        if (headerViewport != null) {
+            headerViewport.setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
+        }
         scrollPane.setBorder(null);
         scrollPane.setViewportBorder(null);
+
+        // Keep table and header in sync when user resizes columns (avoids paint/layout corruption).
+        table.getColumnModel().addColumnModelListener(new TableColumnModelListener() {
+            @Override
+            public void columnMarginChanged(javax.swing.event.ChangeEvent e) {
+                syncTableAndHeaderAfterResize();
+            }
+            @Override
+            public void columnAdded(TableColumnModelEvent e) {}
+            @Override
+            public void columnRemoved(TableColumnModelEvent e) {}
+            @Override
+            public void columnMoved(TableColumnModelEvent e) {}
+            @Override
+            public void columnSelectionChanged(ListSelectionEvent e) {}
+        });
+
+        // Copy system name to clipboard: hover (pass-through mode) and double-click on System column; show "Copied" toast.
+        systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM);
+        systemTableHoverCopyManager.start();
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() != 2) {
+                    return;
+                }
+                int viewRow = table.rowAtPoint(e.getPoint());
+                int viewCol = table.columnAtPoint(e.getPoint());
+                if (viewRow < 0 || viewCol < 0) {
+                    return;
+                }
+                int modelCol = table.convertColumnIndexToModel(viewCol);
+                if (modelCol != COL_SYSTEM) {
+                    return;
+                }
+                systemTableHoverCopyManager.copySystemNameAtViewRow(viewRow);
+            }
+        });
 
         progressPanel = new JPanel(new BorderLayout());
         progressPanel.setOpaque(false);
@@ -165,6 +222,31 @@ public class NearbyTabPanel extends JPanel {
         north.add(progressPanel, BorderLayout.CENTER);
         add(north, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
+    }
+
+    /**
+     * Revalidate and repaint table, header, and viewports after column resize so the header and body stay aligned.
+     */
+    private void syncTableAndHeaderAfterResize() {
+        table.revalidate();
+        table.repaint();
+        JTableHeader header = table.getTableHeader();
+        if (header != null) {
+            header.revalidate();
+            header.repaint();
+        }
+        JViewport vp = scrollPane.getViewport();
+        if (vp != null) {
+            vp.revalidate();
+            vp.repaint();
+        }
+        JViewport headerVp = scrollPane.getColumnHeader();
+        if (headerVp != null) {
+            headerVp.revalidate();
+            headerVp.repaint();
+        }
+        scrollPane.revalidate();
+        scrollPane.repaint();
     }
 
     /**
@@ -257,6 +339,8 @@ public class NearbyTabPanel extends JPanel {
                     }
                     int edsmQueriesUsed = 0;
                     int sysIndex = 0;
+                    int fromCache = 0;
+                    int queried = 0;
                     for (int i = 0; i < maxToScan; i++) {
                         SphereSystemsResponse sys = systems[i];
                         if (sys == null || sys.name == null || sys.name.isEmpty()) {
@@ -270,6 +354,7 @@ public class NearbyTabPanel extends JPanel {
                         Set<String> predictedGenera = new LinkedHashSet<>();
                         Set<String> ringTypes = new LinkedHashSet<>();
                         if (cs != null && cs.bodies != null) {
+                            fromCache++;
                             double[] starPos = cs.starPos != null ? cs.starPos : new double[3];
                             for (CachedBody cb : cs.bodies) {
                                 if (!cb.landable) {
@@ -288,10 +373,14 @@ public class NearbyTabPanel extends JPanel {
                                     continue;
                                 }
                                 if (!Boolean.TRUE.equals(cb.wasFootfalled) && cb.spanshLandmarks == null) {
-                                    List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(cs.systemName, cb.name);
-                                    if (landmarks != null) {
-                                        cb.spanshLandmarks = landmarks;
+                                    SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(cs.systemName, cb.name);
+                                    if (info != null) {
+                                        cb.spanshLandmarks = info.getLandmarks();
+                                        cb.spanshExcludeFromExobiology = info.isExcludeFromExobiology();
                                     }
+                                }
+                                if (Boolean.TRUE.equals(cb.spanshExcludeFromExobiology)) {
+                                    continue; // Spansh has signals but none Biological — eliminate from exobiology
                                 }
                                 boolean firstBonus = FirstBonusHelper.firstBonusApplies(cb);
                                 long maxVal = 0;
@@ -311,6 +400,7 @@ public class NearbyTabPanel extends JPanel {
                                 }
                             }
                         } else {
+                            queried++;
                             try {
                                 // Only use a query budget for EDSM; Spansh data is from one batch call.
                                 if (edsmQueriesUsed >= maxSystems) {
@@ -357,8 +447,11 @@ public class NearbyTabPanel extends JPanel {
                                         if (preds == null || preds.isEmpty()) {
                                             continue;
                                         }
-                                        List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(sys.name, b.name);
-                                        boolean firstBonus = FirstBonusHelper.firstBonusApplies(null, landmarks);
+                                        SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(sys.name, b.name);
+                                        if (info != null && info.isExcludeFromExobiology()) {
+                                            continue; // Spansh has signals but none Biological — eliminate from exobiology
+                                        }
+                                        boolean firstBonus = FirstBonusHelper.firstBonusApplies(null, info != null ? info.getLandmarks() : null);
                                         long maxVal = 0;
                                         for (BioCandidate bc : preds) {
                                             if (bc != null) {
@@ -387,9 +480,14 @@ public class NearbyTabPanel extends JPanel {
                         }
                         long systemTotal = 0;
                         List<String> names = new ArrayList<>();
+                        String systemPrefix = (sys.name != null && !sys.name.isEmpty()) ? sys.name.trim() + " " : null;
                         for (BodyValue bv : bodyValues) {
                             systemTotal += bv.valueCr;
-                            names.add(bv.bodyName);
+                            String displayName = bv.bodyName;
+                            if (systemPrefix != null && displayName != null && displayName.startsWith(systemPrefix)) {
+                                displayName = displayName.substring(systemPrefix.length()).trim();
+                            }
+                            names.add(displayName != null ? displayName : "");
                         }
                         String planetsCol = bodyValues.isEmpty() ? "—" : String.join(", ", names);
                         String exobiologyCol = predictedGenera.isEmpty() ? "—" : String.join(", ", predictedGenera);
@@ -404,6 +502,7 @@ public class NearbyTabPanel extends JPanel {
                                 Long.valueOf(systemTotal)
                         });
                     }
+                    System.out.println("Nearby panel: " + fromCache + " systems from cache, " + queried + " queried.");
                     setProgress(100);
                 } catch (Exception e) {
                     e.printStackTrace();

@@ -13,6 +13,7 @@ import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.util.FirstBonusHelper;
+import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
 
@@ -96,9 +97,10 @@ final class BioTableBuilder {
             boolean hasPreds = preds != null && !preds.isEmpty();
 
             if (!Boolean.TRUE.equals(b.getWasFootfalled()) && b.getSpanshLandmarks() == null) {
-                List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
-                if (landmarks != null) {
-                    b.setSpanshLandmarks(landmarks);
+                SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
+                if (info != null) {
+                    b.setSpanshLandmarks(info.getLandmarks());
+                    b.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
                 }
             }
             boolean firstBonus = FirstBonusHelper.firstBonusApplies(b);
@@ -411,10 +413,14 @@ final class BioTableBuilder {
         }
 
         if (!Boolean.TRUE.equals(b.getWasFootfalled()) && b.getSpanshLandmarks() == null) {
-            List<SpanshLandmark> landmarks = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
-            if (landmarks != null) {
-                b.setSpanshLandmarks(landmarks);
+            SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
+            if (info != null) {
+                b.setSpanshLandmarks(info.getLandmarks());
+                b.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
             }
+        }
+        if (Boolean.TRUE.equals(b.getSpanshExcludeFromExobiology())) {
+            return Long.MIN_VALUE;
         }
         boolean firstBonus = FirstBonusHelper.firstBonusApplies(b);
 
