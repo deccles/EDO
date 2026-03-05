@@ -236,13 +236,13 @@ public class NearbyTabPanel extends JPanel {
                     if (systems == null || systems.length == 0) {
                         return rows;
                     }
-                    // Sort by distance (closest first) and limit to max systems to reduce API usage (e.g. rate limits per hour).
+                    // Sort by distance (closest first). Process all systems in order; use cache when available,
+                    // and only "query" (EDSM/Spansh) for up to maxSystems that aren't cached — so 50 cached + next 40 queried = 90 shown.
                     Arrays.sort(systems, Comparator.comparingDouble(sys -> sys.distance));
-                    final int totalSystems = Math.min(maxSystems, systems.length);
+                    final int maxToScan = Math.min(systems.length, 1000);
                     SystemCache cache = SystemCache.getInstance();
-                    // Only call Spansh/EDSM for systems not already in cache — avoid re-querying cached data.
                     boolean needBodiesFromApi = false;
-                    for (int j = 0; j < totalSystems; j++) {
+                    for (int j = 0; j < maxToScan; j++) {
                         SphereSystemsResponse s0 = systems[j];
                         if (s0 == null || s0.name == null || s0.name.isEmpty()) continue;
                         CachedSystem cached = cache.get(0L, s0.name);
@@ -255,15 +255,16 @@ public class NearbyTabPanel extends JPanel {
                     if (needBodiesFromApi) {
                         bodiesBySystemFromSpansh = fetchSpanshBodiesInSphere(finalCenterName, radiusLy);
                     }
+                    int edsmQueriesUsed = 0;
                     int sysIndex = 0;
-                    for (int i = 0; i < totalSystems; i++) {
+                    for (int i = 0; i < maxToScan; i++) {
                         SphereSystemsResponse sys = systems[i];
                         if (sys == null || sys.name == null || sys.name.isEmpty()) {
                             continue;
                         }
                         sysIndex++;
-                        setProgress(totalSystems > 0 ? (int) (100.0 * sysIndex / totalSystems) : 0);
-                        publish(new int[]{sysIndex, totalSystems});
+                        setProgress(maxToScan > 0 ? (int) (100.0 * sysIndex / maxToScan) : 0);
+                        publish(new int[]{sysIndex, maxToScan});
                         CachedSystem cs = cache.get(0L, sys.name);
                         List<BodyValue> bodyValues = new ArrayList<>();
                         Set<String> predictedGenera = new LinkedHashSet<>();
@@ -311,6 +312,10 @@ public class NearbyTabPanel extends JPanel {
                             }
                         } else {
                             try {
+                                // Only use a query budget for EDSM; Spansh data is from one batch call.
+                                if (edsmQueriesUsed >= maxSystems) {
+                                    continue;
+                                }
                                 BodiesResponse bodiesResp = null;
                                 List<BodiesResponse.Body> spanshBodies = bodiesBySystemFromSpansh != null ? bodiesBySystemFromSpansh.get(sys.name) : null;
                                 if (spanshBodies != null && !spanshBodies.isEmpty() && sys.coords != null) {
@@ -324,6 +329,7 @@ public class NearbyTabPanel extends JPanel {
                                 }
                                 if (bodiesResp == null) {
                                     bodiesResp = edsmClient.showBodies(sys.name);
+                                    edsmQueriesUsed++;
                                 }
                                 if (bodiesResp != null && bodiesResp.bodies != null) {
                                     double x = 0, y = 0, z = 0;

@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.swing.Icon;
@@ -31,6 +33,8 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
@@ -97,9 +101,13 @@ public class RouteTabPanel extends JPanel {
 	private static final int COL_CLASS    = 3;
 	private static final int COL_STATUS   = 4;
 	private static final int COL_DISTANCE = 5;
+	/** Keep current system row at this offset from top when auto-scrolling (e.g. one jump = one row scroll). */
+	private static final int TARGET_CURRENT_ROW_OFFSET = 4;
 	private final JLabel headerLabel;
 	private JTable table=null;
+	private JScrollPane routeScrollPane;
 	private final RouteTableModel tableModel;
+	private SystemTableHoverCopyManager systemTableHoverCopyManager;
 	private final EdsmClient edsmClient;
 	// Caches coordinates we resolved from EDSM (used for inserting synthetic rows).
 	private final java.util.Map<String, Double[]> resolvedCoordsCache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -380,16 +388,17 @@ public class RouteTabPanel extends JPanel {
 		columns.getColumn(COL_CLASS).setPreferredWidth(40);   // class
 		columns.getColumn(COL_STATUS).setPreferredWidth(40);  // check/? status
 		columns.getColumn(COL_DISTANCE).setPreferredWidth(60); // Ly
-		JScrollPane scroll = new JScrollPane(table);
-		scroll.setOpaque(false);
-		scroll.getViewport().setOpaque(false);
-		scroll.setBorder(null);
-		scroll.setViewportBorder(null);
-		if (scroll.getViewport() != null) {
-			scroll.getViewport().setBorder(null);
+		routeScrollPane = new JScrollPane(table);
+		routeScrollPane.setOpaque(false);
+		routeScrollPane.getViewport().setOpaque(false);
+		routeScrollPane.setBorder(null);
+		routeScrollPane.setViewportBorder(null);
+		if (routeScrollPane.getViewport() != null) {
+			routeScrollPane.getViewport().setBorder(null);
+			installViewportScrollListener(routeScrollPane.getViewport());
 		}
-		if (scroll.getColumnHeader() != null) {
-			scroll.getColumnHeader().setBorder(null);
+		if (routeScrollPane.getColumnHeader() != null) {
+			routeScrollPane.getColumnHeader().setBorder(null);
 		}
 		JTableHeader th = table.getTableHeader();
 		if (th != null) {
@@ -398,9 +407,9 @@ public class RouteTabPanel extends JPanel {
 		th.setBorder(null);
 
 		add(headerLabel, BorderLayout.NORTH);
-		add(scroll, BorderLayout.CENTER);
+		add(routeScrollPane, BorderLayout.CENTER);
 
-		scroll.setColumnHeaderView(null);
+		routeScrollPane.setColumnHeaderView(null);
 		table.setTableHeader(null);
 
 		SwingUtilities.invokeLater(() -> {
@@ -409,10 +418,27 @@ public class RouteTabPanel extends JPanel {
 			cols.getColumn(COL_MARKER).setMaxWidth(20);
 			cols.getColumn(COL_MARKER).setPreferredWidth(20);
 		});
-		// Copy-to-clipboard behavior on hover for the system name column,
-		// consistent with SystemTabPanel.
-		SystemTableHoverCopyManager systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM);
+		// Copy-to-clipboard: hover (works in mouse-pass-through mode) and double-click on system name column.
+		systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM);
 		systemTableHoverCopyManager.start();
+		table.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseClicked(MouseEvent e) {
+				if (e.getClickCount() != 2) {
+					return;
+				}
+				int viewRow = table.rowAtPoint(e.getPoint());
+				int viewCol = table.columnAtPoint(e.getPoint());
+				if (viewRow < 0 || viewCol < 0) {
+					return;
+				}
+				int modelCol = table.convertColumnIndexToModel(viewCol);
+				if (modelCol != COL_SYSTEM) {
+					return;
+				}
+				systemTableHoverCopyManager.copySystemNameAtViewRow(viewRow);
+			}
+		});
 
 		reloadFromNavRouteFile();
 	}
@@ -785,17 +811,136 @@ public class RouteTabPanel extends JPanel {
 		renumberDisplayIndexes(working);
 		applyMarkerKinds(working);
 		tableModel.setEntries(working);
-		// Async EDSM lookups to refine status icons (skip body rows).
-		for (int row = 0; row < working.size(); row++) {
-			RouteEntry entry = working.get(row);
+		// Only run EDSM for visible rows; scroll to keep current at ~TARGET_CURRENT_ROW_OFFSET (after layout).
+		SwingUtilities.invokeLater(() -> {
+			startEdsmUpdatesForVisibleRows();
+			scrollToKeepCurrentRowAtOffset();
+		});
+	}
+
+	/** Call on EDT. Starts EDSM status updates only for rows currently visible in the viewport. */
+	private void startEdsmUpdatesForVisibleRows() {
+		if (table == null || tableModel == null) {
+			return;
+		}
+		int first = getFirstVisibleRow();
+		int last = getLastVisibleRow();
+		if (first < 0 || last < 0) {
+			return;
+		}
+		for (int row = first; row <= last; row++) {
+			if (row >= tableModel.getRowCount()) {
+				break;
+			}
+			RouteEntry entry = tableModel.getEntries(row);
 			if (entry == null || entry.isBodyRow) {
+				continue;
+			}
+			if (entry.status != null && entry.status != ScanStatus.UNKNOWN) {
 				continue;
 			}
 			final int r = row;
 			new Thread(() -> updateStatusFromEdsm(entry, r),
-					"RouteEdsm-" + entry.systemName).start();
+					"RouteEdsm-" + (entry.systemName != null ? entry.systemName : "row" + r)).start();
 		}
 	}
+
+	private int getFirstVisibleRow() {
+		if (table == null || table.getRowCount() == 0) {
+			return -1;
+		}
+		java.awt.Rectangle visible = table.getVisibleRect();
+		if (visible == null || visible.height <= 0) {
+			return 0;
+		}
+		int row = table.rowAtPoint(new java.awt.Point(0, visible.y));
+		return row >= 0 ? row : 0;
+	}
+
+	private int getLastVisibleRow() {
+		if (table == null) {
+			return -1;
+		}
+		int rowCount = table.getRowCount();
+		if (rowCount == 0) {
+			return -1;
+		}
+		java.awt.Rectangle visible = table.getVisibleRect();
+		if (visible == null || visible.height <= 0) {
+			return rowCount - 1;
+		}
+		int row = table.rowAtPoint(new java.awt.Point(0, visible.y + visible.height - 1));
+		return row >= 0 ? row : (rowCount - 1);
+	}
+
+	private int getCurrentSystemRowIndex() {
+		if (tableModel == null) {
+			return -1;
+		}
+		String cur = getCurrentSystemName();
+		if (cur == null || cur.isEmpty()) {
+			return -1;
+		}
+		int n = tableModel.getRowCount();
+		for (int i = 0; i < n; i++) {
+			RouteEntry e = tableModel.getEntries(i);
+			if (e != null && cur.equals(e.systemName)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/** Call on EDT. Scrolls the viewport so the current system row sits at TARGET_CURRENT_ROW_OFFSET from the top. */
+	private void scrollToKeepCurrentRowAtOffset() {
+		if (table == null || routeScrollPane == null) {
+			return;
+		}
+		java.awt.Component p = table.getParent();
+		if (!(p instanceof javax.swing.JViewport)) {
+			return;
+		}
+		javax.swing.JViewport vp = (javax.swing.JViewport) p;
+		int currentRow = getCurrentSystemRowIndex();
+		if (currentRow < 0) {
+			return;
+		}
+		int rowHeight = table.getRowHeight();
+		int tableHeight = table.getHeight();
+		int viewHeight = vp.getExtentSize().height;
+		int viewY = (currentRow - TARGET_CURRENT_ROW_OFFSET) * rowHeight;
+		viewY = Math.max(0, Math.min(viewY, Math.max(0, tableHeight - viewHeight)));
+		java.awt.Point pos = vp.getViewPosition();
+		vp.setViewPosition(new java.awt.Point(pos.x != 0 ? pos.x : 0, viewY));
+	}
+
+	private static final int VIEWPORT_EDSM_DEBOUNCE_MS = 200;
+	private Timer viewportEdsmDebounceTimer;
+
+	/** Install a change listener on the viewport that triggers EDSM updates for newly visible rows (debounced). */
+	private void installViewportScrollListener(javax.swing.JViewport viewport) {
+		if (viewport == null) {
+			return;
+		}
+		viewport.addChangeListener(new ChangeListener() {
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				if (viewportEdsmDebounceTimer != null) {
+					viewportEdsmDebounceTimer.stop();
+				}
+				viewportEdsmDebounceTimer = new Timer(VIEWPORT_EDSM_DEBOUNCE_MS, ev -> {
+					if (viewportEdsmDebounceTimer != null) {
+						viewportEdsmDebounceTimer.stop();
+						viewportEdsmDebounceTimer = null;
+					}
+					SwingUtilities.invokeLater(() -> startEdsmUpdatesForVisibleRows());
+				});
+				viewportEdsmDebounceTimer.setRepeats(false);
+				viewportEdsmDebounceTimer.start();
+			}
+		});
+	}
+
 	static List<RouteEntry> deepCopy(List<RouteEntry> entries) {
 		List<RouteEntry> out = new ArrayList<>();
 		if (entries == null) {

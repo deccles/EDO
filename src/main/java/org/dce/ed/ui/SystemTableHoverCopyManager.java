@@ -116,11 +116,18 @@ public class SystemTableHoverCopyManager {
         if (hoverViewRow < 0) {
             return;
         }
+        copySystemNameAtViewRow(hoverViewRow);
+    }
+
+    /**
+     * Copy the system name at the given view row to the clipboard and show the "Copied" toast.
+     * Used for double-click-to-copy when the overlay is not in mouse-pass-through mode.
+     */
+    public void copySystemNameAtViewRow(int viewRow) {
         if (!table.isShowing()) {
             return;
         }
 
-        int viewRow = hoverViewRow;
         int modelRow = table.convertRowIndexToModel(viewRow);
         if (modelRow < 0 || modelRow >= table.getModel().getRowCount()) {
             return;
@@ -147,7 +154,7 @@ public class SystemTableHoverCopyManager {
                .getSystemClipboard()
                .setContents(selection, null);
 
-        // Visual feedback centered on the hovered row
+        // Visual feedback centered on the row
         showCopiedToast(systemName, viewRow);
     }
 
