@@ -123,6 +123,11 @@ public class MiningTabPanel extends JPanel {
 	/** True if we wrote at least one prospector log row since the last FSD jump; used to only increment run counter when something was collected. */
 	private boolean wroteRowsThisRun;
 
+	/** Next asteroid ID index (0 = A, 1 = B, ..., 26 = AA, ...). Reset when run increments. */
+	private int asteroidIdCounter;
+	/** Number of prospector limpets fired (duds) since the last one that generated logged inventory. */
+	private int dudCounter;
+
 	/** Current system and body for prospector log rows (updated from LocationEvent / StatusEvent). */
 	private volatile String currentSystemName = "";
 	private volatile String currentBodyName = "";
@@ -988,14 +993,27 @@ return EdoUi.User.MAIN_TEXT;
 		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(snap != null ? snap.getCargoJson() : null);
 		Set<String> materials = new HashSet<>(lastInventoryTonsAtProspector.keySet());
 		materials.addAll(currentInventory.keySet());
-		appendProspectorCsvRows(ts, currentInventory, materials, null);
+		appendProspectorCsvRows(ts, currentInventory, materials, null, null);
 		lastInventoryTonsAtProspector = new HashMap<>();
 		lastPercentByMaterialAtProspector = new HashMap<>();
 		// Only count a new run when something was actually collected since the last run (we wrote at least one row)
 		if (wroteRowsThisRun) {
 			OverlayPreferences.incrementMiningLogRunCounter();
+			asteroidIdCounter = 0;
 		}
 		wroteRowsThisRun = false;
+	}
+
+	/** Format asteroid index as A, B, ..., Z, AA, AB, ... */
+	private static String formatAsteroidId(int index) {
+		if (index < 0) return "";
+		StringBuilder sb = new StringBuilder();
+		int n = index;
+		do {
+			sb.insert(0, (char) ('A' + (n % 26)));
+			n = n / 26 - 1;
+		} while (n >= 0);
+		return sb.toString();
 	}
 
 	/** Update cached location from Location event (system + body). */
@@ -1035,12 +1053,16 @@ return EdoUi.User.MAIN_TEXT;
 				}
 			}
 		}
-		appendProspectorCsvRows(ts, currentInventory, materials, fallbackPct);
+		boolean wrote = appendProspectorCsvRows(ts, currentInventory, materials, fallbackPct, event);
+		if (event != null && !wrote) {
+			dudCounter++;
+		}
 	}
 
 	/** Write log rows for materials that increased; uses lastInventoryTonsAtProspector and lastPercentByMaterialAtProspector.
+	 * @param event when non-null, from a prospector limpet (assign asteroid ID, core type, duds; dud counter is updated by caller if no rows written).
 	 * @return true if at least one row was written to the backend */
-	private boolean appendProspectorCsvRows(Instant ts, Map<String, Double> currentInventory, Set<String> materialsToConsider, Map<String, Double> fallbackPercentByMaterial) {
+	private boolean appendProspectorCsvRows(Instant ts, Map<String, Double> currentInventory, Set<String> materialsToConsider, Map<String, Double> fallbackPercentByMaterial, ProspectedAsteroidEvent event) {
 		if (materialsToConsider == null || materialsToConsider.isEmpty()) {
 			return false;
 		}
@@ -1055,6 +1077,14 @@ return EdoUi.User.MAIN_TEXT;
 		String commander = OverlayPreferences.getMiningLogCommanderName();
 		if (commander == null || commander.isBlank()) {
 			commander = "-";
+		}
+		String asteroidId = "";
+		String coreType = "";
+		int duds = 0;
+		if (event != null) {
+			asteroidId = formatAsteroidId(asteroidIdCounter);
+			coreType = event.getMotherlodeMaterial() != null ? event.getMotherlodeMaterial() : "";
+			duds = dudCounter;
 		}
 		List<ProspectorLogRow> rows = new ArrayList<>();
 		for (String material : materialsToConsider) {
@@ -1076,10 +1106,14 @@ return EdoUi.User.MAIN_TEXT;
 			// Add 0.5 only when we have material, to approximate amount still in refinery (avoids showing 0.5 "before" when inventory was 0)
 			double beforeAdjusted = Double.isNaN(beforeTons) ? 0.0 : (beforeTons > 0 ? beforeTons + 0.5 : beforeTons);
 			double afterAdjusted = Double.isNaN(afterTons) ? 0.0 : (afterTons > 0 ? afterTons + 0.5 : afterTons);
-			rows.add(new ProspectorLogRow(run, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander));
+			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds));
 		}
 		if (rows.isEmpty()) {
 			return false;
+		}
+		if (event != null) {
+			asteroidIdCounter++;
+			dudCounter = 0;
 		}
 		try {
 			ProspectorLogBackend backend = ProspectorLogBackendFactory.create();
@@ -2290,10 +2324,10 @@ String getName() {
 		}
 	}
 
-	/** Table model for prospector log rows: Run, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Body, Commander. Supports run summary rows. */
+	/** Table model for prospector log rows: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander. Supports run summary rows. */
 	private static final class ProspectorLogTableModel extends AbstractTableModel {
 		private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
-		private static final String[] COLUMNS = { "Run", "Timestamp", "Type", "Percentage", "Before Amount", "After Amount", "Actual", "Body", "Commander" };
+		private static final String[] COLUMNS = { "Run", "Asteroid", "Timestamp", "Type", "Percentage", "Before Amount", "After Amount", "Actual", "Core", "Body", "Duds", "Commander" };
 		private List<Object> displayRows = new ArrayList<>();
 
 		void setRows(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
@@ -2382,14 +2416,17 @@ String getName() {
 			ProspectorLogRow r = (ProspectorLogRow) item;
 			switch (columnIndex) {
 				case 0: return r.getRun();
-				case 1: return r.getTimestamp() != null ? r.getTimestamp().atZone(ZoneId.systemDefault()).format(TS_FMT) : "";
-				case 2: return r.getMaterial();
-				case 3: return String.format(Locale.US, "%.2f", r.getPercent());
-				case 4: return String.format(Locale.US, "%.2f", r.getBeforeAmount());
-				case 5: return String.format(Locale.US, "%.2f", r.getAfterAmount());
-				case 6: return String.format(Locale.US, "%.2f", r.getDifference());
-				case 7: return r.getFullBodyName();
-				case 8: return r.getCommanderName();
+				case 1: return r.getAsteroidId() != null ? r.getAsteroidId() : "";
+				case 2: return r.getTimestamp() != null ? r.getTimestamp().atZone(ZoneId.systemDefault()).format(TS_FMT) : "";
+				case 3: return r.getMaterial();
+				case 4: return String.format(Locale.US, "%.2f", r.getPercent());
+				case 5: return String.format(Locale.US, "%.2f", r.getBeforeAmount());
+				case 6: return String.format(Locale.US, "%.2f", r.getAfterAmount());
+				case 7: return String.format(Locale.US, "%.2f", r.getDifference());
+				case 8: return r.getCoreType() != null ? r.getCoreType() : "";
+				case 9: return r.getFullBodyName();
+				case 10: return r.getDuds();
+				case 11: return r.getCommanderName();
 				default: return "";
 			}
 		}

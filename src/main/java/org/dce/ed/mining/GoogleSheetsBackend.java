@@ -34,6 +34,10 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
     private static final DateTimeFormatter[] TIMESTAMP_PARSERS = {
         DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US),
         DateTimeFormatter.ofPattern("M/d/yyyy H:m:s", Locale.US),
+        DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss", Locale.US),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US),
+        DateTimeFormatter.ofPattern("d/M/yyyy H:mm:ss", Locale.US),
+        DateTimeFormatter.ofPattern("d/M/yyyy H:m:s", Locale.US),
     };
 
     private final String spreadsheetId;
@@ -68,9 +72,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             .build();
     }
 
-    /** Sheet range: Run, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Body, Commander (A–I). */
-    private static String rangeA1I() {
-        return "A:I";
+    /** Sheet range: Run, Asteroid, Timestamp, Type, %, Before, After, Actual, Core, Body, Duds, Commander (A–L). */
+    private static String rangeA1L() {
+        return "A:L";
     }
 
     @Override
@@ -91,21 +95,26 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 String body = (r.getFullBodyName() != null && !r.getFullBodyName().isEmpty()) ? r.getFullBodyName() : "-";
                 String commander = (r.getCommanderName() != null && !r.getCommanderName().isEmpty()) ? r.getCommanderName() : "-";
                 String material = (r.getMaterial() != null && !r.getMaterial().isEmpty()) ? r.getMaterial() : "-";
+                String asteroid = (r.getAsteroidId() != null && !r.getAsteroidId().isEmpty()) ? r.getAsteroidId() : "-";
+                String core = (r.getCoreType() != null && !r.getCoreType().isEmpty()) ? r.getCoreType() : "-";
                 List<Object> row = new ArrayList<>();
                 row.add(r.getRun());
+                row.add(asteroid);
                 row.add(ts);
                 row.add(material);
                 row.add(r.getPercent());
                 row.add(r.getBeforeAmount());
                 row.add(r.getAfterAmount());
                 row.add(r.getDifference());
+                row.add(core);
                 row.add(body);
+                row.add(r.getDuds());
                 row.add(commander);
                 values.add(row);
             }
             ValueRange bodyRange = new ValueRange().setValues(values);
             AppendValuesResponse res = sheets.spreadsheets().values()
-                .append(spreadsheetId, rangeA1I(), bodyRange)
+                .append(spreadsheetId, rangeA1L(), bodyRange)
                 .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                 .setInsertDataOption("INSERT_ROWS")
                 .execute();
@@ -125,28 +134,43 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 return Collections.emptyList();
             }
             ValueRange response = sheets.spreadsheets().values()
-                .get(spreadsheetId, rangeA1I())
+                .get(spreadsheetId, rangeA1L())
                 .execute();
             List<List<Object>> values = response.getValues();
             if (values == null || values.isEmpty()) {
                 return Collections.emptyList();
             }
             List<ProspectorLogRow> out = new ArrayList<>();
-            // Skip header row (row 0). 9 cols: run,timestamp,material,percent,before,after,actual,body,commander
+            // Skip header. 12 cols: run,asteroid,timestamp,material,percent,before,after,actual,core,body,duds,commander. Legacy 9 supported.
             for (int i = 1; i < values.size(); i++) {
                 List<Object> row = values.get(i);
                 if (row == null || row.size() < 9) continue;
                 try {
                     int run = parseInt(row.get(0), 0);
-                    Instant ts = parseTimestamp(str(row.get(1)));
-                    String material = str(row.get(2));
-                    double percent = parseDouble(row.get(3), 0.0);
-                    double before = parseDouble(row.get(4), 0.0);
-                    double after = parseDouble(row.get(5), 0.0);
-                    double diff = parseDouble(row.get(6), 0.0);
-                    String fullBodyName = str(row.get(7));
-                    String commander = str(row.get(8));
-                    out.add(new ProspectorLogRow(run, fullBodyName, ts, material, percent, before, after, diff, commander));
+                    if (row.size() >= 12) {
+                        String asteroidId = str(row.get(1));
+                        Instant ts = parseTimestamp(str(row.get(2)));
+                        String material = str(row.get(3));
+                        double percent = parseDouble(row.get(4), 0.0);
+                        double before = parseDouble(row.get(5), 0.0);
+                        double after = parseDouble(row.get(6), 0.0);
+                        double diff = parseDouble(row.get(7), 0.0);
+                        String core = str(row.get(8));
+                        String fullBodyName = str(row.get(9));
+                        int duds = parseInt(row.get(10), 0);
+                        String commander = str(row.get(11));
+                        out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds));
+                    } else {
+                        Instant ts = parseTimestamp(str(row.get(1)));
+                        String material = str(row.get(2));
+                        double percent = parseDouble(row.get(3), 0.0);
+                        double before = parseDouble(row.get(4), 0.0);
+                        double after = parseDouble(row.get(5), 0.0);
+                        double diff = parseDouble(row.get(6), 0.0);
+                        String fullBodyName = str(row.get(7));
+                        String commander = str(row.get(8));
+                        out.add(new ProspectorLogRow(run, fullBodyName, ts, material, percent, before, after, diff, commander));
+                    }
                 } catch (Exception ignored) {
                 }
             }
@@ -183,6 +207,11 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
     private static Instant parseTimestamp(String s) {
         if (s == null || s.isBlank()) return null;
+        s = s.trim();
+        try {
+            return java.time.Instant.parse(s);
+        } catch (Exception ignored) {
+        }
         for (DateTimeFormatter fmt : TIMESTAMP_PARSERS) {
             try {
                 return java.time.LocalDateTime.parse(s, fmt).atZone(ZoneId.systemDefault()).toInstant();

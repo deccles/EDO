@@ -18,12 +18,12 @@ import org.dce.ed.MiningTabPanel;
 
 /**
  * Prospector log backend that writes to and reads from a local CSV file.
- * Column order: Run, Timestamp, Type, Percentage, Before Amount, After Amount, Actual (difference), Body, Commander (9 columns).
- * Legacy 7-column files are supported on read.
+ * Column order: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander (12 columns).
+ * Legacy 7- and 9-column files are supported on read.
  */
 public final class LocalCsvBackend implements ProspectorLogBackend {
 
-    private static final String HEADER = "run,timestamp,material,percent,before amount,after amount,actual,body,commander";
+    private static final String HEADER = "run,asteroid,timestamp,material,percent,before amount,after amount,actual,core,body,duds,commander";
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
 
     private final Path csvPath;
@@ -64,14 +64,21 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                 if (commander == null || commander.isEmpty()) commander = "-";
                 String material = r.getMaterial();
                 if (material == null || material.isEmpty()) material = "-";
+                String asteroid = r.getAsteroidId() != null ? r.getAsteroidId() : "";
+                if (asteroid.isEmpty()) asteroid = "-";
+                String core = r.getCoreType() != null ? r.getCoreType() : "";
+                if (core.isEmpty()) core = "-";
                 String line = r.getRun() + ","
+                    + MiningTabPanel.csvEscape(asteroid) + ","
                     + MiningTabPanel.csvEscape(tsStr) + ","
                     + MiningTabPanel.csvEscape(material) + ","
                     + formatDouble(r.getPercent()) + ","
                     + formatDouble(r.getBeforeAmount()) + ","
                     + formatDouble(r.getAfterAmount()) + ","
                     + formatDouble(r.getDifference()) + ","
+                    + MiningTabPanel.csvEscape(core) + ","
                     + MiningTabPanel.csvEscape(body) + ","
+                    + r.getDuds() + ","
                     + MiningTabPanel.csvEscape(commander);
                 Files.writeString(csvPath, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             }
@@ -116,7 +123,8 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                 }
                 out.addAll(inferRunsFromLegacy(rawRows));
             } else {
-                // New 9-column: run,timestamp,material,percent,before amount,after amount,actual,body,commander
+                // New 12-column: run,asteroid,timestamp,material,percent,before,after,actual,core,body,duds,commander
+                // Legacy 9-column: run,timestamp,material,percent,before,after,actual,body,commander (no asteroid, core, duds)
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (line.trim().isEmpty()) continue;
@@ -124,15 +132,30 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                     if (cols.size() < 9) continue;
                     try {
                         int run = Integer.parseInt(cols.get(0).trim());
-                        Instant ts = parseTimestamp(cols.get(1).trim());
-                        String material = cols.get(2).trim();
-                        double percent = parseDouble(cols.get(3), 0.0);
-                        double before = parseDouble(cols.get(4), 0.0);
-                        double after = parseDouble(cols.get(5), 0.0);
-                        double diff = parseDouble(cols.get(6), 0.0);
-                        String fullBodyName = cols.get(7).trim();
-                        String commander = cols.get(8).trim();
-                        out.add(new ProspectorLogRow(run, fullBodyName, ts, material, percent, before, after, diff, commander));
+                        if (cols.size() >= 12) {
+                            String asteroidId = cols.get(1).trim();
+                            Instant ts = parseTimestamp(cols.get(2).trim());
+                            String material = cols.get(3).trim();
+                            double percent = parseDouble(cols.get(4), 0.0);
+                            double before = parseDouble(cols.get(5), 0.0);
+                            double after = parseDouble(cols.get(6), 0.0);
+                            double diff = parseDouble(cols.get(7), 0.0);
+                            String core = cols.get(8).trim();
+                            String fullBodyName = cols.get(9).trim();
+                            int duds = parseInt(cols.get(10), 0);
+                            String commander = cols.get(11).trim();
+                            out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds));
+                        } else {
+                            Instant ts = parseTimestamp(cols.get(1).trim());
+                            String material = cols.get(2).trim();
+                            double percent = parseDouble(cols.get(3), 0.0);
+                            double before = parseDouble(cols.get(4), 0.0);
+                            double after = parseDouble(cols.get(5), 0.0);
+                            double diff = parseDouble(cols.get(6), 0.0);
+                            String fullBodyName = cols.get(7).trim();
+                            String commander = cols.get(8).trim();
+                            out.add(new ProspectorLogRow(run, fullBodyName, ts, material, percent, before, after, diff, commander));
+                        }
                     } catch (Exception e) {
                         // skip malformed line
                     }
@@ -224,17 +247,27 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
         if (s == null || s.isBlank() || "-".equals(s)) {
             return null;
         }
+        s = s.trim();
+        // Try ISO-8601 first (e.g. 2024-01-15T10:30:00Z or 2024-01-15T10:30:00)
         try {
-            return java.time.LocalDateTime.parse(s, DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US))
-                .atZone(ZoneId.systemDefault()).toInstant();
-        } catch (Exception e) {
+            return java.time.Instant.parse(s);
+        } catch (Exception ignored) {
+        }
+        java.time.format.DateTimeFormatter[] formats = {
+            DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US),
+            DateTimeFormatter.ofPattern("M/d/yyyy H:m:s", Locale.US),
+            DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss", Locale.US),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US),
+            DateTimeFormatter.ofPattern("d/M/yyyy H:mm:ss", Locale.US),
+            DateTimeFormatter.ofPattern("d/M/yyyy H:m:s", Locale.US),
+        };
+        for (DateTimeFormatter fmt : formats) {
             try {
-                return java.time.LocalDateTime.parse(s, DateTimeFormatter.ofPattern("M/d/yyyy H:m:s", Locale.US))
-                    .atZone(ZoneId.systemDefault()).toInstant();
-            } catch (Exception e2) {
-                return null;
+                return java.time.LocalDateTime.parse(s, fmt).atZone(ZoneId.systemDefault()).toInstant();
+            } catch (Exception ignored) {
             }
         }
+        return null;
     }
 
     private static double parseDouble(String s, double def) {
@@ -243,6 +276,17 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
         }
         try {
             return Double.parseDouble(s.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private static int parseInt(String s, int def) {
+        if (s == null || s.isBlank()) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(s.trim());
         } catch (NumberFormatException e) {
             return def;
         }
