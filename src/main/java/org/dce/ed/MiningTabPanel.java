@@ -13,12 +13,12 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.util.Collections;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -33,6 +33,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -42,7 +43,6 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JToggleButton;
 import javax.swing.JViewport;
-import javax.swing.DefaultComboBoxModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -62,14 +62,16 @@ import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
 import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.logreader.event.SupercruiseExitEvent;
 import org.dce.ed.market.GalacticAveragePrices;
+import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.mining.ProspectorLogBackend;
 import org.dce.ed.mining.ProspectorLogBackendFactory;
 import org.dce.ed.mining.ProspectorLogRow;
-import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.TransparentTableHeaderUI;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -264,7 +266,7 @@ private final JLayer<JTable> cargoLayer;
 
 		JTableHeader th = table.getTableHeader();
 		if (th != null) {
-			th.setUI(org.dce.ed.ui.TransparentTableHeaderUI.createUI(th));
+			th.setUI(TransparentTableHeaderUI.createUI(th));
 			th.setOpaque(!OverlayPreferences.isOverlayTransparent());
 			th.setForeground(EdoUi.User.MAIN_TEXT);
 			th.setBackground(EdoUi.User.BACKGROUND);
@@ -469,7 +471,8 @@ private final JLayer<JTable> cargoLayer;
 			}
 		};
 		spreadsheetTable.setDefaultRenderer(Object.class, spreadCellRenderer);
-		spreadsheetTable.setTableHeader(new org.dce.ed.ui.TransparentTableHeader(spreadsheetTable.getColumnModel()));
+		spreadsheetTable.setTableHeader(new ProspectorLogTableHeader(spreadsheetTable.getColumnModel()));
+		applyProspectorLogColumnVisibility(spreadsheetTable);
 		JTableHeader spreadHeader = spreadsheetTable.getTableHeader();
 		if (spreadHeader != null) {
 			spreadHeader.setUI(org.dce.ed.ui.TransparentTableHeaderUI.createUI(spreadHeader));
@@ -602,6 +605,20 @@ private final JLayer<JTable> cargoLayer;
 
 		cm.getColumn(4).setMinWidth(75);
 		cm.getColumn(4).setPreferredWidth(95);
+	}
+
+	/** Hide Before Amount (5), After Amount (6), Body (9) in the prospector log table; data still in model. */
+	private static void applyProspectorLogColumnVisibility(JTable tbl) {
+		if (tbl == null) return;
+		TableColumnModel cm = tbl.getColumnModel();
+		if (cm == null || cm.getColumnCount() < 10) return;
+		for (int i : new int[] { 5, 6, 9 }) {
+			TableColumn col = cm.getColumn(i);
+			col.setMinWidth(0);
+			col.setMaxWidth(0);
+			col.setPreferredWidth(0);
+			col.setWidth(0);
+		}
 	}
 
 
@@ -754,6 +771,7 @@ return EdoUi.User.MAIN_TEXT;
 		}
 		applyMiningColumnWidths(table);
 		applyMiningColumnWidths(cargoTable);
+		applyProspectorLogColumnVisibility(spreadsheetTable);
 
 		updateScrollerHeights();
 
@@ -1038,6 +1056,15 @@ return EdoUi.User.MAIN_TEXT;
 		if (body != null) {
 			currentBodyName = body;
 		}
+	}
+
+	/** Update system and body from SupercruiseExit (e.g. when dropping at a ring) so spreadsheet body column populates. */
+	public void updateFromSupercruiseExit(SupercruiseExitEvent event) {
+		if (event == null) return;
+		String sys = event.getStarSystem();
+		if (sys != null) currentSystemName = sys;
+		String body = event.getBody();
+		if (body != null) currentBodyName = body;
 	}
 
 	private void appendProspectorCsv(ProspectedAsteroidEvent event, Map<String, Double> currentInventory) {
@@ -2037,6 +2064,63 @@ String getName() {
 		}
 	}
 
+	/** Prospector log table header: "Run" spans first two columns, rest drawn per column. */
+	private static final class ProspectorLogTableHeader extends JTableHeader {
+		private static final long serialVersionUID = 1L;
+		private static final int RUN_SPAN_COLUMNS = 2;
+
+		ProspectorLogTableHeader(TableColumnModel cm) {
+			super(cm);
+			setOpaque(false);
+			setBackground(EdoUi.Internal.TRANSPARENT);
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			TableColumnModel cm = getColumnModel();
+			int n = cm.getColumnCount();
+			if (n <= 0) return;
+			javax.swing.JTable tbl = getTable();
+			TableCellRenderer renderer = getDefaultRenderer();
+			if (renderer == null || tbl == null) return;
+			boolean ltr = getComponentOrientation().isLeftToRight();
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+			java.awt.Rectangle r0 = getHeaderRect(0);
+			java.awt.Rectangle r1 = n > 1 ? getHeaderRect(1) : r0;
+			int runSpanW = ltr ? (r0.width + r1.width) : (r1.width + r0.width);
+			int runSpanX = ltr ? r0.x : r1.x;
+			// Clear and draw "Run" spanning first RUN_SPAN_COLUMNS
+			g2.setComposite(AlphaComposite.getInstance(AlphaComposite.CLEAR));
+			g2.fillRect(runSpanX, 0, runSpanW, getHeight());
+			g2.setComposite(AlphaComposite.SrcOver);
+			Component runCell = renderer.getTableCellRendererComponent(tbl, "Run", false, false, -1, 0);
+			runCell.setBounds(0, 0, runSpanW, getHeight());
+			Graphics2D cellG = (Graphics2D) g2.create(runSpanX, 0, runSpanW, getHeight());
+			runCell.paint(cellG);
+			cellG.dispose();
+			// Columns 2..n-1 normally
+			for (int i = RUN_SPAN_COLUMNS; i < n; i++) {
+				int col = ltr ? i : (n - 1 - i);
+				TableColumn tc = cm.getColumn(col);
+				TableCellRenderer colRenderer = tc.getHeaderRenderer();
+				if (colRenderer == null) colRenderer = renderer;
+				java.awt.Rectangle r = getHeaderRect(col);
+				g2.setComposite(AlphaComposite.getInstance(AlphaComposite.CLEAR));
+				g2.fillRect(r.x, r.y, r.width, r.height);
+				g2.setComposite(AlphaComposite.SrcOver);
+				Component cell = colRenderer.getTableCellRendererComponent(tbl, tc.getHeaderValue(), false, false, -1, col);
+				cell.setBounds(0, 0, r.width, r.height);
+				Graphics2D cg = (Graphics2D) g2.create(r.x, r.y, r.width, r.height);
+				cell.paint(cg);
+				cg.dispose();
+			}
+			g2.setColor(EdoUi.ED_ORANGE_TRANS);
+			g2.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+			g2.dispose();
+		}
+	}
+
 	 private static final class HeaderRenderer extends DefaultTableCellRenderer {
 		 private static final long serialVersionUID = 1L;
 
@@ -2225,10 +2309,14 @@ String getName() {
 		}
 	}
 
-	/** Scatter plot panel: X = Percentage, Y = Actual (difference). Supports filter by run/commander and color by commander. */
+	/** Scatter plot panel: X = Percentage (%), Y = Actual yield (t). Supports filter by run/commander and color by commander. */
 	private static final class ProspectorLogScatterPanel extends JPanel {
-		private static final int PAD = 24;
+		private static final int PAD_LEFT = 42;
+		private static final int PAD_BOTTOM = 32;
+		private static final int PAD_RIGHT = 16;
+		private static final int PAD_TOP = 16;
 		private static final double POINT_RADIUS = 3.0;
+		private static final int TICK_LABELS = 5;
 		private static final Color[] COMMANDER_PALETTE = {
 			EdoUi.User.VALUABLE,
 			Color.CYAN,
@@ -2299,7 +2387,7 @@ String getName() {
 			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
 			int w = getWidth();
 			int h = getHeight();
-			if (w <= 2 * PAD || h <= 2 * PAD) {
+			if (w <= PAD_LEFT + PAD_RIGHT || h <= PAD_TOP + PAD_BOTTOM) {
 				g2.dispose();
 				return;
 			}
@@ -2315,13 +2403,36 @@ String getName() {
 			}
 			if (minPct >= maxPct) maxPct = minPct + 1.0;
 			if (minAct >= maxAct) maxAct = minAct + 1.0;
-			int plotW = w - 2 * PAD;
-			int plotH = h - 2 * PAD;
+			int plotW = w - PAD_LEFT - PAD_RIGHT;
+			int plotH = h - PAD_TOP - PAD_BOTTOM;
+			int plotX = PAD_LEFT;
+			int plotY = PAD_TOP;
 			g2.setColor(EdoUi.User.MAIN_TEXT);
-			g2.drawRect(PAD, PAD, plotW, plotH);
+			g2.drawRect(plotX, plotY, plotW, plotH);
 			g2.setFont(g2.getFont().deriveFont(10f));
-			g2.drawString("Percentage", PAD + plotW / 2 - 25, h - 4);
-			g2.drawString("Actual", 4, PAD + plotH / 2);
+			FontMetrics fm = g2.getFontMetrics();
+			// X axis label with unit (below plot)
+			String xLabel = "Percentage (%)";
+			g2.drawString(xLabel, plotX + plotW / 2 - fm.stringWidth(xLabel) / 2, h - 4);
+			// X tick labels
+			for (int i = 0; i < TICK_LABELS; i++) {
+				double frac = (TICK_LABELS <= 1) ? 0.5 : (double) i / (TICK_LABELS - 1);
+				double val = minPct + frac * (maxPct - minPct);
+				String tick = (val == (long) val) ? String.valueOf((long) val) : String.format(Locale.US, "%.1f", val);
+				int tx = plotX + (int) (frac * plotW);
+				g2.drawString(tick, tx - fm.stringWidth(tick) / 2, h - 6);
+			}
+			// Y axis label with unit (left, above plot)
+			String yLabel = "Actual (t)";
+			g2.drawString(yLabel, plotX, plotY - 4);
+			// Y tick labels (left of plot)
+			for (int i = 0; i < TICK_LABELS; i++) {
+				double frac = (TICK_LABELS <= 1) ? 0.5 : (double) i / (TICK_LABELS - 1);
+				double val = minAct + (1.0 - frac) * (maxAct - minAct); // bottom = min, top = max
+				String tick = (val >= 100 || val == (long) val) ? String.valueOf((long) val) : String.format(Locale.US, "%.1f", val);
+				int ty = plotY + (int) (frac * plotH);
+				g2.drawString(tick, plotX - fm.stringWidth(tick) - 4, ty + fm.getAscent() / 2);
+			}
 			List<String> commanderOrder = filterMode == FilterMode.ALL
 				? toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList()
 				: List.of();
@@ -2336,20 +2447,21 @@ String getName() {
 				g2.setColor(pointColor);
 				double p = r.getPercent();
 				double a = r.getDifference();
-				double nx = (p - minPct) / (maxPct - minPct);
-				double ny = 1.0 - (a - minAct) / (maxAct - minAct);
-				int x = PAD + (int) (nx * plotW);
-				int y = PAD + (int) (ny * plotH);
+				double nx = (maxPct > minPct) ? (p - minPct) / (maxPct - minPct) : 0.5;
+				double ny = (maxAct > minAct) ? 1.0 - (a - minAct) / (maxAct - minAct) : 0.5;
+				int x = plotX + (int) (nx * plotW);
+				int y = plotY + (int) (ny * plotH);
 				g2.fillOval((int) (x - POINT_RADIUS), (int) (y - POINT_RADIUS), (int) (2 * POINT_RADIUS), (int) (2 * POINT_RADIUS));
 			}
 			g2.dispose();
 		}
 	}
 
-	/** Table model for prospector log rows: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander. Supports run summary rows. */
+	/** Table model for prospector log rows: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander. Before/After/Body hidden in GUI. */
 	private static final class ProspectorLogTableModel extends AbstractTableModel {
-		private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
-		private static final String[] COLUMNS = { "Run", "Asteroid", "Timestamp", "Type", "Percentage", "Before Amount", "After Amount", "Actual", "Core", "Body", "Duds", "Commander" };
+		private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("h:mma", Locale.US);
+		private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("M/d/yyyy", Locale.US);
+		private static final String[] COLUMNS = { "Run", "Asteroid", "Time", "Type", "Percentage", "Before Amount", "After Amount", "Actual", "Core", "Body", "Duds", "Commander" };
 		private List<Object> displayRows = new ArrayList<>();
 
 		void setRows(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
@@ -2405,7 +2517,8 @@ String getName() {
 			}
 			double tonsPerHour = durationHours > 0 ? totalTons / durationHours : 0.0;
 			double creditsPerHour = durationHours > 0 ? totalCredits / durationHours : 0.0;
-			return new RunSummary(runNum, tonsPerHour, creditsPerHour);
+			String dateStr = first != null ? first.atZone(ZoneId.systemDefault()).format(DATE_FMT) : "";
+			return new RunSummary(runNum, dateStr, tonsPerHour, creditsPerHour);
 		}
 
 		boolean isSummaryRow(int rowIndex) {
@@ -2438,16 +2551,22 @@ String getName() {
 			ProspectorLogRow r = (ProspectorLogRow) item;
 			switch (columnIndex) {
 				case 0: return r.getRun();
-				case 1: return r.getAsteroidId() != null ? r.getAsteroidId() : "";
-				case 2: return r.getTimestamp() != null ? r.getTimestamp().atZone(ZoneId.systemDefault()).format(TS_FMT) : "";
+				case 1:
+					String aid = r.getAsteroidId();
+					return (aid != null && !aid.isEmpty() && !"-".equals(aid)) ? aid : "";
+				case 2:
+					if (r.getTimestamp() == null) return "";
+					return r.getTimestamp().atZone(ZoneId.systemDefault()).format(TS_FMT).toLowerCase(Locale.US);
 				case 3: return r.getMaterial();
 				case 4: return String.format(Locale.US, "%.2f", r.getPercent());
 				case 5: return String.format(Locale.US, "%.2f", r.getBeforeAmount());
 				case 6: return String.format(Locale.US, "%.2f", r.getAfterAmount());
 				case 7: return String.format(Locale.US, "%.2f", r.getDifference());
-				case 8: return r.getCoreType() != null ? r.getCoreType() : "";
+				case 8:
+					String core = r.getCoreType();
+					return (core != null && !core.isEmpty() && !"-".equals(core)) ? core : "";
 				case 9: return r.getFullBodyName();
-				case 10: return r.getDuds();
+				case 10: return r.getDuds() == 0 ? "" : r.getDuds();
 				case 11: return r.getCommanderName();
 				default: return "";
 			}
@@ -2456,17 +2575,28 @@ String getName() {
 
 	private static final class RunSummary {
 		private final int runNumber;
+		private final String dateStr;
 		private final double tonsPerHour;
 		private final double creditsPerHour;
 
-		RunSummary(int runNumber, double tonsPerHour, double creditsPerHour) {
+		RunSummary(int runNumber, String dateStr, double tonsPerHour, double creditsPerHour) {
 			this.runNumber = runNumber;
+			this.dateStr = dateStr != null ? dateStr : "";
 			this.tonsPerHour = tonsPerHour;
 			this.creditsPerHour = creditsPerHour;
 		}
 
 		String formatSummary() {
-			return String.format(Locale.US, "Run %d: %.1f t/hr · %.0f cr/hr", runNumber, tonsPerHour, creditsPerHour);
+			String crHr;
+			if (creditsPerHour >= 1_000_000) {
+				crHr = String.format(Locale.US, "%.0fM cr/hr", creditsPerHour / 1_000_000);
+			} else if (creditsPerHour >= 1_000) {
+				crHr = String.format(Locale.US, "%.0fk cr/hr", creditsPerHour / 1_000);
+			} else {
+				crHr = String.format(Locale.US, "%.0f cr/hr", creditsPerHour);
+			}
+			String datePart = dateStr.isEmpty() ? "" : dateStr + " · ";
+			return String.format(Locale.US, "Run %d · %s%.1f t/hr · %s", runNumber, datePart, tonsPerHour, crHr);
 		}
 	}
 }

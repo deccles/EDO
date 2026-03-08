@@ -395,6 +395,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 			showRouteTabFromStatusWatcher();
 		}
 		if (event instanceof SupercruiseExitEvent e) {
+		    miningTab.updateFromSupercruiseExit(e);
 		    String bodyType = e.getBodyType();
 		    if (bodyType != null && bodyType.contains("PlanetaryRing")) {
 		        showMiningTabFromStatusWatcher();
