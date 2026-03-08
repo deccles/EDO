@@ -1054,6 +1054,15 @@ return EdoUi.User.MAIN_TEXT;
 					}
 				}
 			}
+			// Include motherlode (core) so we log it when inventory increases (journal lists it separately from Materials)
+			String motherlode = event.getMotherlodeMaterial();
+			if (motherlode != null && !motherlode.isBlank()) {
+				String name = toUiName(motherlode);
+				if (name != null && !name.isBlank()) {
+					materials.add(name);
+					fallbackPct.putIfAbsent(name, 100.0); // core is 100% that material
+				}
+			}
 		}
 		boolean wrote = appendProspectorCsvRows(ts, currentInventory, materials, fallbackPct, event);
 		if (event != null && !wrote) {
