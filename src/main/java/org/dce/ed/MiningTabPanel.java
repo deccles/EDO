@@ -1108,12 +1108,32 @@ return EdoUi.User.MAIN_TEXT;
 		if (isDockedSupplier != null && isDockedSupplier.getAsBoolean()) {
 			return false;
 		}
-		// First time we're about to write this session: sync run counter from spreadsheet so we use the next number (e.g. new spreadsheet -> run 1)
+		String commander = OverlayPreferences.getMiningLogCommanderName();
+		if (commander == null || commander.isBlank()) {
+			commander = "-";
+		}
+		final String commanderForRun = commander;
+		// First time we're about to write this session: sync run counter from spreadsheet so we use the next number
+		// Run numbers are now per-commander when a commander name is set.
 		if (!syncedRunCounterFromBackend) {
 			syncedRunCounterFromBackend = true;
 			try {
 				List<ProspectorLogRow> existing = ProspectorLogBackendFactory.create().loadRows();
-				int maxRun = existing == null || existing.isEmpty() ? 0 : existing.stream().mapToInt(ProspectorLogRow::getRun).max().orElse(0);
+				int maxRun = 0;
+				if (existing != null && !existing.isEmpty()) {
+					if ("-".equals(commanderForRun)) {
+						maxRun = existing.stream()
+							.mapToInt(ProspectorLogRow::getRun)
+							.max()
+							.orElse(0);
+					} else {
+						maxRun = existing.stream()
+							.filter(r -> commanderForRun.equalsIgnoreCase(r.getCommanderName()))
+							.mapToInt(ProspectorLogRow::getRun)
+							.max()
+							.orElse(0);
+					}
+				}
 				OverlayPreferences.setMiningLogRunCounter(maxRun + 1);
 			} catch (Exception ignored) {
 				// keep current prefs value if load fails
@@ -1123,10 +1143,6 @@ return EdoUi.User.MAIN_TEXT;
 		String body = currentBodyName != null ? currentBodyName : "";
 		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
 		int run = OverlayPreferences.getMiningLogRunCounter();
-		String commander = OverlayPreferences.getMiningLogCommanderName();
-		if (commander == null || commander.isBlank()) {
-			commander = "-";
-		}
 		String asteroidId = "";
 		String coreType = "";
 		int duds = 0;
@@ -1142,9 +1158,8 @@ return EdoUi.User.MAIN_TEXT;
 			}
 			double pct = lastPercentByMaterialAtProspector.getOrDefault(material,
 				fallbackPercentByMaterial != null ? fallbackPercentByMaterial.getOrDefault(material, 0.0) : 0.0);
-			// Do not log materials with zero yield (e.g. prospector shot at bad asteroid and we moved on)
-			if (pct <= 0.0) {
-				continue;
+			if (Double.isNaN(pct) || pct < 0.0) {
+				pct = 0.0;
 			}
 			double beforeTons = lastInventoryTonsAtProspector.getOrDefault(material, 0.0);
 			double afterTons = currentInventory.getOrDefault(material, 0.0);
@@ -2452,6 +2467,46 @@ String getName() {
 				int x = plotX + (int) (nx * plotW);
 				int y = plotY + (int) (ny * plotH);
 				g2.fillOval((int) (x - POINT_RADIUS), (int) (y - POINT_RADIUS), (int) (2 * POINT_RADIUS), (int) (2 * POINT_RADIUS));
+			}
+
+			// Commander legend (only when coloring by commander: mode = ALL)
+			if (!commanderOrder.isEmpty()) {
+				int swatchSize = 10;
+				int swatchTextGap = 4;
+				int lineHeight = fm.getHeight();
+				int maxLabelWidth = 0;
+				for (String name : commanderOrder) {
+					String label = (name == null || name.isEmpty()) ? "-" : name;
+					maxLabelWidth = Math.max(maxLabelWidth, fm.stringWidth(label));
+				}
+				int legendWidth = swatchSize + swatchTextGap + maxLabelWidth + 8;
+				int legendHeight = commanderOrder.size() * lineHeight + 8;
+				int legendX = plotX + plotW - legendWidth - 4;
+				int legendY = plotY + 4;
+
+				// Background and border
+				g2.setColor(new Color(0, 0, 0, 160));
+				g2.fillRect(legendX, legendY, legendWidth, legendHeight);
+				g2.setColor(EdoUi.User.MAIN_TEXT);
+				g2.drawRect(legendX, legendY, legendWidth, legendHeight);
+
+				// Entries
+				int entryY = legendY + 4;
+				for (int i = 0; i < commanderOrder.size(); i++) {
+					String name = commanderOrder.get(i);
+					String label = (name == null || name.isEmpty()) ? "-" : name;
+					Color c = commanderColor.getOrDefault(name, EdoUi.User.VALUABLE);
+					int swatchX = legendX + 4;
+					int swatchY = entryY + (lineHeight - swatchSize) / 2;
+					g2.setColor(c);
+					g2.fillRect(swatchX, swatchY, swatchSize, swatchSize);
+					g2.setColor(EdoUi.User.MAIN_TEXT);
+					g2.drawRect(swatchX, swatchY, swatchSize, swatchSize);
+					int textX = swatchX + swatchSize + swatchTextGap;
+					int textY = entryY + fm.getAscent();
+					g2.drawString(label, textX, textY);
+					entryY += lineHeight;
+				}
 			}
 			g2.dispose();
 		}
