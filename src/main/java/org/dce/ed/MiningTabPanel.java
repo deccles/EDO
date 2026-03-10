@@ -123,7 +123,7 @@ public class MiningTabPanel extends JPanel {
 	private final ProspectorLogScatterPanel spreadsheetScatterPanel;
 	private final ProspectorLogScatterWrapperPanel spreadsheetScatterWrapper;
 	private final JPanel spreadsheetCardPanel;
-	private static final int SPREADSHEET_REFRESH_MS = 45_000;
+	private static final int SPREADSHEET_REFRESH_MS = 6_000;
 	private final Timer spreadsheetRefreshTimer;
 	private SystemTableHoverCopyManager miningSystemCopyManager;
 
@@ -2873,7 +2873,7 @@ String getName() {
 				g2.drawString(tick, tx - fm.stringWidth(tick) / 2, h - 18);
 			}
 			// Y axis label with unit (vertical text on the left)
-			String yLabel = "Tons (t)";
+			String yLabel = "Tons";
 			java.awt.geom.AffineTransform oldTx = g2.getTransform();
 			g2.rotate(-Math.PI / 2.0);
 			int yCenter = plotY + plotH / 2;
@@ -2980,7 +2980,7 @@ String getName() {
 				int legendWidth = swatchSize + swatchTextGap + maxLabelWidth + 8;
 				int legendHeight = commanderOrder.size() * lineHeight + 8;
 				int legendX = plotX + plotW - legendWidth - 4;
-				int legendY = plotY + 4;
+				int legendY = plotY + plotH - legendHeight - 4;
 
 				// Background and border
 				g2.setColor(new Color(0, 0, 0, 160));
@@ -3029,16 +3029,21 @@ String getName() {
 						asteroid = "-";
 					}
 					double pct = hoverRow.getPercent();
+					String material = hoverRow.getMaterial();
+					if (material == null || material.isBlank()) {
+						material = "-";
+					}
 					double tons = hoverRow.getDifference();
 					String commander = hoverRow.getCommanderName();
 					if (commander == null || commander.isBlank()) {
 						commander = "-";
 					}
-					String line1 = String.format(Locale.US, "%d %s", run, asteroid);
-					String line2 = String.format(Locale.US, "%.1f%% %d tons", pct, Math.round(tons));
-					String line3 = commander;
+					String line1 = String.format(Locale.US, "Run %d %s", run, asteroid);
+					String line2 = String.format(Locale.US, "%.1f%% %s", pct, material);
+					String line3 = String.format(Locale.US, "%d Tons", Math.round(tons));
+					String line4 = commander;
 
-					String[] lines = { line1, line2, line3 };
+					String[] lines = { line1, line2, line3, line4 };
 					g2.setFont(g2.getFont().deriveFont(10f));
 					FontMetrics tfm = g2.getFontMetrics();
 					int maxWidth = 0;
