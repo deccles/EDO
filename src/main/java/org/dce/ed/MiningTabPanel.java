@@ -1250,16 +1250,16 @@ return EdoUi.User.MAIN_TEXT;
 			lastCargoTonsForLogging = new HashMap<>();
 			return;
 		}
-		Instant ts = Instant.now();
-		CargoMonitor.Snapshot snap = CargoMonitor.getInstance().getSnapshot();
-		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(snap != null ? snap.getCargoJson() : null);
-		Set<String> materials = new HashSet<>(lastInventoryTonsAtProspector.keySet());
-		materials.addAll(currentInventory.keySet());
-		appendProspectorCsvRows(ts, currentInventory, materials, null, null);
+		// With cargo-driven logging, we've already written rows as inventory changed.
+		// Avoid appending a duplicate summary row on dock; just clear state for the next trip.
 		lastInventoryTonsAtProspector = new HashMap<>();
 		lastPercentByMaterialAtProspector = new HashMap<>();
 		asteroidIdCounter = 0;
 		wroteRowsThisRun = false;
+		miningLoggingArmed = false;
+		haveActiveAsteroid = false;
+		asteroidBaselineTons = new HashMap<>();
+		lastCargoTonsForLogging = new HashMap<>();
 	}
 
 	/**
