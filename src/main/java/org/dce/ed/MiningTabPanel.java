@@ -877,6 +877,11 @@ return EdoUi.User.MAIN_TEXT;
 			cargoTable.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 		}
 
+		spreadsheetTable.setFont(uiFont);
+		if (spreadsheetScatterPanel != null) {
+			spreadsheetScatterPanel.setFont(uiFont);
+		}
+
 		int rowH = Math.max(18, uiFont.getSize() + 6);
 
 		table.setRowHeight(rowH);
@@ -1181,8 +1186,10 @@ return EdoUi.User.MAIN_TEXT;
 		// repeated cargo gains update the same run instead of starting new ones. When we have
 		// explicitly marked that the next mining event should start a new run (e.g. after
 		// leaving and re-entering the ring), force a new run number even if activeRun > 0.
+		// Also recompute when we haven't written any rows this run yet (e.g. after docking),
+		// so we advance to the next run number instead of appending to the previous run.
 		int previousRun = activeRun;
-		if (activeRun <= 0 || nextMiningStartsNewRun) {
+		if (activeRun <= 0 || nextMiningStartsNewRun || !wroteRowsThisRun) {
 			int computed = computeRunNumberForWrite(commander, sys, body, nextMiningStartsNewRun);
 			if (computed != activeRun) {
 				activeRun = computed;
@@ -1232,9 +1239,10 @@ return EdoUi.User.MAIN_TEXT;
 			String coreType = "";
 			int duds = dudCounter;
 
-			// Only the very first row we write for a run (which will always be asteroid A) gets the run start time.
-			boolean firstRowOfRun = !wroteRowsThisRun && rows.isEmpty();
-			Instant runStart = firstRowOfRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
+			// First batch of this run: set run start on every row we write (all are same run/asteroid A)
+			// so every sheet row for this run (e.g. 24 A Platinum, 24 A Painite) has it; otherwise
+			// only the first material would get it and the row the user sees may be the one without.
+			Instant runStart = !wroteRowsThisRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
 			Instant runEnd = null;
 			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
 		}
@@ -1566,8 +1574,8 @@ return EdoUi.User.MAIN_TEXT;
 			// Add 0.5 only when we have material, to approximate amount still in refinery (avoids showing 0.5 "before" when inventory was 0)
 			double beforeAdjusted = Double.isNaN(beforeTons) ? 0.0 : (beforeTons > 0 ? beforeTons + 0.5 : beforeTons);
 			double afterAdjusted = Double.isNaN(afterTons) ? 0.0 : (afterTons > 0 ? afterTons + 0.5 : afterTons);
-			// Only the first row of the run gets run start time.
-			Instant runStart = rows.isEmpty() ? (lastUndockTime != null ? lastUndockTime : ts) : null;
+			// First batch of this run: set run start on every row so all run/asteroid rows have it.
+			Instant runStart = !wroteRowsThisRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
 			Instant runEnd = null;
 			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
 		}
@@ -2952,7 +2960,24 @@ String getName() {
 			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
 			int w = getWidth();
 			int h = getHeight();
-			if (w <= PAD_LEFT + PAD_RIGHT || h <= PAD_TOP + PAD_BOTTOM) {
+			// Reserve top space for run summary line(s) so they sit fully above the graph border.
+			int effectivePadTop = PAD_TOP;
+			if (!runSummaries.isEmpty()) {
+				Font runLineFont = getFont().deriveFont(Font.BOLD, getFont().getSize2D() + 2f);
+				g2.setFont(runLineFont);
+				FontMetrics sumFm = g2.getFontMetrics();
+				int lineHeight = sumFm.getHeight();
+				int runLineCount = 0;
+				for (RunSummary summary : runSummaries) {
+					if (summary != null && summary.formatSummary() != null && !summary.formatSummary().isEmpty()) {
+						runLineCount++;
+					}
+				}
+				int runLineBlockHeight = 4 + runLineCount * lineHeight + 6; // margin above + lines + gap below
+				effectivePadTop = Math.max(PAD_TOP, runLineBlockHeight);
+				g2.setFont(getFont());
+			}
+			if (w <= PAD_LEFT + PAD_RIGHT || h <= effectivePadTop + PAD_BOTTOM) {
 				g2.dispose();
 				return;
 			}
@@ -2969,9 +2994,9 @@ String getName() {
 			if (minPct >= maxPct) maxPct = minPct + 1.0;
 			if (minAct >= maxAct) maxAct = minAct + 1.0;
 			int plotW = w - PAD_LEFT - PAD_RIGHT;
-			int plotH = h - PAD_TOP - PAD_BOTTOM;
+			int plotH = h - effectivePadTop - PAD_BOTTOM;
 			int plotX = PAD_LEFT;
-			int plotY = PAD_TOP;
+			int plotY = effectivePadTop;
 			g2.setColor(EdoUi.User.MAIN_TEXT);
 			g2.drawRect(plotX, plotY, plotW, plotH);
 			g2.setFont(g2.getFont().deriveFont(10f));
@@ -3014,7 +3039,7 @@ String getName() {
 				commanderColor.put(commanderOrder.get(i), COMMANDER_PALETTE[i % COMMANDER_PALETTE.length]);
 			}
 
-			// Run summary lines at top (same text as Table Run row), colored to match commander dots.
+			// Run summary lines at top (same text and size as Table tab Run row).
 			if (!runSummaries.isEmpty()) {
 				// #region agent log
 				MiningTabPanel.agentDebugLog(
@@ -3023,7 +3048,8 @@ String getName() {
 					"drawingRunSummaries count=" + runSummaries.size()
 				);
 				// #endregion
-				g2.setFont(g2.getFont().deriveFont(Font.BOLD, 10f));
+				Font runLineFont = getFont().deriveFont(Font.BOLD, getFont().getSize2D() + 2f);
+				g2.setFont(runLineFont);
 				FontMetrics sumFm = g2.getFontMetrics();
 				int lineHeight = sumFm.getHeight();
 				int yTop = 4 + sumFm.getAscent();
@@ -3044,7 +3070,7 @@ String getName() {
 					g2.drawString(line, plotX, yTop);
 					yTop += lineHeight;
 				}
-				g2.setFont(g2.getFont().deriveFont(10f));
+				g2.setFont(getFont());
 				g2.setColor(EdoUi.User.MAIN_TEXT);
 			}
 			for (ProspectorLogRow r : toPlot) {

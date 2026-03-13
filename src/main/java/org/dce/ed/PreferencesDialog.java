@@ -914,6 +914,16 @@ public class PreferencesDialog extends JDialog {
         JButton fixMiningRunsButton = new JButton("Fix mining runs in Google Sheet");
         fixMiningRunsButton.addActionListener(e -> GoogleSheetsBackend.renumberRunsAndSortUsingPreferences(this));
 
+        String cmdrName = OverlayPreferences.getMiningLogCommanderName();
+        String backfillLabel;
+        if (cmdrName == null || cmdrName.isBlank()) {
+            backfillLabel = "Backfill mining run times from journals";
+        } else {
+            backfillLabel = String.format("Backfill mining run times from %s's journals", cmdrName);
+        }
+        JButton backfillMiningRunsButton = new JButton(backfillLabel);
+        backfillMiningRunsButton.addActionListener(e -> org.dce.ed.tools.RunTimesBackfill.backfillUsingPreferences(this));
+
         // --- Text notifications (email-to-SMS gateways like vtext.com) ---
         JPanel textNotifPanel = new JPanel(new GridBagLayout());
         textNotifPanel.setOpaque(false);
@@ -972,6 +982,9 @@ public class PreferencesDialog extends JDialog {
 
         gbc.gridy++;
         content.add(fixMiningRunsButton, gbc);
+
+        gbc.gridy++;
+        content.add(backfillMiningRunsButton, gbc);
 
         gbc.gridy++;
         content.add(textNotifPanel, gbc);

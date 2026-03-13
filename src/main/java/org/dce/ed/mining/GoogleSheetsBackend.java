@@ -237,7 +237,8 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         && existingBody.equals(body)
                         && existingCommander.equals(commander)) {
 
-                        // Update this row in-place.
+                        // Update this row in-place. Preserve existing run start/end when the
+                        // incoming row has null (e.g. a later cargo update) so we don't wipe them.
                         row.set(0, r.getRun());
                         row.set(1, asteroid);
                         row.set(2, ts);
@@ -252,8 +253,12 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         row.set(11, body);
                         row.set(12, commander);
                         ensureRowSize(row, 15);
-                        row.set(13, r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");
-                        row.set(14, r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");
+                        if (r.getRunStartTime() != null) {
+                            row.set(13, r.getRunStartTime().atZone(zone).format(fmt));
+                        }
+                        if (r.getRunEndTime() != null) {
+                            row.set(14, r.getRunEndTime().atZone(zone).format(fmt));
+                        }
                         updated = true;
                         break;
                     }
