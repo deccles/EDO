@@ -331,8 +331,31 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         String system = str(row.get(10));
                         String body = str(row.get(11));
                         String commander = str(row.get(12));
-                        Instant runStart = (row.size() >= 15 && row.get(13) != null && !str(row.get(13)).isBlank()) ? parseTimestamp(str(row.get(13))) : null;
-                        Instant runEnd = (row.size() >= 15 && row.get(14) != null && !str(row.get(14)).isBlank()) ? parseTimestamp(str(row.get(14))) : null;
+                        // Sheets trims trailing empty cells per row. A row with a start time but no end time
+                        // will have size 14 (indexes 0..13). Guard the start and end columns independently.
+                        String rawStart = (row.size() >= 14 && row.get(13) != null) ? row.get(13).toString() : "";
+                        String rawEnd = (row.size() >= 15 && row.get(14) != null) ? row.get(14).toString() : "";
+                        Instant runStart = (!rawStart.isBlank()) ? parseTimestamp(rawStart) : null;
+                        Instant runEnd = (!rawEnd.isBlank()) ? parseTimestamp(rawEnd) : null;
+                        // #region agent log
+                        try (java.io.FileWriter fw = new java.io.FileWriter("debug-91c1c3.log", true)) {
+                            long tsMs = System.currentTimeMillis();
+                            String id = java.util.UUID.randomUUID().toString();
+                            String json = "{\"sessionId\":\"91c1c3\",\"id\":\"" + id
+                                + "\",\"timestamp\":" + tsMs
+                                + ",\"location\":\"GoogleSheetsBackend.loadRows\""
+                                + ",\"message\":\"row run=" + run
+                                + " asteroid=" + asteroidId
+                                + " commander=" + commander
+                                + " rawStart=" + rawStart.replace("\"", "'")
+                                + " rawEnd=" + rawEnd.replace("\"", "'")
+                                + " parsedStart=" + (runStart != null)
+                                + " parsedEnd=" + (runEnd != null)
+                                + "\",\"data\":{},\"runId\":\"pre-fix\",\"hypothesisId\":\"H4\"}\n";
+                            fw.write(json);
+                        } catch (Exception ignored) {
+                        }
+                        // #endregion
                         String fullBodyName = buildFullBodyName(system, body);
                         out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds, runStart, runEnd));
                     } else if (row.size() >= 12) {

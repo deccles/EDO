@@ -1178,9 +1178,17 @@ return EdoUi.User.MAIN_TEXT;
 		String body = currentBodyName != null ? currentBodyName : "";
 		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
 		// Choose a run number once per system/body and reuse it for the rest of the trip so
-		// repeated cargo gains update the same run instead of starting new ones.
-		if (activeRun <= 0) {
-			activeRun = computeRunNumberForWrite(commander, sys, body, nextMiningStartsNewRun);
+		// repeated cargo gains update the same run instead of starting new ones. When we have
+		// explicitly marked that the next mining event should start a new run (e.g. after
+		// leaving and re-entering the ring), force a new run number even if activeRun > 0.
+		int previousRun = activeRun;
+		if (activeRun <= 0 || nextMiningStartsNewRun) {
+			int computed = computeRunNumberForWrite(commander, sys, body, nextMiningStartsNewRun);
+			if (computed != activeRun) {
+				activeRun = computed;
+				// New run: first write should be treated as fresh so it gets a start time.
+				wroteRowsThisRun = false;
+			}
 			if (nextMiningStartsNewRun) {
 				nextMiningStartsNewRun = false;
 			}
@@ -2715,9 +2723,25 @@ String getName() {
 		}
 
 		private void updateScatterRunSummaryLines() {
-			List<ProspectorLogRow> filtered = scatterPanel.getFilteredRows();
-			List<String> lines = ProspectorLogTableModel.getRunSummaryLines(filtered, matcher, true); // only active runs in progress
-			scatterPanel.setRunSummaryLines(lines);
+			// Scatter's Run line should reflect the latest active run (same rule as the table),
+			// regardless of current scatter filter or commander selection.
+			// #region agent log
+			MiningTabPanel.agentDebugLog(
+				"H1",
+				"MiningTabPanel.updateScatterRunSummaryLines",
+				"before summaries rows=" + (currentRows != null ? currentRows.size() : 0)
+			);
+			// #endregion
+			List<RunSummary> summaries = ProspectorLogTableModel
+				.getLatestActiveRunSummary(currentRows, matcher);
+			// #region agent log
+			MiningTabPanel.agentDebugLog(
+				"H1",
+				"MiningTabPanel.updateScatterRunSummaryLines",
+				"after summaries count=" + (summaries != null ? summaries.size() : 0)
+			);
+			// #endregion
+			scatterPanel.setRunSummaries(summaries);
 		}
 
 		private void onModeChanged() {
@@ -2799,7 +2823,7 @@ String getName() {
 	}
 
 	/** Scatter plot panel: X = Percentage (%), Y = Tons yield (t). Supports filter by run/commander and color by commander. */
-	private static final class ProspectorLogScatterPanel extends JPanel {
+		private static final class ProspectorLogScatterPanel extends JPanel {
 		private static final class PointInfo {
 			final int x;
 			final int y;
@@ -2834,7 +2858,7 @@ String getName() {
 		private String selectedCommander = "";
 		private List<PointInfo> pointInfos = new ArrayList<>();
 		private ProspectorLogRow hoverRow;
-		private List<String> runSummaryLines = new ArrayList<>();
+		private List<RunSummary> runSummaries = new ArrayList<>();
 		private final javax.swing.Timer hoverPollTimer;
 
 		ProspectorLogScatterPanel() {
@@ -2871,8 +2895,15 @@ String getName() {
 			repaint();
 		}
 
-		void setRunSummaryLines(List<String> lines) {
-			this.runSummaryLines = (lines != null) ? new ArrayList<>(lines) : new ArrayList<>();
+		void setRunSummaries(List<RunSummary> summaries) {
+			this.runSummaries = (summaries != null) ? new ArrayList<>(summaries) : new ArrayList<>();
+			// #region agent log
+			MiningTabPanel.agentDebugLog(
+				"H3",
+				"ProspectorLogScatterPanel.setRunSummaries",
+				"runSummariesSize=" + this.runSummaries.size()
+			);
+			// #endregion
 			repaint();
 		}
 
@@ -2945,20 +2976,6 @@ String getName() {
 			g2.drawRect(plotX, plotY, plotW, plotH);
 			g2.setFont(g2.getFont().deriveFont(10f));
 			FontMetrics fm = g2.getFontMetrics();
-			// Run summary lines at top (same string as Table Run row)
-			if (!runSummaryLines.isEmpty()) {
-				g2.setFont(g2.getFont().deriveFont(Font.BOLD, 10f));
-				FontMetrics sumFm = g2.getFontMetrics();
-				int lineHeight = sumFm.getHeight();
-				int y = 4 + sumFm.getAscent();
-				for (String line : runSummaryLines) {
-					if (line != null && !line.isEmpty()) {
-						g2.drawString(line, plotX, y);
-						y += lineHeight;
-					}
-				}
-				g2.setFont(g2.getFont().deriveFont(10f));
-			}
 			// X axis label with unit (below plot)
 			String xLabel = "Percentage (%)";
 			int xLabelY = h - 4;
@@ -2995,6 +3012,40 @@ String getName() {
 			Map<String, Color> commanderColor = new HashMap<>();
 			for (int i = 0; i < commanderOrder.size(); i++) {
 				commanderColor.put(commanderOrder.get(i), COMMANDER_PALETTE[i % COMMANDER_PALETTE.length]);
+			}
+
+			// Run summary lines at top (same text as Table Run row), colored to match commander dots.
+			if (!runSummaries.isEmpty()) {
+				// #region agent log
+				MiningTabPanel.agentDebugLog(
+					"H3",
+					"ProspectorLogScatterPanel.paintComponent",
+					"drawingRunSummaries count=" + runSummaries.size()
+				);
+				// #endregion
+				g2.setFont(g2.getFont().deriveFont(Font.BOLD, 10f));
+				FontMetrics sumFm = g2.getFontMetrics();
+				int lineHeight = sumFm.getHeight();
+				int yTop = 4 + sumFm.getAscent();
+				for (RunSummary summary : runSummaries) {
+					if (summary == null) continue;
+					String line = summary.formatSummary();
+					if (line == null || line.isEmpty()) {
+						continue;
+					}
+					Color lineColor = EdoUi.User.MAIN_TEXT;
+					if (filterMode == FilterMode.ALL && summary.commanderName != null && !summary.commanderName.isBlank()) {
+						lineColor = commanderColor.getOrDefault(summary.commanderName, EdoUi.User.MAIN_TEXT);
+					} else if (filterMode == FilterMode.BY_COMMANDER && selectedCommander != null && !selectedCommander.isEmpty()) {
+						// In commander-only mode, points use the default highlight color.
+						lineColor = EdoUi.User.VALUABLE;
+					}
+					g2.setColor(lineColor);
+					g2.drawString(line, plotX, yTop);
+					yTop += lineHeight;
+				}
+				g2.setFont(g2.getFont().deriveFont(10f));
+				g2.setColor(EdoUi.User.MAIN_TEXT);
 			}
 			for (ProspectorLogRow r : toPlot) {
 				Color pointColor = filterMode == FilterMode.ALL && !commanderOrder.isEmpty()
@@ -3564,6 +3615,64 @@ String getName() {
 			return lines;
 		}
 
+		/** Latest active run summary across all commanders, using the same rules as the table:
+		 *  - Group by (run, commander).
+		 *  - A run is active if its canonical row (the one with a run start time) has no end time.
+		 *  - Among all active runs, choose the one with the highest run number.
+		 */
+		static List<RunSummary> getLatestActiveRunSummary(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
+			if (rows == null || rows.isEmpty()) return List.of();
+			Map<RunKey, List<ProspectorLogRow>> byRun = new HashMap<>();
+			for (ProspectorLogRow r : rows) {
+				if (r == null) continue;
+				String commander = r.getCommanderName();
+				if (commander == null || commander.isBlank()) commander = "-";
+				byRun.computeIfAbsent(new RunKey(r.getRun(), commander), k -> new ArrayList<>()).add(r);
+			}
+			if (byRun.isEmpty()) return List.of();
+
+			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
+			Instant now = Instant.now();
+			List<RunSummary> activeSummaries = new ArrayList<>();
+
+			for (Map.Entry<RunKey, List<ProspectorLogRow>> e : byRun.entrySet()) {
+				List<ProspectorLogRow> runRows = new ArrayList<>(e.getValue());
+				ProspectorLogRow canonical = runRows.stream()
+					.filter(r -> r.getRunStartTime() != null)
+					.findFirst()
+					.orElse(null);
+				if (canonical == null || canonical.getRunEndTime() != null) {
+					continue;
+				}
+				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsDesc));
+				RunSummary summary = computeRunSummary(e.getKey(), runRows, matcher, now);
+				if (summary != null) {
+					activeSummaries.add(summary);
+				}
+			}
+
+			if (activeSummaries.isEmpty()) {
+				MiningTabPanel.agentDebugLog(
+					"H2",
+					"ProspectorLogTableModel.getLatestActiveRunSummary",
+					"noActiveRuns"
+				);
+				return List.of();
+			}
+
+			RunSummary latest = activeSummaries.stream()
+				.max(Comparator.comparingInt(rs -> rs.runNumber))
+				.orElse(null);
+			if (latest == null) return List.of();
+
+			MiningTabPanel.agentDebugLog(
+				"H2",
+				"ProspectorLogTableModel.getLatestActiveRunSummary",
+				"chosenRun=" + latest.runNumber + " cmdr=" + latest.commanderName
+			);
+			return List.of(latest);
+		}
+
 		boolean isSummaryRow(int rowIndex) {
 			if (rowIndex < 0 || rowIndex >= displayRows.size()) return false;
 			return displayRows.get(rowIndex) instanceof RunSummary;
@@ -3709,4 +3818,20 @@ String getName() {
 			return String.format(Locale.US, "Run %d · %s%s%.1f t/hr · %s", runNumber, commanderPart, datePart, tonsPerHour, crHr);
 		}
 	}
+
+	// #region agent log
+	static void agentDebugLog(String hypothesisId, String location, String message) {
+		try (java.io.FileWriter fw = new java.io.FileWriter("debug-91c1c3.log", true)) {
+			long ts = System.currentTimeMillis();
+			String id = java.util.UUID.randomUUID().toString();
+			String json = "{\"sessionId\":\"91c1c3\",\"id\":\"" + id
+				+ "\",\"timestamp\":" + ts
+				+ ",\"location\":\"" + location
+				+ "\",\"message\":\"" + message
+				+ "\",\"data\":{},\"runId\":\"pre-fix\",\"hypothesisId\":\"" + hypothesisId + "\"}\n";
+			fw.write(json);
+		} catch (Exception ignored) {
+		}
+	}
+	// #endregion
 }
