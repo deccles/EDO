@@ -317,6 +317,10 @@ public class EliteOverlayTabbedPane extends JPanel {
 	public RouteTabPanel getRouteTabPanel() {
 		return routeTab;
 	}
+
+	public MiningTabPanel getMiningTabPanel() {
+		return miningTab;
+	}
 	static LoadoutEvent loadoutEventx = null;
 
 	private static volatile boolean currentlyDocked = false;
@@ -344,6 +348,11 @@ public class EliteOverlayTabbedPane extends JPanel {
 			return;
 		}
 		currentlyDocked = docked;
+		if (docked) {
+			miningTab.clearLastUndockTime();
+		} else {
+			miningTab.onUndocked();
+		}
 		for (Consumer<Boolean> c : dockedListeners) {
 			try {
 				c.accept(docked);

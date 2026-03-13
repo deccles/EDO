@@ -4,7 +4,7 @@ import java.time.Instant;
 
 /**
  * One row of prospector log data (run, asteroid, body, timestamp, material, amounts, core, commander, duds).
- * Column order: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander.
+ * Column order: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander, Start time, End time.
  */
 public final class ProspectorLogRow {
 
@@ -20,17 +20,25 @@ public final class ProspectorLogRow {
     private final String commanderName;
     private final String coreType;
     private final int duds;
+    private final Instant runStartTime;
+    private final Instant runEndTime;
 
     /** Constructor for backward compatibility (asteroid "", core "", duds 0). */
     public ProspectorLogRow(int run, String fullBodyName, Instant timestamp, String material,
                            double percent, double beforeAmount, double afterAmount, double difference,
                            String commanderName) {
-        this(run, "", fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, "", 0);
+        this(run, "", fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, "", 0, null, null);
     }
 
     public ProspectorLogRow(int run, String asteroidId, String fullBodyName, Instant timestamp, String material,
                            double percent, double beforeAmount, double afterAmount, double difference,
                            String commanderName, String coreType, int duds) {
+        this(run, asteroidId, fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, coreType, duds, null, null);
+    }
+
+    public ProspectorLogRow(int run, String asteroidId, String fullBodyName, Instant timestamp, String material,
+                           double percent, double beforeAmount, double afterAmount, double difference,
+                           String commanderName, String coreType, int duds, Instant runStartTime, Instant runEndTime) {
         this.run = run;
         this.asteroidId = asteroidId != null ? asteroidId : "";
         this.fullBodyName = fullBodyName != null ? fullBodyName : "";
@@ -43,6 +51,8 @@ public final class ProspectorLogRow {
         this.commanderName = commanderName != null ? commanderName : "";
         this.coreType = coreType != null ? coreType : "";
         this.duds = duds;
+        this.runStartTime = runStartTime;
+        this.runEndTime = runEndTime;
     }
 
     public int getRun() {
@@ -94,6 +104,16 @@ public final class ProspectorLogRow {
     /** Number of prospector limpets fired (duds) before this one that generated inventory. */
     public int getDuds() {
         return duds;
+    }
+
+    /** Run start time (last undock); only set on the first row of the run. */
+    public Instant getRunStartTime() {
+        return runStartTime;
+    }
+
+    /** Run end time (concluding dock); only set on the canonical row after dock. */
+    public Instant getRunEndTime() {
+        return runEndTime;
     }
 
     /** @deprecated Use {@link #getCommanderName()}. */

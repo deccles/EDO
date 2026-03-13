@@ -278,6 +278,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         };
         tabs.getRouteTabPanel().setSessionStateChangeCallback(debouncedSave);
         tabs.getSystemTabPanel().setSessionStateChangeCallback(debouncedSave);
+        tabs.getMiningTabPanel().setSessionStateChangeCallback(debouncedSave);
         restoreSessionState();
     }
 
@@ -287,6 +288,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         EdoSessionState state = new EdoSessionState();
         tabs.getRouteTabPanel().fillSessionState(state);
         tabs.getSystemTabPanel().fillSessionState(state);
+        tabs.getMiningTabPanel().fillSessionState(state);
         fillCarrierSessionState(state);
         EdoSessionPersistence.save(state);
     }
@@ -306,6 +308,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         if (tabs == null) return;
         tabs.getRouteTabPanel().applySessionState(state);
         tabs.getSystemTabPanel().applySessionState(state);
+        tabs.getMiningTabPanel().applySessionState(state);
         applyCarrierSessionState(state);
     }
 

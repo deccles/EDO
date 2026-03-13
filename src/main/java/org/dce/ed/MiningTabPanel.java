@@ -79,6 +79,7 @@ import org.dce.ed.mining.GoogleSheetsBackend;
 import org.dce.ed.mining.ProspectorLogBackend;
 import org.dce.ed.mining.ProspectorLogBackendFactory;
 import org.dce.ed.mining.ProspectorLogRow;
+import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoUi;
@@ -166,6 +167,12 @@ public class MiningTabPanel extends JPanel {
 
 	/** True after we left the ring (FSD or location change); next mining write should start a new run. */
 	private boolean nextMiningStartsNewRun;
+
+	/** Time of last undock; used as run start time for the first row of each run. Cleared when docked. */
+	private Instant lastUndockTime;
+
+	/** Called when lastUndockTime changes so session state can be saved. */
+	private Runnable sessionStateChangeCallback;
 
 	private final TableScanState prospectorScan;
 private final TableScanState cargoScan;
@@ -1217,7 +1224,11 @@ return EdoUi.User.MAIN_TEXT;
 			String coreType = "";
 			int duds = dudCounter;
 
-			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds));
+			// Only the very first row we write for a run (which will always be asteroid A) gets the run start time.
+			boolean firstRowOfRun = !wroteRowsThisRun && rows.isEmpty();
+			Instant runStart = firstRowOfRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
+			Instant runEnd = null;
+			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
 		}
 
 		if (!rows.isEmpty()) {
@@ -1238,6 +1249,44 @@ return EdoUi.User.MAIN_TEXT;
 		lastCargoTonsForLogging = new HashMap<>(current);
 	}
 
+	/** Called when undocking is detected; records time so the first row of the next run gets it as run start. */
+	public void onUndocked() {
+		lastUndockTime = Instant.now();
+		if (sessionStateChangeCallback != null) {
+			sessionStateChangeCallback.run();
+		}
+	}
+
+	/** Clear last undock time (e.g. when we transition to docked after restart). Invokes session-state callback so state is saved. */
+	public void clearLastUndockTime() {
+		lastUndockTime = null;
+		if (sessionStateChangeCallback != null) {
+			sessionStateChangeCallback.run();
+		}
+	}
+
+	public void setSessionStateChangeCallback(Runnable callback) {
+		this.sessionStateChangeCallback = callback;
+	}
+
+	public void fillSessionState(EdoSessionState state) {
+		if (state == null) return;
+		if (lastUndockTime != null) {
+			state.setLastUndockTime(lastUndockTime.toString());
+		}
+	}
+
+	public void applySessionState(EdoSessionState state) {
+		if (state == null) return;
+		String s = state.getLastUndockTime();
+		if (s != null && !s.isBlank()) {
+			try {
+				lastUndockTime = Instant.parse(s);
+			} catch (Exception ignored) {
+			}
+		}
+	}
+
 	/**
 	 * Called when docking is detected: this now defines the end of a "trip" for mining runs.
 	 * We flush any pending gains to CSV (using last-seen percent) so the last asteroid is recorded,
@@ -1254,7 +1303,23 @@ return EdoUi.User.MAIN_TEXT;
 			haveActiveAsteroid = false;
 			asteroidBaselineTons = new HashMap<>();
 			lastCargoTonsForLogging = new HashMap<>();
+			lastUndockTime = null;
 			return;
+		}
+		// Set run end time on the canonical row for the run we just finished.
+		if (wroteRowsThisRun && activeRun > 0) {
+			String commander = OverlayPreferences.getMiningLogCommanderName();
+			if (commander != null && !commander.isBlank()) {
+				try {
+					ProspectorLogBackendFactory.create().updateRunEndTime(commander, activeRun, Instant.now());
+				} catch (Exception ignored) {
+				}
+				refreshSpreadsheetFromBackend();
+			}
+		}
+		lastUndockTime = null;
+		if (sessionStateChangeCallback != null) {
+			sessionStateChangeCallback.run();
 		}
 		// With cargo-driven logging, we've already written rows as inventory changed.
 		// Avoid appending a duplicate summary row on dock; just clear state for the next trip.
@@ -1270,13 +1335,11 @@ return EdoUi.User.MAIN_TEXT;
 
 	/**
 	 * Historically we treated the start of an FSD jump as the end of a run.
-	 * Runs are now defined as "from the first time we shoot a prospector limpet to the next dock",
-	 * so FSD jumps no longer advance the run counter. We keep this hook for future use,
-	 * but it intentionally does nothing.
+	 * Runs are now defined as \"from the first time we shoot a prospector limpet to the next dock\",
+	 * so FSD jumps no longer advance the run counter.
 	 */
 	public void onStartJump(StartJumpEvent event) {
-		// Leaving via FSD: next time we mine (even back at same ring) start a new run.
-		nextMiningStartsNewRun = true;
+		// Intentionally no-op: FSD jumps no longer segment runs.
 	}
 
 	/**
@@ -1495,7 +1558,10 @@ return EdoUi.User.MAIN_TEXT;
 			// Add 0.5 only when we have material, to approximate amount still in refinery (avoids showing 0.5 "before" when inventory was 0)
 			double beforeAdjusted = Double.isNaN(beforeTons) ? 0.0 : (beforeTons > 0 ? beforeTons + 0.5 : beforeTons);
 			double afterAdjusted = Double.isNaN(afterTons) ? 0.0 : (afterTons > 0 ? afterTons + 0.5 : afterTons);
-			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds));
+			// Only the first row of the run gets run start time.
+			Instant runStart = rows.isEmpty() ? (lastUndockTime != null ? lastUndockTime : ts) : null;
+			Instant runEnd = null;
+			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
 		}
 		if (rows.isEmpty()) {
 			return false;
@@ -2603,6 +2669,7 @@ String getName() {
 			modeCombo.setModel(new DefaultComboBoxModel<>(new String[] { MODE_ALL, MODE_BY_RUN, MODE_BY_COMMANDER }));
 			modeCombo.setSelectedItem(mode != null ? mode : MODE_ALL);
 			populateSecondaryComboAndUpdateFilter();
+			updateScatterRunSummaryLines();
 		}
 
 		/** Populate run/commander combo from currentRows for the selected mode and refresh the scatter filter. */
@@ -2647,6 +2714,12 @@ String getName() {
 			onModeChanged();
 		}
 
+		private void updateScatterRunSummaryLines() {
+			List<ProspectorLogRow> filtered = scatterPanel.getFilteredRows();
+			List<String> lines = ProspectorLogTableModel.getRunSummaryLines(filtered, matcher, true); // only active runs in progress
+			scatterPanel.setRunSummaryLines(lines);
+		}
+
 		private void onModeChanged() {
 			String mode = (String) modeCombo.getSelectedItem();
 			scatterPanel.setFilterMode(MODE_BY_RUN.equals(mode) ? ProspectorLogScatterPanel.FilterMode.BY_RUN
@@ -2689,6 +2762,7 @@ String getName() {
 			} else {
 				secondaryCombo.setVisible(false);
 			}
+			updateScatterRunSummaryLines();
 		}
 
 		private void onSecondaryChanged() {
@@ -2700,6 +2774,7 @@ String getName() {
 				Object sel = secondaryCombo.getSelectedItem();
 				scatterPanel.setSelectedCommander(sel != null ? sel.toString() : "");
 			}
+			updateScatterRunSummaryLines();
 		}
 
 		private void applySelectedRunLabel(Object sel) {
@@ -2759,6 +2834,7 @@ String getName() {
 		private String selectedCommander = "";
 		private List<PointInfo> pointInfos = new ArrayList<>();
 		private ProspectorLogRow hoverRow;
+		private List<String> runSummaryLines = new ArrayList<>();
 		private final javax.swing.Timer hoverPollTimer;
 
 		ProspectorLogScatterPanel() {
@@ -2793,6 +2869,15 @@ String getName() {
 		void setSelectedCommander(String commander) {
 			this.selectedCommander = commander != null ? commander : "";
 			repaint();
+		}
+
+		void setRunSummaryLines(List<String> lines) {
+			this.runSummaryLines = (lines != null) ? new ArrayList<>(lines) : new ArrayList<>();
+			repaint();
+		}
+
+		List<ProspectorLogRow> getFilteredRows() {
+			return filteredRows();
 		}
 
 		private List<ProspectorLogRow> filteredRows() {
@@ -2860,6 +2945,20 @@ String getName() {
 			g2.drawRect(plotX, plotY, plotW, plotH);
 			g2.setFont(g2.getFont().deriveFont(10f));
 			FontMetrics fm = g2.getFontMetrics();
+			// Run summary lines at top (same string as Table Run row)
+			if (!runSummaryLines.isEmpty()) {
+				g2.setFont(g2.getFont().deriveFont(Font.BOLD, 10f));
+				FontMetrics sumFm = g2.getFontMetrics();
+				int lineHeight = sumFm.getHeight();
+				int y = 4 + sumFm.getAscent();
+				for (String line : runSummaryLines) {
+					if (line != null && !line.isEmpty()) {
+						g2.drawString(line, plotX, y);
+						y += lineHeight;
+					}
+				}
+				g2.setFont(g2.getFont().deriveFont(10f));
+			}
 			// X axis label with unit (below plot)
 			String xLabel = "Percentage (%)";
 			int xLabelY = h - 4;
@@ -3004,6 +3103,55 @@ String getName() {
 					int textY = entryY + fm.getAscent();
 					g2.drawString(label, textX, textY);
 					entryY += lineHeight;
+				}
+			}
+
+			// Highlight latest asteroid's points for each commander (all materials in that run) with commander-colored circle
+			if (!pointInfos.isEmpty()) {
+				// For each commander: find chronologically latest row, then all rows from that same run+asteroid
+				Map<String, ProspectorLogRow> latestRowByCommander = new HashMap<>();
+				for (ProspectorLogRow r : toPlot) {
+					String cmdr = r.getCommanderName();
+					if (cmdr == null) cmdr = "";
+					Instant ts = r.getTimestamp();
+					if (ts == null) continue;
+					ProspectorLogRow prev = latestRowByCommander.get(cmdr);
+					if (prev == null || (prev.getTimestamp() != null && ts.isAfter(prev.getTimestamp()))) {
+						latestRowByCommander.put(cmdr, r);
+					}
+				}
+				Map<String, List<ProspectorLogRow>> latestAsteroidRowsByCommander = new HashMap<>();
+				for (Map.Entry<String, ProspectorLogRow> e : latestRowByCommander.entrySet()) {
+					String cmdr = e.getKey();
+					ProspectorLogRow latest = e.getValue();
+					int run = latest.getRun();
+					String aid = latest.getAsteroidId() != null ? latest.getAsteroidId() : "";
+					List<ProspectorLogRow> sameAsteroid = toPlot.stream()
+						.filter(x -> java.util.Objects.equals(x.getCommanderName(), cmdr)
+							&& x.getRun() == run
+							&& java.util.Objects.equals(x.getAsteroidId() != null ? x.getAsteroidId() : "", aid))
+						.toList();
+					latestAsteroidRowsByCommander.put(cmdr, sameAsteroid);
+				}
+
+				if (!latestAsteroidRowsByCommander.isEmpty()) {
+					Stroke savedStroke = g2.getStroke();
+					g2.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+					int ringRadius = (int) (POINT_RADIUS + 4);
+					for (Map.Entry<String, List<ProspectorLogRow>> e : latestAsteroidRowsByCommander.entrySet()) {
+						String cmdr = e.getKey();
+						Color ringColor = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
+						g2.setColor(ringColor);
+						for (ProspectorLogRow row : e.getValue()) {
+							for (PointInfo pi : pointInfos) {
+								if (pi.row == row) {
+									g2.drawOval(pi.x - ringRadius, pi.y - ringRadius, 2 * ringRadius, 2 * ringRadius);
+									break;
+								}
+							}
+						}
+					}
+					g2.setStroke(savedStroke);
 				}
 			}
 
@@ -3334,10 +3482,11 @@ String getName() {
 				.comparingInt((RunKey k) -> k.run).reversed()
 				.thenComparing(k -> k.commander, String.CASE_INSENSITIVE_ORDER));
 			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
+			Instant now = Instant.now();
 			for (RunKey key : runOrder) {
 				List<ProspectorLogRow> runRows = new ArrayList<>(byRun.get(key));
 				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsDesc));
-				RunSummary summary = computeRunSummary(key, runRows, matcher);
+				RunSummary summary = computeRunSummary(key, runRows, matcher, now);
 				if (summary != null) {
 					out.add(summary);
 				}
@@ -3346,15 +3495,19 @@ String getName() {
 			return out;
 		}
 
-		private static RunSummary computeRunSummary(RunKey key, List<ProspectorLogRow> runRows, MaterialNameMatcher matcher) {
+		private static RunSummary computeRunSummary(RunKey key, List<ProspectorLogRow> runRows, MaterialNameMatcher matcher, Instant now) {
 			if (runRows == null || runRows.isEmpty()) return null;
-			Instant first = null, last = null;
+			Instant firstTs = null, lastTs = null;
+			ProspectorLogRow canonicalRow = null; // row that has run start/end (at most one per run)
 			double totalTons = 0.0;
 			double totalCredits = 0.0;
 			for (ProspectorLogRow r : runRows) {
 				if (r.getTimestamp() != null) {
-					if (first == null || r.getTimestamp().isBefore(first)) first = r.getTimestamp();
-					if (last == null || r.getTimestamp().isAfter(last)) last = r.getTimestamp();
+					if (firstTs == null || r.getTimestamp().isBefore(firstTs)) firstTs = r.getTimestamp();
+					if (lastTs == null || r.getTimestamp().isAfter(lastTs)) lastTs = r.getTimestamp();
+				}
+				if (r.getRunStartTime() != null) {
+					canonicalRow = r;
 				}
 				double diff = r.getDifference();
 				totalTons += diff;
@@ -3363,14 +3516,52 @@ String getName() {
 					totalCredits += diff * price;
 				}
 			}
+			Instant start = (canonicalRow != null && canonicalRow.getRunStartTime() != null) ? canonicalRow.getRunStartTime() : firstTs;
+			Instant end = (canonicalRow != null && canonicalRow.getRunEndTime() != null) ? canonicalRow.getRunEndTime() : now;
 			double durationHours = 0.0;
-			if (first != null && last != null && !last.isBefore(first)) {
-				durationHours = (last.toEpochMilli() - first.toEpochMilli()) / (1000.0 * 3600.0);
+			if (start != null && end != null && !end.isBefore(start)) {
+				durationHours = (end.toEpochMilli() - start.toEpochMilli()) / (1000.0 * 3600.0);
 			}
 			double tonsPerHour = durationHours > 0 ? totalTons / durationHours : 0.0;
 			double creditsPerHour = durationHours > 0 ? totalCredits / durationHours : 0.0;
-			String dateStr = first != null ? first.atZone(ZoneId.systemDefault()).format(DATE_FMT) : "";
+			String dateStr = start != null ? start.atZone(ZoneId.systemDefault()).format(DATE_FMT) : "";
 			return new RunSummary(key.run, key.commander, dateStr, tonsPerHour, creditsPerHour);
+		}
+
+		/** Build run summary strings for the given rows (grouped by run/commander). Same format as Table Run row.
+		 * @param inProgressOnly if true, only include runs that have no end time yet (active runs)
+		 */
+		static List<String> getRunSummaryLines(List<ProspectorLogRow> rows, MaterialNameMatcher matcher, boolean inProgressOnly) {
+			if (rows == null || rows.isEmpty()) return List.of();
+			Map<RunKey, List<ProspectorLogRow>> byRun = new HashMap<>();
+			for (ProspectorLogRow r : rows) {
+				if (r == null) continue;
+				String commander = r.getCommanderName();
+				if (commander == null || commander.isBlank()) commander = "-";
+				byRun.computeIfAbsent(new RunKey(r.getRun(), commander), k -> new ArrayList<>()).add(r);
+			}
+			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
+			Instant now = Instant.now();
+			List<String> lines = new ArrayList<>();
+			for (Map.Entry<RunKey, List<ProspectorLogRow>> e : byRun.entrySet()) {
+				List<ProspectorLogRow> runRows = new ArrayList<>(e.getValue());
+				if (inProgressOnly) {
+					ProspectorLogRow canonical = runRows.stream()
+						.filter(r -> r.getRunStartTime() != null)
+						.findFirst()
+						.orElse(null);
+					// Only show runs that are in progress: must have a canonical row with no end time.
+					if (canonical == null || canonical.getRunEndTime() != null) {
+						continue; // skip completed or legacy (no run start time) runs
+					}
+				}
+				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsDesc));
+				RunSummary summary = computeRunSummary(e.getKey(), runRows, matcher, now);
+				if (summary != null) {
+					lines.add(summary.formatSummary());
+				}
+			}
+			return lines;
 		}
 
 		boolean isSummaryRow(int rowIndex) {

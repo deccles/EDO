@@ -37,6 +37,10 @@ public final class EdoSessionState {
     private Integer targetDestinationParentBodyId;
     private String targetDestinationName;
 
+    // --- Mining tab (run start time) ---
+    /** ISO-8601 instant of last undock; used as run start for the first row of each run. */
+    private String lastUndockTime;
+
     public EdoSessionState() {
     }
 
@@ -206,5 +210,13 @@ public final class EdoSessionState {
 
     public void setTargetDestinationName(String targetDestinationName) {
         this.targetDestinationName = targetDestinationName;
+    }
+
+    public String getLastUndockTime() {
+        return lastUndockTime;
+    }
+
+    public void setLastUndockTime(String lastUndockTime) {
+        this.lastUndockTime = lastUndockTime;
     }
 }

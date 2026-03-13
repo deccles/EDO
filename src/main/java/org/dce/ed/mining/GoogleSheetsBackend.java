@@ -90,9 +90,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             .build();
     }
 
-    /** Sheet range: Run, Asteroid, Timestamp, Type, %, Before, After, Actual, Core, Duds, System, Body, Commander (A–M). */
-    private static String rangeA1L() {
-        return "A:M";
+    /** Sheet range: Run, Asteroid, Timestamp, Type, %, Before, After, Actual, Core, Duds, System, Body, Commander, Start time, End time (A–O). */
+    private static String rangeA1O() {
+        return "A:O";
     }
 
     /**
@@ -154,11 +154,13 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 row.add(system);              // 10 System
                 row.add(body);                // 11 Body
                 row.add(commander);           // 12 Commander
+                row.add(r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");  // 13 Start time
+                row.add(r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");      // 14 End time
                 values.add(row);
             }
             ValueRange bodyRange = new ValueRange().setValues(values);
             AppendValuesResponse res = sheets.spreadsheets().values()
-                .append(spreadsheetId, rangeA1L(), bodyRange)
+                .append(spreadsheetId, rangeA1O(), bodyRange)
                 .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                 .setInsertDataOption("INSERT_ROWS")
                 .execute();
@@ -181,7 +183,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 return;
             }
             ValueRange response = sheets.spreadsheets().values()
-                .get(spreadsheetId, rangeA1L())
+                .get(spreadsheetId, rangeA1O())
                 .execute();
             List<List<Object>> values = response.getValues();
             if (values == null || values.isEmpty()) {
@@ -249,6 +251,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         row.set(10, system);
                         row.set(11, body);
                         row.set(12, commander);
+                        ensureRowSize(row, 15);
+                        row.set(13, r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");
+                        row.set(14, r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");
                         updated = true;
                         break;
                     }
@@ -270,13 +275,15 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                     newRow.add(system);              // 10 System
                     newRow.add(body);                // 11 Body
                     newRow.add(commander);           // 12 Commander
+                    newRow.add(r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");
+                    newRow.add(r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");
                     values.add(newRow);
                 }
             }
 
             ValueRange bodyRange = new ValueRange().setValues(values);
             sheets.spreadsheets().values()
-                .update(spreadsheetId, rangeA1L(), bodyRange)
+                .update(spreadsheetId, rangeA1O(), bodyRange)
                 .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                 .execute();
         } catch (Exception e) {
@@ -295,7 +302,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 return Collections.emptyList();
             }
             ValueRange response = sheets.spreadsheets().values()
-                .get(spreadsheetId, rangeA1L())
+                .get(spreadsheetId, rangeA1O())
                 .execute();
             List<List<Object>> values = response.getValues();
             if (values == null || values.isEmpty()) {
@@ -303,15 +310,15 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             }
             List<ProspectorLogRow> out = new ArrayList<>();
             // Skip header.
-            // New layout: 13 cols: run,asteroid,timestamp,material,percent,before,after,actual,core,duds,system,body,commander.
-            // Legacy 12/9 column layouts are still supported for older sheets.
+            // New layout: 15 cols: run,asteroid,timestamp,material,percent,before,after,actual,core,duds,system,body,commander,start time,end time.
+            // Legacy 13/12/9 column layouts are still supported for older sheets.
             for (int i = 1; i < values.size(); i++) {
                 List<Object> row = values.get(i);
                 if (row == null || row.size() < 9) continue;
                 try {
                     int run = parseInt(row.get(0), 0);
                     if (row.size() >= 13) {
-                        // New layout A–M
+                        // New layout A–M or A–O
                         String asteroidId = str(row.get(1));
                         Instant ts = parseTimestamp(str(row.get(2)));
                         String material = str(row.get(3));
@@ -324,8 +331,10 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         String system = str(row.get(10));
                         String body = str(row.get(11));
                         String commander = str(row.get(12));
+                        Instant runStart = (row.size() >= 15 && row.get(13) != null && !str(row.get(13)).isBlank()) ? parseTimestamp(str(row.get(13))) : null;
+                        Instant runEnd = (row.size() >= 15 && row.get(14) != null && !str(row.get(14)).isBlank()) ? parseTimestamp(str(row.get(14))) : null;
                         String fullBodyName = buildFullBodyName(system, body);
-                        out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds));
+                        out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds, runStart, runEnd));
                     } else if (row.size() >= 12) {
                         // Legacy 12-col layout (no separate System column, Body only)
                         String asteroidId = str(row.get(1));
@@ -423,7 +432,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         }
 
         ValueRange response = sheets.spreadsheets().values()
-            .get(spreadsheetId, rangeA1L())
+            .get(spreadsheetId, rangeA1O())
             .execute();
         List<List<Object>> values = response.getValues();
         if (values == null || values.size() <= 1) {
@@ -505,7 +514,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
         ValueRange body = new ValueRange().setValues(updated);
         sheets.spreadsheets().values()
-            .update(spreadsheetId, rangeA1L(), body)
+            .update(spreadsheetId, rangeA1O(), body)
             .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
             .execute();
 
@@ -523,6 +532,79 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             return Integer.parseInt(o.toString().trim());
         } catch (NumberFormatException e) {
             return def;
+        }
+    }
+
+    private static void ensureRowSize(List<Object> row, int size) {
+        while (row.size() < size) {
+            row.add("");
+        }
+    }
+
+    @Override
+    public void updateRunEndTime(String commander, int run, Instant endTime) {
+        if (spreadsheetId.isEmpty() || endTime == null) {
+            return;
+        }
+        try {
+            Sheets sheets = createSheetsService();
+            if (sheets == null) return;
+            ValueRange response = sheets.spreadsheets().values()
+                .get(spreadsheetId, rangeA1O())
+                .execute();
+            List<List<Object>> values = response.getValues();
+            if (values == null || values.size() < 2) return;
+            ZoneId zone = ZoneId.systemDefault();
+            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
+            String endStr = endTime.atZone(zone).format(fmt);
+            String cmdr = commander != null ? commander : "";
+			// Prefer to set the end time on the canonical row for the run, which
+			// is the first asteroid of the run (asteroid "A"). If that cannot be
+			// found (older data), fall back to any row that has a start time.
+
+			// First pass: look for asteroid "A".
+			for (int i = 1; i < values.size(); i++) {
+				List<Object> row = values.get(i);
+				if (row == null || row.size() < 13) continue;
+				int rowRun = parseInt(row.get(0), 0);
+				String rowCommander = str(row.get(12));
+				String rowAsteroid = str(row.get(1));
+				String rowStart = row.size() > 13 ? str(row.get(13)) : "";
+				if (rowRun == run
+						&& java.util.Objects.equals(rowCommander, cmdr)
+						&& "A".equalsIgnoreCase(rowAsteroid)
+						&& !rowStart.isBlank()) {
+					ensureRowSize(row, 15);
+					row.set(14, endStr);
+					ValueRange bodyRange = new ValueRange().setValues(values);
+					sheets.spreadsheets().values()
+						.update(spreadsheetId, rangeA1O(), bodyRange)
+						.setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
+						.execute();
+					return;
+				}
+			}
+
+			// Second pass: any row in the run that has a start time.
+			for (int i = 1; i < values.size(); i++) {
+				List<Object> row = values.get(i);
+				if (row == null || row.size() < 13) continue;
+				int rowRun = parseInt(row.get(0), 0);
+				String rowCommander = str(row.get(12));
+				String rowStart = row.size() > 13 ? str(row.get(13)) : "";
+				if (rowRun == run && java.util.Objects.equals(rowCommander, cmdr) && !rowStart.isBlank()) {
+					ensureRowSize(row, 15);
+					row.set(14, endStr);
+					ValueRange bodyRange = new ValueRange().setValues(values);
+					sheets.spreadsheets().values()
+						.update(spreadsheetId, rangeA1O(), bodyRange)
+						.setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
+						.execute();
+					return;
+				}
+			}
+        } catch (Exception e) {
+            // don't break UI; caller may log
         }
     }
 
