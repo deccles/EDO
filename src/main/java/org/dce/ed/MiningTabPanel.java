@@ -1471,18 +1471,20 @@ return EdoUi.User.MAIN_TEXT;
 		String body = event.getBody();
 		String newSystem = (sys != null) ? sys : "";
 		String newBody = (body != null) ? body : "";
-		// If we changed bodies or systems, reset run/asteroid state so the next cargo
-		// gain starts a fresh run/asteroid in the new location.
-		if (!java.util.Objects.equals(currentSystemName, newSystem) ||
-			!java.util.Objects.equals(currentBodyName, newBody)) {
-			activeRun = 0;
-			asteroidIdCounter = 0;
-			haveActiveAsteroid = false;
-			asteroidBaselineTons = new HashMap<>();
-			lastCargoTonsForLogging = new HashMap<>();
-			// Left previous location; next mining (even if we return to same ring) starts a new run.
-			nextMiningStartsNewRun = true;
-		}
+		// If we changed bodies or systems, mark that the next mining event should start
+		// a fresh run in the new location. We intentionally do NOT reset the asteroid
+		// letter counter here so that an in-progress run that spans a brief location
+		// blip (e.g. ring vs. body) doesn't reuse asteroid ID \"A\" mid-run.
+//		if (!java.util.Objects.equals(currentSystemName, newSystem) ||
+//			!java.util.Objects.equals(currentBodyName, newBody)) {
+//			activeRun = 0;
+//			haveActiveAsteroid = false;
+//			asteroidBaselineTons = new HashMap<>();
+//			lastCargoTonsForLogging = new HashMap<>();
+//			// Left previous location; next meaningful mining (even if we return to same ring)
+//			// starts a new run once the current one has an end time.
+//			nextMiningStartsNewRun = true;
+//		}
 		currentSystemName = newSystem;
 		currentBodyName = newBody;
 	}
