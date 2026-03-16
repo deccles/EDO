@@ -55,7 +55,6 @@ global throttleDownBaseKey := "s"
 global statusJsonPath := EnvGet("USERPROFILE") "\Saved Games\Frontier Developments\Elite Dangerous\Status.json"
 global gateOnGuiFocus := true
 global gateOnFoot := true
-global statusLastWrite := ""
 
 ; GUI-assume cooldown (pre-emptive: when you hit modifier/X buttons, briefly force OFF)
 global guiAssumeJoyButtons := ["1Joy3", "1Joy4"]
@@ -587,20 +586,7 @@ PollStatus() {
         if (!ensureEliteActiveContext())
             return
 
-        global statusJsonPath, lastGuiFocus, lastOnFoot, statusReadOk, statusLastWrite
-
-        ; Skip reading Status.json if it hasn't changed since the last poll.
-        try {
-            ft := FileGetTime(statusJsonPath, "M")
-        } catch {
-            statusReadOk := false
-            return
-        }
-
-        if (ft = statusLastWrite) {
-            return
-        }
-        statusLastWrite := ft
+        global statusJsonPath, lastGuiFocus, lastOnFoot, statusReadOk
 
         try {
             txt := FileRead(statusJsonPath, "UTF-8")
