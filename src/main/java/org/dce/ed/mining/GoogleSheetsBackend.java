@@ -298,20 +298,31 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
     @Override
     public List<ProspectorLogRow> loadRows() {
+        // Backwards-compatible: ignore status, just return whatever rows we have.
+        ProspectorLoadResult result = loadRowsWithStatus();
+        return result != null ? result.getRows() : Collections.emptyList();
+    }
+
+    /**
+     * Load all rows with explicit status so callers can distinguish
+     * between an empty sheet and a read/error condition.
+     */
+    public ProspectorLoadResult loadRowsWithStatus() {
         if (spreadsheetId.isEmpty()) {
-            return Collections.emptyList();
+            return new ProspectorLoadResult(ProspectorLoadResult.Status.EMPTY_SHEET, Collections.emptyList());
         }
         try {
             Sheets sheets = createSheetsService();
             if (sheets == null) {
-                return Collections.emptyList();
+                return new ProspectorLoadResult(ProspectorLoadResult.Status.ERROR, Collections.emptyList());
             }
             ValueRange response = sheets.spreadsheets().values()
                 .get(spreadsheetId, rangeA1O())
                 .execute();
             List<List<Object>> values = response.getValues();
-            if (values == null || values.isEmpty()) {
-                return Collections.emptyList();
+            if (values == null || values.size() <= 1) {
+                // No rows or only a header row.
+                return new ProspectorLoadResult(ProspectorLoadResult.Status.EMPTY_SHEET, Collections.emptyList());
             }
             List<ProspectorLogRow> out = new ArrayList<>();
             // Skip header.
@@ -393,9 +404,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 }
             }
             out.sort(java.util.Comparator.comparing(ProspectorLogRow::getTimestamp, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
-            return out;
+            return new ProspectorLoadResult(ProspectorLoadResult.Status.OK, out);
         } catch (Exception e) {
-            return Collections.emptyList();
+            return new ProspectorLoadResult(ProspectorLoadResult.Status.ERROR, Collections.emptyList());
         }
     }
 

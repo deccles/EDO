@@ -76,6 +76,7 @@ import org.dce.ed.logreader.event.SupercruiseExitEvent;
 import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.mining.GoogleSheetsBackend;
+import org.dce.ed.mining.ProspectorLoadResult;
 import org.dce.ed.mining.ProspectorLogBackend;
 import org.dce.ed.mining.ProspectorLogBackendFactory;
 import org.dce.ed.mining.ProspectorLogRow;
@@ -120,6 +121,7 @@ public class MiningTabPanel extends JPanel {
 	private final JLabel spreadsheetLabel;
 	private final JTable spreadsheetTable;
 	private final ProspectorLogTableModel spreadsheetModel;
+	private java.util.List<ProspectorLogRow> lastGoodSpreadsheetRows = java.util.Collections.emptyList();
 	private final JScrollPane spreadsheetScroller;
 	private final ProspectorLogScatterPanel spreadsheetScatterPanel;
 	private final ProspectorLogScatterWrapperPanel spreadsheetScatterWrapper;
@@ -155,6 +157,9 @@ public class MiningTabPanel extends JPanel {
 	/** Current system and body for prospector log rows (updated from LocationEvent / StatusEvent). */
 	private volatile String currentSystemName = "";
 	private volatile String currentBodyName = "";
+	/** Last non-empty system/body we have seen; used to avoid regressions to blank. */
+	private volatile String lastNonEmptySystemName = "";
+	private volatile String lastNonEmptyBodyName = "";
 
 	/** True once we've seen a prospector this trip; enables cargo-driven logging. */
 	private boolean miningLoggingArmed;
@@ -1179,8 +1184,18 @@ return EdoUi.User.MAIN_TEXT;
 		if (commander == null || commander.isBlank()) {
 			commander = "-";
 		}
-		String sys = currentSystemName != null ? currentSystemName : "";
-		String body = currentBodyName != null ? currentBodyName : "";
+		String sys = currentSystemName != null && !currentSystemName.isBlank()
+				? currentSystemName
+				: (lastNonEmptySystemName != null ? lastNonEmptySystemName : "");
+		String body = currentBodyName != null && !currentBodyName.isBlank()
+				? currentBodyName
+				: (lastNonEmptyBodyName != null ? lastNonEmptyBodyName : "");
+		if (sys.isEmpty()) {
+			System.out.println("[EDO][Mining] WARNING: mining prospector log computed blank system; this should not happen.");
+		}
+		if (sys.isEmpty()) {
+			System.out.println("[EDO][Mining] WARNING: mining cargo-driven log computed blank system; this should not happen.");
+		}
 		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
 		// Choose a run number once per system/body and reuse it for the rest of the trip so
 		// repeated cargo gains update the same run instead of starting new ones. When we have
@@ -1469,8 +1484,19 @@ return EdoUi.User.MAIN_TEXT;
 		}
 		String sys = event.getStarSystem();
 		String body = event.getBody();
-		String newSystem = (sys != null) ? sys : "";
-		String newBody = (body != null) ? body : "";
+		String newSystem = (sys != null) ? sys.trim() : "";
+		String newBody = (body != null) ? body.trim() : "";
+
+		if (newSystem.isEmpty()) {
+			System.out.println("[EDO][Mining] LocationEvent produced blank system; keeping previous system="
+					+ currentSystemName);
+		}
+		if (body == null || body.isBlank()) {
+			System.out.println("[EDO][Mining] LocationEvent produced blank body; previous body="
+					+ currentBodyName);
+			// Reflect the "no body" state in the current field while preserving lastNonEmptyBodyName.
+			currentBodyName = "";
+		}
 		// If we changed bodies or systems, mark that the next mining event should start
 		// a fresh run in the new location. We intentionally do NOT reset the asteroid
 		// letter counter here so that an in-progress run that spans a brief location
@@ -1485,8 +1511,16 @@ return EdoUi.User.MAIN_TEXT;
 //			// starts a new run once the current one has an end time.
 //			nextMiningStartsNewRun = true;
 //		}
-		currentSystemName = newSystem;
-		currentBodyName = newBody;
+		// Never regress to blank once we have a non-empty value. This keeps
+		// mining logs from seeing "-" when journal briefly omits system/body.
+		if (!newSystem.isEmpty()) {
+			currentSystemName = newSystem;
+			lastNonEmptySystemName = newSystem;
+		}
+		if (!newBody.isEmpty()) {
+			currentBodyName = newBody;
+			lastNonEmptyBodyName = newBody;
+		}
 	}
 
 	/** Update cached body name from Status event. */
@@ -1495,8 +1529,17 @@ return EdoUi.User.MAIN_TEXT;
 			return;
 		}
 		String body = event.getBodyName();
-		if (body != null) {
-			currentBodyName = body;
+		if (body == null || body.isBlank()) {
+			System.out.println("[EDO][Mining] StatusEvent produced blank body; previous body="
+					+ currentBodyName);
+			// Reflect the "no body" state while preserving lastNonEmptyBodyName.
+			currentBodyName = "";
+			return;
+		}
+		if (body != null && !body.isBlank()) {
+			String b = body.trim();
+			currentBodyName = b;
+			lastNonEmptyBodyName = b;
 		}
 	}
 
@@ -1504,9 +1547,26 @@ return EdoUi.User.MAIN_TEXT;
 	public void updateFromSupercruiseExit(SupercruiseExitEvent event) {
 		if (event == null) return;
 		String sys = event.getStarSystem();
-		if (sys != null) currentSystemName = sys;
+		if (sys == null || sys.isBlank()) {
+			System.out.println("[EDO][Mining] SupercruiseExitEvent produced blank system; keeping previous system="
+					+ currentSystemName);
+		}
+		if (sys != null && !sys.isBlank()) {
+			String s = sys.trim();
+			currentSystemName = s;
+			lastNonEmptySystemName = s;
+		}
 		String body = event.getBody();
-		if (body != null) currentBodyName = body;
+		if (body == null || body.isBlank()) {
+			System.out.println("[EDO][Mining] SupercruiseExitEvent produced blank body; previous body="
+					+ currentBodyName);
+			currentBodyName = "";
+		}
+		if (body != null && !body.isBlank()) {
+			String b = body.trim();
+			currentBodyName = b;
+			lastNonEmptyBodyName = b;
+		}
 	}
 
 	private void appendProspectorCsv(ProspectedAsteroidEvent event, Map<String, Double> currentInventory) {
@@ -1555,8 +1615,12 @@ return EdoUi.User.MAIN_TEXT;
 		if (commander == null || commander.isBlank()) {
 			commander = "-";
 		}
-		String sys = currentSystemName != null ? currentSystemName : "";
-		String body = currentBodyName != null ? currentBodyName : "";
+		String sys = currentSystemName != null && !currentSystemName.isBlank()
+				? currentSystemName
+				: (lastNonEmptySystemName != null ? lastNonEmptySystemName : "");
+		String body = currentBodyName != null && !currentBodyName.isBlank()
+				? currentBodyName
+				: (lastNonEmptyBodyName != null ? lastNonEmptyBodyName : "");
 		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
 
 		// Determine run number from existing sheet rows for this commander and system/body.
@@ -1618,23 +1682,52 @@ return EdoUi.User.MAIN_TEXT;
 
 	/** Load rows from backend and update spreadsheet table on EDT. */
 	void refreshSpreadsheetFromBackend() {
-		new javax.swing.SwingWorker<List<ProspectorLogRow>, Void>() {
+		new javax.swing.SwingWorker<ProspectorLoadResult, Void>() {
 			@Override
-			protected List<ProspectorLogRow> doInBackground() {
+			protected ProspectorLoadResult doInBackground() {
 				try {
-					return ProspectorLogBackendFactory.create().loadRows();
+					ProspectorLogBackend backend = ProspectorLogBackendFactory.create();
+					if (backend instanceof GoogleSheetsBackend sheetsBackend) {
+						return sheetsBackend.loadRowsWithStatus();
+					}
+					// Local CSV backend has no notion of "empty sheet" vs "error"; treat as OK.
+					java.util.List<ProspectorLogRow> rows = backend.loadRows();
+					return new ProspectorLoadResult(ProspectorLoadResult.Status.OK, rows);
 				} catch (Exception e) {
-					return Collections.emptyList();
+					return new ProspectorLoadResult(ProspectorLoadResult.Status.ERROR, java.util.Collections.emptyList());
 				}
 			}
 			@Override
 			protected void done() {
 				try {
-					List<ProspectorLogRow> rows = get();
-					if (rows != null && spreadsheetModel != null) {
-						spreadsheetModel.setRows(rows, matcher);
-						if (spreadsheetScatterWrapper != null) {
-							spreadsheetScatterWrapper.setRows(rows);
+					ProspectorLoadResult result = get();
+					if (result == null || spreadsheetModel == null) {
+						return;
+					}
+					switch (result.getStatus()) {
+						case OK -> {
+							java.util.List<ProspectorLogRow> rows = result.getRows();
+							lastGoodSpreadsheetRows = rows != null ? rows : java.util.Collections.emptyList();
+							spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
+							if (spreadsheetScatterWrapper != null) {
+								spreadsheetScatterWrapper.setRows(lastGoodSpreadsheetRows);
+							}
+						}
+						case EMPTY_SHEET -> {
+							lastGoodSpreadsheetRows = java.util.Collections.emptyList();
+							spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
+							if (spreadsheetScatterWrapper != null) {
+								spreadsheetScatterWrapper.setRows(lastGoodSpreadsheetRows);
+							}
+						}
+						case ERROR -> {
+							// Keep showing the last good data when there is a transient error.
+							if (lastGoodSpreadsheetRows != null) {
+								spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
+								if (spreadsheetScatterWrapper != null) {
+									spreadsheetScatterWrapper.setRows(lastGoodSpreadsheetRows);
+								}
+							}
 						}
 					}
 				} catch (Exception ignored) {
