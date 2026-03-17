@@ -51,6 +51,60 @@ public class BodyInfo {
 
 		return s;
 	}
+
+	/**
+	 * When the journal sends a genus-only display name (e.g. "Osseus" with no species),
+	 * resolve to an existing incomplete same-genus key if one exists, so we add the
+	 * sample to that row instead of creating a new key and wiping previous points.
+	 */
+	private String resolveBioKeyForSample(String displayName) {
+		String key = canonBioName(displayName);
+		if (key.isEmpty()) {
+			return key;
+		}
+		// Full genus+species: use as-is.
+		if (key.contains(" ")) {
+			return key;
+		}
+		// Genus-only: look for an existing incomplete key with this genus.
+		String genusPrefix = key + " ";
+		String best = null;
+		int bestCount = -1;
+		for (String k : bioSamplePointsByDisplayName.keySet()) {
+			if (k == null || (!k.equals(key) && !k.startsWith(genusPrefix))) {
+				continue;
+			}
+			int cnt = bioSampleCountsByDisplayName.getOrDefault(k, 0);
+			if (cnt >= 3) {
+				continue;
+			}
+			List<BioSamplePoint> pts = bioSamplePointsByDisplayName.get(k);
+			int n = (pts == null) ? 0 : pts.size();
+			int total = Math.max(cnt, n);
+			if (total > bestCount) {
+				bestCount = total;
+				best = k;
+			}
+		}
+		if (best != null) {
+			return best;
+		}
+		for (Map.Entry<String, Integer> e : bioSampleCountsByDisplayName.entrySet()) {
+			String k = e.getKey();
+			if (k == null || (!k.equals(key) && !k.startsWith(genusPrefix))) {
+				continue;
+			}
+			int cnt = e.getValue() == null ? 0 : e.getValue().intValue();
+			if (cnt >= 3) {
+				continue;
+			}
+			if (cnt > bestCount) {
+				bestCount = cnt;
+				best = k;
+			}
+		}
+		return best != null ? best : key;
+	}
 	private static String toLower(String s) {
 		return s == null ? "" : s.toLowerCase(Locale.ROOT);
 	}
@@ -463,7 +517,7 @@ public class BodyInfo {
 	 *  - "Analyse" indicates completion (3/3).
 	 */
 	public void recordBioSample(String displayName, String scanType) {
-		String key = canonBioName(displayName);
+		String key = resolveBioKeyForSample(displayName);
 
 	    if (key.isBlank()) {
 	        return;
