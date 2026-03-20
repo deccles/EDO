@@ -31,6 +31,8 @@ public class SystemState {
     private Integer totalBodies;
     private Integer nonBodyCount;
     private Double fssProgress;
+    /** Last known docked state from journal/status events. */
+    private volatile boolean docked;
 
     // null = unknown, true = yes, false = known not complete (if you want that later)
     private Boolean allBodiesFound;
@@ -56,6 +58,7 @@ public class SystemState {
         fssProgress = null;
         allBodiesFound = null;
         edsmBodyCount = null;
+        docked = false;
         
         bodies.clear();
     }
@@ -102,6 +105,14 @@ public class SystemState {
 
     public void setFssProgress(Double fssProgress) {
         this.fssProgress = fssProgress;
+    }
+
+    public boolean isDocked() {
+        return docked;
+    }
+
+    public void setDocked(boolean docked) {
+        this.docked = docked;
     }
 
     // ------------------------------------------------------------

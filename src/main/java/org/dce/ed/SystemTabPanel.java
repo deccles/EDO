@@ -384,6 +384,34 @@ public class SystemTabPanel extends JPanel {
         refreshFromCache();
         
         UtilTable.autoSizeTableColumns(table);
+        
+        // Prevent the first columns from expanding too much (which pushes the "Bio" column
+        // off-screen in small overlay widths). We cap only the leading columns so Bio starts
+        // further left and stays readable.
+        // Column order: 0=Body, 1=Atmo/Body, 2=Bio, 3=Value, 4=Land, 5=Dist (Ls)
+        javax.swing.table.TableColumn bodyCol = table.getColumnModel().getColumn(0);
+        javax.swing.table.TableColumn atmoCol = table.getColumnModel().getColumn(1);
+        javax.swing.table.TableColumn bioCol = table.getColumnModel().getColumn(2);
+
+        // Tuned for typical overlay width ~423px (see screenshot):
+        // shift Bio left by capping earlier columns.
+        int bodyWidth = 44;
+        int atmoWidth = 140;
+        int bioMinWidth = 110;
+
+        bodyCol.setPreferredWidth(bodyWidth);
+        bodyCol.setMinWidth(bodyWidth);
+
+        atmoCol.setPreferredWidth(atmoWidth);
+        atmoCol.setMinWidth(atmoWidth);
+
+        // Ensure Bio has at least enough room for icon stack + text.
+        if (bioCol.getPreferredWidth() < bioMinWidth) {
+            bioCol.setPreferredWidth(bioMinWidth);
+            bioCol.setMinWidth(bioMinWidth);
+        }
+
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
     }
 
     // ---------------------------------------------------------------------

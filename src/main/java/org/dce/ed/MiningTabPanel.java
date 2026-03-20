@@ -4024,12 +4024,12 @@ String getName() {
 			} else {
 				crHr = String.format(Locale.US, "%.0f cr/hr", creditsPerHour);
 			}
-			String datePart = dateStr.isEmpty() ? "" : dateStr + " · ";
-			String commanderPart = (commanderName == null || commanderName.isBlank()) ? "" : commanderName + " · ";
+			String datePart = dateStr.isEmpty() ? "" : dateStr + " - ";
+			String commanderPart = (commanderName == null || commanderName.isBlank()) ? "" : commanderName + " - ";
 			// Align numeric columns (t/hr and cr/hr) across commanders using fixed-width fields.
 			return String.format(
 				Locale.US,
-				"Run %d · %s%s%7.1f t/hr · %12s",
+				"Run %d - %s%s%7.1f t/hr - %12s",
 				runNumber,
 				commanderPart,
 				datePart,

@@ -91,7 +91,6 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private boolean passThroughEnabled;
 
  // For top title-bar status (passthrough overlay mode)
-    private volatile boolean lastDocked;
     private volatile CargoMonitor.Snapshot lastCargoSnapshot;
 
     
@@ -591,11 +590,7 @@ private void installExoCreditsTracker() {
 private void installLowLimpetStatusUpdater() {
     EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
     if (tp != null) {
-        lastDocked = tp.isCurrentlyDocked();
-        tp.addDockedStateListener(docked -> {
-            lastDocked = docked;
-            updateLeftStatusLabel();
-        });
+        tp.addDockedStateListener(docked -> updateLeftStatusLabel());
         tp.addLoadoutChangeListener(this::updateLeftStatusLabel);
     }
 
@@ -614,7 +609,12 @@ private void updateLeftStatusLabel() {
     }
 
     Runnable r = () -> {
-        boolean show = EliteOverlayTabbedPane.shouldShowLowLimpetWarning(lastDocked, lastCargoSnapshot);
+        EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
+        boolean docked = tp != null && tp.isCurrentlyDocked();
+        boolean show = EliteOverlayTabbedPane.shouldShowLowLimpetWarning(
+                docked,
+                lastCargoSnapshot
+        );
         titleBar.setLeftStatusText(show ? "Low Limpet Warning!" : "");
     };
 

@@ -323,7 +323,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 	static LoadoutEvent loadoutEventx = null;
 
-	private static volatile boolean currentlyDocked = false;
 	private final CopyOnWriteArrayList<Consumer<Boolean>> dockedListeners = new CopyOnWriteArrayList<>();
 	private final CopyOnWriteArrayList<Runnable> loadoutChangeListeners = new CopyOnWriteArrayList<>();
 
@@ -334,7 +333,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 	public boolean isCurrentlyDocked() {
-		return currentlyDocked;
+		return systemTab != null && systemTab.getState() != null && systemTab.getState().isDocked();
 	}
 
 	public void addDockedStateListener(Consumer<Boolean> listener) {
@@ -344,10 +343,11 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 	private void setCurrentlyDocked(boolean docked) {
-		if (currentlyDocked == docked) {
+		boolean previous = isCurrentlyDocked();
+		if (previous == docked) {
 			return;
 		}
-		currentlyDocked = docked;
+		systemTab.getState().setDocked(docked);
 		if (docked) {
 			miningTab.clearLastUndockTime();
 		} else {
@@ -384,7 +384,7 @@ public class EliteOverlayTabbedPane extends JPanel {
         }
 
         if (event instanceof org.dce.ed.logreader.event.StatusEvent se) {
-        	boolean wasDocked = currentlyDocked;
+        	boolean wasDocked = isCurrentlyDocked();
         	setCurrentlyDocked(se.isDocked());
         	if (wasDocked && !se.isDocked()) {
         		SwingUtilities.invokeLater(() -> maybeRemindAboutLimpets());

@@ -54,7 +54,6 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 	private JMenuBar menuBar;
 	private JLabel statusLabel;
-	private volatile boolean lastDocked;
 	private volatile CargoMonitor.Snapshot lastCargoSnapshot;
 	private String lastRightStatusText = "";
 
@@ -134,11 +133,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	private void installStatusArea() {
 		EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
 		if (tp != null) {
-			lastDocked = tp.isCurrentlyDocked();
-			tp.addDockedStateListener(docked -> {
-				lastDocked = docked;
-				updateStatusLabel();
-			});
+			tp.addDockedStateListener(docked -> updateStatusLabel());
 		}
 
 		CargoMonitor.getInstance().addListener(snap -> {
@@ -184,7 +179,12 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	}
 
 	private boolean shouldShowLowLimpetWarning() {
-		return EliteOverlayTabbedPane.shouldShowLowLimpetWarning(lastDocked, lastCargoSnapshot);
+		EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
+		boolean docked = tp != null && tp.isCurrentlyDocked();
+		return EliteOverlayTabbedPane.shouldShowLowLimpetWarning(
+				docked,
+				lastCargoSnapshot
+		);
 	}
 
 	private JMenuBar createMenuBar() {

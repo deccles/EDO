@@ -24,6 +24,7 @@ import org.dce.ed.logreader.event.SaasignalsFoundEvent;
 import org.dce.ed.logreader.event.ScanEvent;
 import org.dce.ed.logreader.event.ScanOrganicEvent;
 import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.util.EdsmClient;
 import org.dce.ed.util.FirstBonusHelper;
 import org.dce.ed.util.SpanshBodyExobiologyInfo;
@@ -71,18 +72,27 @@ public class SystemEventProcessor {
 
         if (event instanceof LocationEvent) {
             LocationEvent e = (LocationEvent) event;
+            state.setDocked(e.isDocked());
             enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             return;
         }
 
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
+            if (e.getDocked() != null) {
+                state.setDocked(e.getDocked().booleanValue());
+            }
 
             // Normal ship FSD jumps have docked == null => always update system.
             // CarrierJump may include Docked=true/false => only update if Docked==true.
             if (e.getDocked() == null || e.getDocked()) {
                 enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             }
+            return;
+        }
+
+        if (event.getType() == EliteEventType.UNDOCKED) {
+            state.setDocked(false);
             return;
         }
 
@@ -515,6 +525,7 @@ public class SystemEventProcessor {
         if (e == null) {
             return;
         }
+        state.setDocked(e.isDocked());
 
         lastLatitude = e.getLatitude();
         lastLongitude = e.getLongitude();
