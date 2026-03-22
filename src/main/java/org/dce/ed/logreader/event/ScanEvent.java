@@ -44,6 +44,27 @@ public final class ScanEvent extends EliteLogEvent {
         }
     }
 
+    /** One ring from the journal {@code Rings} array. */
+    public static final class RingInfo {
+        private final String name;
+        private final String ringClass;
+
+        public RingInfo(String name, String ringClass) {
+            this.name = name;
+            this.ringClass = ringClass;
+        }
+
+        /** Journal {@code Name} (may be null). */
+        public String getName() {
+            return name;
+        }
+
+        /** Journal {@code RingClass} (e.g. MetalRich, Icy). */
+        public String getRingClass() {
+            return ringClass;
+        }
+    }
+
     private final String bodyName;
     private final int bodyId;
     private final String starSystem;
@@ -69,6 +90,8 @@ private final String terraformState;
 	private final String starType;
     private final List<ParentRef> parents;
 	private Double surfacePressure;
+    private final List<RingInfo> rings;
+    private final String reserveLevel;
 
     public ScanEvent(Instant timestamp,
                      JsonObject rawJson,
@@ -91,7 +114,9 @@ private final String terraformState;
                      Boolean wasFootfalled,
                      Map<String, Double> atmosphereComposition,
                      String starType,
-                     List<ParentRef> parents) {
+                     List<ParentRef> parents,
+                     List<RingInfo> rings,
+                     String reserveLevel) {
 
         super(timestamp, EliteEventType.SCAN, rawJson);
         this.bodyName = bodyName;
@@ -115,6 +140,8 @@ private final String terraformState;
         
         this.starType = starType;
         this.parents = (parents == null) ? Collections.emptyList() : parents;
+        this.rings = (rings == null) ? Collections.emptyList() : rings;
+        this.reserveLevel = reserveLevel;
     }
 
     public String getBodyName() {
@@ -196,6 +223,16 @@ private final String terraformState;
 	 */
 	public Boolean getWasFootfalled() {
         return wasFootfalled;
+    }
+
+    /** Rings orbiting this body (empty if none in the journal). */
+    public List<RingInfo> getRings() {
+        return rings;
+    }
+
+    /** Raw journal {@code ReserveLevel} for the body's ring system (may be null). */
+    public String getReserveLevel() {
+        return reserveLevel;
     }
 
 }

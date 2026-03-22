@@ -639,6 +639,16 @@ public class EdsmClient {
                             || tf.contains("terraformable");
             info.setHighValue(highValue);
 
+            if (remote.type != null && remote.type.equalsIgnoreCase("Star")) {
+                info.setRingSummaryLines(null);
+                info.setRingReserveHumanized(null);
+            } else if (remote.rings != null && !remote.rings.isEmpty()) {
+                List<String> ringLines = RingSummaryFormatter.fromEdsmRings(remote.rings, info.getRingReserveHumanized());
+                if (!ringLines.isEmpty() && info.getRingSummaryLines().isEmpty()) {
+                    info.setRingSummaryLines(ringLines);
+                }
+            }
+
             // NOTE:
             // hasBio / hasGeo are NOT in this EDSM body payload -> must come from journal events.
             // nebula is NOT in this payload -> must come from your own system classification.

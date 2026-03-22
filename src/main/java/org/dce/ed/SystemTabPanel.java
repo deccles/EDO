@@ -274,12 +274,15 @@ public class SystemTabPanel extends JPanel {
                 Component c = super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
 
-                // Biological detail rows (bioText/bioValue) should be gray when not selected
+                // Detail rows: bio (sample colors) or ring lines (muted gray)
                 Row r = tableModel.getRowAt(row);
-                boolean isBioRow = (r != null && r.detail && (r.bioText != null || r.bioValue != null));
+                boolean isBioRow = r != null && r.detail && !r.destinationRow && !r.isRingDetail()
+                        && (r.bioText != null || r.bioValue != null);
 
                 if (isSelected) {
                     c.setForeground(Color.BLACK);
+                } else if (r != null && r.detail && r.isRingDetail()) {
+                    c.setForeground(EdoUi.Internal.GRAY_180);
                 } else if (isBioRow) {
                     int samples = r.getBioSampleCount();
 
@@ -327,12 +330,14 @@ public class SystemTabPanel extends JPanel {
 
                 setHorizontalAlignment(SwingConstants.RIGHT);
 
-                // Biological detail rows should be gray in the Value column too
                 Row r = tableModel.getRowAt(row);
-                boolean isBioRow = (r != null && r.detail && (r.bioText != null || r.bioValue != null));
+                boolean isBioRow = r != null && r.detail && !r.destinationRow && !r.isRingDetail()
+                        && (r.bioText != null || r.bioValue != null);
 
                 if (isSelected) {
                     c.setForeground(Color.BLACK);
+                } else if (r != null && r.detail && r.isRingDetail()) {
+                    c.setForeground(EdoUi.Internal.GRAY_180);
                 } else if (isBioRow) {
                     c.setForeground(EdoUi.Internal.GRAY_180);
                 } else {
@@ -884,13 +889,17 @@ public class SystemTabPanel extends JPanel {
             if (isSelected) {
                 c.setForeground(Color.BLACK);
             } else if (isDetailRow) {
-                int samples = r.getBioSampleCount();
-                if (samples >= 3) {
-                    c.setForeground(Color.GREEN);
-                } else if (samples > 0) {
-                    c.setForeground(Color.YELLOW);
-                } else {
+                if (r.isRingDetail()) {
                     c.setForeground(EdoUi.Internal.GRAY_180);
+                } else {
+                    int samples = r.getBioSampleCount();
+                    if (samples >= 3) {
+                        c.setForeground(Color.GREEN);
+                    } else if (samples > 0) {
+                        c.setForeground(Color.YELLOW);
+                    } else {
+                        c.setForeground(EdoUi.Internal.GRAY_180);
+                    }
                 }
             } else {
                 c.setForeground(EdoUi.User.MAIN_TEXT);
@@ -1220,12 +1229,18 @@ static class Row {
         final BodyInfo body;
         final boolean detail;
         final boolean destinationRow;
+        /** True for ring summary lines under a body (not exobiology). */
+        final boolean ringDetail;
         final int parentId;
         final String bioText;
         final String bioValue;
         private int bioSampleCount;
         
         private boolean observedGenusHeader;
+
+        boolean isRingDetail() {
+            return ringDetail;
+        }
 
         boolean isObservedGenusHeader() {
             return observedGenusHeader;
@@ -1237,12 +1252,14 @@ static class Row {
         private Row(BodyInfo body,
                     boolean detail,
                     boolean destinationRow,
+                    boolean ringDetail,
                     int parentId,
                     String bioText,
                     String bioValue) {
             this.body = body;
             this.detail = detail;
             this.destinationRow = destinationRow;
+            this.ringDetail = ringDetail;
             this.parentId = parentId;
             this.bioText = bioText;
             this.bioValue = bioValue;
@@ -1257,21 +1274,26 @@ static class Row {
         }
 
         static Row bio(int parentId, String text, String val, int bioSampleCount) {
-            Row r = new Row(null, true, false, parentId, text, val);
+            Row r = new Row(null, true, false, false, parentId, text, val);
             r.setBioSampleCount(bioSampleCount);
             return r;
         }
         static Row body(BodyInfo b) {
-            return new Row(b, false, false, -1, null, null);
+            return new Row(b, false, false, false, -1, null, null);
         }
 
         static Row bio(int parentId, String text, String val) {
-            return new Row(null, true, false, parentId, text, val);
+            return new Row(null, true, false, false, parentId, text, val);
+        }
+
+        static Row ring(int parentId, String text) {
+            String t = (text != null) ? text : "";
+            return new Row(null, true, false, true, parentId, t, "");
         }
 
         static Row destination(int parentId, String destinationName) {
             String name = (destinationName != null) ? destinationName : "";
-            return new Row(null, true, true, parentId, name, null);
+            return new Row(null, true, true, false, parentId, name, null);
         }
     }
 
@@ -1775,6 +1797,20 @@ static class Row {
                 && drop.getPredictions() != null
                 && !drop.getPredictions().isEmpty()) {
             keep.setPredictions(drop.getPredictions());
+        }
+
+        if (keep.isPlanetaryBodyForRingDisplay()
+                && keep.getRingSummaryLines().isEmpty()
+                && !drop.getRingSummaryLines().isEmpty()) {
+            keep.setRingSummaryLines(new ArrayList<>(drop.getRingSummaryLines()));
+        }
+        String kRes = keep.getRingReserveHumanized();
+        String dRes = drop.getRingReserveHumanized();
+        if (keep.isPlanetaryBodyForRingDisplay()
+                && (kRes == null || kRes.isEmpty())
+                && dRes != null
+                && !dRes.isEmpty()) {
+            keep.setRingReserveHumanized(dRes);
         }
     }
 

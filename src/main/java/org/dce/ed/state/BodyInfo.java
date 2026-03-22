@@ -172,6 +172,12 @@ public class BodyInfo {
 	// Derived biological prediction data
 	private List<BioCandidate> predictions;
 
+	/** Ring summary lines for the system table (from journal scan or EDSM). */
+	private List<String> ringSummaryLines;
+
+	/** Humanized {@code ReserveLevel} from journal (e.g. Pristine); used to annotate EDSM ring lines that omit quality. */
+	private String ringReserveHumanized;
+
 	Double radius;
 	private String shortName;
 	double starPos[];
@@ -410,6 +416,31 @@ public class BodyInfo {
 		return predictions;
 	}
 
+	/**
+	 * Display lines for rings (composition and reserve), e.g. from journal or EDSM.
+	 */
+	public List<String> getRingSummaryLines() {
+		return ringSummaryLines != null ? ringSummaryLines : Collections.emptyList();
+	}
+
+	public void setRingSummaryLines(List<String> lines) {
+		if (lines == null || lines.isEmpty()) {
+			this.ringSummaryLines = null;
+		} else {
+			this.ringSummaryLines = new ArrayList<>(lines);
+		}
+	}
+
+	public String getRingReserveHumanized() {
+		return ringReserveHumanized;
+	}
+
+	public void setRingReserveHumanized(String ringReserveHumanized) {
+		this.ringReserveHumanized = (ringReserveHumanized == null || ringReserveHumanized.isBlank())
+				? null
+				: ringReserveHumanized.trim();
+	}
+
 	public String getShortName() {
 		return shortName;
 	}
@@ -499,6 +530,14 @@ public class BodyInfo {
 
 	public boolean isHighValue() {
 		return highValue;
+	}
+
+	/**
+	 * True for planets/moons that carry a {@link #planetClass} from scan or EDSM.
+	 * Stars do not — stellar ring belts are not mineable planetary rings, so we hide ring summaries for them.
+	 */
+	public boolean isPlanetaryBodyForRingDisplay() {
+		return planetClass != null && !planetClass.trim().isEmpty();
 	}
 
 	// ------------------------------------------------------------

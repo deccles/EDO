@@ -27,6 +27,7 @@ import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.util.EdsmClient;
 import org.dce.ed.util.FirstBonusHelper;
+import org.dce.ed.util.RingSummaryFormatter;
 import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
@@ -335,7 +336,20 @@ public class SystemEventProcessor {
         }
         
         info.setOrbitalPeriod(e.getOrbitalPeriod());
-        
+
+        if (scanIndicatesStellarBody(e)) {
+            info.setRingSummaryLines(null);
+            info.setRingReserveHumanized(null);
+        } else {
+            String resH = RingSummaryFormatter.humanizeReserve(e.getReserveLevel());
+            if (!resH.isEmpty()) {
+                info.setRingReserveHumanized(resH);
+            }
+            if (e.getRings() != null && !e.getRings().isEmpty()) {
+                info.setRingSummaryLines(RingSummaryFormatter.fromJournal(e.getRings(), e.getReserveLevel()));
+            }
+        }
+
         int parentStarBodyId = findParentStarBodyId(e);
         if (parentStarBodyId >= 0) {
             info.setParentStarBodyId(parentStarBodyId);
@@ -721,6 +735,22 @@ public class SystemEventProcessor {
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    /**
+     * Star scans carry {@link ScanEvent#getStarType()} and no {@link ScanEvent#getPlanetClass()}.
+     * Planetary scans carry planet class; rings around those are the mineable kind.
+     */
+    private static boolean scanIndicatesStellarBody(ScanEvent e) {
+        if (e == null) {
+            return false;
+        }
+        String pc = e.getPlanetClass();
+        if (pc != null && !pc.trim().isEmpty()) {
+            return false;
+        }
+        String st = e.getStarType();
+        return st != null && !st.trim().isEmpty();
+    }
 
     private boolean isBeltOrRing(String bodyName) {
         if (bodyName == null) {

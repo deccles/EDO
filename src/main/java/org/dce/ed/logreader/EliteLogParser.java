@@ -786,6 +786,8 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         String starType = getString(obj, "StarType");
 
         List<ScanEvent.ParentRef> parents = parseParentRefs(obj);
+        List<ScanEvent.RingInfo> rings = parseScanRings(obj);
+        String reserveLevel = getString(obj, "ReserveLevel");
 
         Double surfacePressure = obj.has("SurfacePressure")
         		? obj.get("SurfacePressure").getAsDouble(): null;
@@ -812,8 +814,34 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
                 wasFootfalled,
                 atmoComp,
                 starType,
-                parents
+                parents,
+                rings,
+                reserveLevel
         );
+    }
+
+    private List<ScanEvent.RingInfo> parseScanRings(JsonObject obj) {
+        if (obj == null || !obj.has("Rings") || obj.get("Rings").isJsonNull()) {
+            return Collections.emptyList();
+        }
+        JsonElement ringsEl = obj.get("Rings");
+        if (!ringsEl.isJsonArray()) {
+            return Collections.emptyList();
+        }
+        List<ScanEvent.RingInfo> out = new ArrayList<>();
+        for (JsonElement ringEl : ringsEl.getAsJsonArray()) {
+            if (ringEl == null || !ringEl.isJsonObject()) {
+                continue;
+            }
+            JsonObject ro = ringEl.getAsJsonObject();
+            String name = getString(ro, "Name");
+            String ringClass = getString(ro, "RingClass");
+            if (ringClass == null || ringClass.isEmpty()) {
+                continue;
+            }
+            out.add(new ScanEvent.RingInfo(name, ringClass));
+        }
+        return out.isEmpty() ? Collections.emptyList() : out;
     }
 
     /**

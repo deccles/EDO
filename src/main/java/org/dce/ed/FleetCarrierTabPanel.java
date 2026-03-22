@@ -15,15 +15,18 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.CarrierJumpEvent;
+import org.dce.ed.logreader.event.CarrierJumpRequestEvent;
 import org.dce.ed.logreader.event.CarrierLocationEvent;
 import org.dce.ed.ui.EdoUi;
 
 /**
  * Fleet Carrier tab:
  * - Imports a Spansh fleet-carrier route JSON.
- * - Only reacts to CarrierJump/CarrierLocation events.
+ * - Reacts to carrier jump scheduling ({@code CarrierJumpRequest}), completion ({@code CarrierJump}),
+ *   cancellation ({@code CarrierJumpCancelled}), and {@code CarrierLocation}.
  * - After each carrier jump, copies the next system name to clipboard (and shows the “Copied: …” toast).
  */
 public class FleetCarrierTabPanel extends RouteTabPanel {
@@ -123,6 +126,14 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 			return;
 		}
 		// Only update on carrier events; ignore everything else so ship jumps / NavRoute don't affect this tab.
+		if (event instanceof CarrierJumpRequestEvent req) {
+			startPendingJumpBlink(req.getSystemName(), req.getSystemAddress());
+			return;
+		}
+		if (event.getType() == EliteEventType.CARRIER_JUMP_CANCELLED) {
+			stopPendingJumpBlink();
+			return;
+		}
 		if (event instanceof CarrierJumpEvent jump) {
 			super.handleLogEvent(event);
 			if (spanshRouteLoaded) {

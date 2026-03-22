@@ -118,7 +118,7 @@ class BioTableBuilderTest {
             return List.of();
         }
         return rows.stream()
-                .filter(r -> r.detail && r.bioText != null)
+                .filter(r -> r.detail && !r.isRingDetail() && r.bioText != null)
                 .map(r -> r.bioText)
                 .collect(Collectors.toList());
     }

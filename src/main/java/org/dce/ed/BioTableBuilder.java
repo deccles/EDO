@@ -13,6 +13,7 @@ import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.util.FirstBonusHelper;
+import org.dce.ed.util.RingSummaryFormatter;
 import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
@@ -61,6 +62,17 @@ final class BioTableBuilder {
 
         for (BodyInfo b : sorted) {
             rows.add(Row.body(b));
+
+            if (b.isPlanetaryBodyForRingDisplay()) {
+                List<String> ringLines = RingSummaryFormatter.finalizeAndEnrichRingLines(
+                        b.getRingSummaryLines(),
+                        b.getRingReserveHumanized());
+                for (String line : ringLines) {
+                    if (line != null && !line.trim().isEmpty()) {
+                        rows.add(Row.ring(b.getBodyId(), line.trim()));
+                    }
+                }
+            }
 
             if (!b.hasBio()) {
                 continue;

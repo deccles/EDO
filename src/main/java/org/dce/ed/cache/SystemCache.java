@@ -18,6 +18,7 @@ import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.exobiology.ExobiologyData.BioCandidate;
 import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
+import org.dce.ed.util.RingSummaryFormatter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -311,6 +312,16 @@ public final class SystemCache {
             if (cb.observedBioDisplayNames != null && !cb.observedBioDisplayNames.isEmpty()) {
                 info.setObservedBioDisplayNames(new java.util.HashSet<>(cb.observedBioDisplayNames));
             }
+            if (info.isPlanetaryBodyForRingDisplay()
+                    && cb.ringReserveHumanized != null
+                    && !cb.ringReserveHumanized.isBlank()) {
+                info.setRingReserveHumanized(cb.ringReserveHumanized);
+            }
+            if (info.isPlanetaryBodyForRingDisplay()
+                    && cb.ringTypes != null
+                    && !cb.ringTypes.isEmpty()) {
+                info.setRingSummaryLines(new ArrayList<>(cb.ringTypes));
+            }
             state.getBodies().put(info.getBodyId(), info);
         }
         
@@ -489,6 +500,16 @@ public final class SystemCache {
                             || pc.contains("ammonia world")
                             || tf.contains("terraformable");
             info.setHighValue(highValue);
+
+            if (remote.type != null && remote.type.equalsIgnoreCase("Star")) {
+                info.setRingSummaryLines(null);
+                info.setRingReserveHumanized(null);
+            } else if (remote.rings != null && !remote.rings.isEmpty()) {
+                List<String> ringLines = RingSummaryFormatter.fromEdsmRings(remote.rings, info.getRingReserveHumanized());
+                if (!ringLines.isEmpty() && info.getRingSummaryLines().isEmpty()) {
+                    info.setRingSummaryLines(ringLines);
+                }
+            }
         }
     }
 
@@ -591,6 +612,16 @@ public final class SystemCache {
             cb.wasFootfalled = b.getWasFootfalled();
             cb.spanshLandmarks = b.getSpanshLandmarks() != null ? new ArrayList<>(b.getSpanshLandmarks()) : null;
             cb.spanshExcludeFromExobiology = b.getSpanshExcludeFromExobiology();
+            if (b.isPlanetaryBodyForRingDisplay()
+                    && b.getRingSummaryLines() != null
+                    && !b.getRingSummaryLines().isEmpty()) {
+                cb.ringTypes = new ArrayList<>(b.getRingSummaryLines());
+            }
+            if (!b.isPlanetaryBodyForRingDisplay()) {
+                cb.ringReserveHumanized = null;
+            } else if (b.getRingReserveHumanized() != null && !b.getRingReserveHumanized().isEmpty()) {
+                cb.ringReserveHumanized = b.getRingReserveHumanized();
+            }
 
             // Preserve cache truth when the current session hasn't learned these flags yet.
             // These flags are monotonic in practice (once true, they don't become false).
@@ -613,8 +644,15 @@ public final class SystemCache {
                 if (cb.spanshExcludeFromExobiology == null && prev.spanshExcludeFromExobiology != null) {
                     cb.spanshExcludeFromExobiology = prev.spanshExcludeFromExobiology;
                 }
-                if (cb.ringTypes == null && prev.ringTypes != null) {
+                if (b.isPlanetaryBodyForRingDisplay()
+                        && (cb.ringTypes == null || cb.ringTypes.isEmpty())
+                        && prev.ringTypes != null && !prev.ringTypes.isEmpty()) {
                     cb.ringTypes = new ArrayList<>(prev.ringTypes);
+                }
+                if (b.isPlanetaryBodyForRingDisplay()
+                        && (cb.ringReserveHumanized == null || cb.ringReserveHumanized.isBlank())
+                        && prev.ringReserveHumanized != null && !prev.ringReserveHumanized.isBlank()) {
+                    cb.ringReserveHumanized = prev.ringReserveHumanized;
                 }
                 if (cb.spanshPredictedGenera == null && prev.spanshPredictedGenera != null) {
                     cb.spanshPredictedGenera = new ArrayList<>(prev.spanshPredictedGenera);

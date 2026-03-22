@@ -88,6 +88,9 @@ public class CachedBody {
 	/** Ring type names for this body (e.g. "Icy pristine"). Stored so cached systems show rings in Nearby. */
 	public List<String> ringTypes;
 
+	/** Journal reserve (Pristine, …) for annotating ring lines that lack quality. */
+	public String ringReserveHumanized;
+
 	/** Genus/species names from Spansh landmarks (community-recorded biology). Kept separate from {@link #predictions} (our scan/model prediction). */
 	public List<String> spanshPredictedGenera;
 

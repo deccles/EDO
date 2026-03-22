@@ -781,6 +781,16 @@ public final class BioPredictFromCacheMain {
         if (cb.predictions != null && !cb.predictions.isEmpty()) {
             info.setPredictions(new java.util.ArrayList<>(cb.predictions));
         }
+        if (info.isPlanetaryBodyForRingDisplay()
+                && cb.ringReserveHumanized != null
+                && !cb.ringReserveHumanized.isBlank()) {
+            info.setRingReserveHumanized(cb.ringReserveHumanized);
+        }
+        if (info.isPlanetaryBodyForRingDisplay()
+                && cb.ringTypes != null
+                && !cb.ringTypes.isEmpty()) {
+            info.setRingSummaryLines(new java.util.ArrayList<>(cb.ringTypes));
+        }
 
         return info;
     }

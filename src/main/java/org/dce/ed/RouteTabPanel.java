@@ -685,6 +685,43 @@ public class RouteTabPanel extends JPanel {
 	protected boolean shouldUpdateOnCarrierJump(CarrierJumpEvent jump) {
 		return jump != null && jump.isDocked();
 	}
+
+	/**
+	 * Start blinking the hollow triangle for an upcoming jump to the given destination.
+	 * <p>
+	 * Used by {@link FleetCarrierTabPanel} when a {@code CarrierJumpRequest} is logged
+	 * (mirrors FSD “charging” behavior driven by {@link org.dce.ed.logreader.event.StatusEvent}).
+	 */
+	protected void startPendingJumpBlink(String destName, long destAddress) {
+		if (jumpFlashTimer == null) {
+			return;
+		}
+		pendingJumpLockedName = (destName != null && !destName.isBlank()) ? destName : null;
+		pendingJumpLockedAddress = destAddress;
+		pendingJumpSystemName = pendingJumpLockedName;
+		jumpFlashOn = true;
+		if (!jumpFlashTimer.isRunning()) {
+			jumpFlashTimer.start();
+		}
+		rebuildDisplayedEntries();
+		fireSessionStateChanged();
+	}
+
+	/**
+	 * Stop the pending-jump blink (e.g. carrier jump cancelled before departure).
+	 */
+	protected void stopPendingJumpBlink() {
+		if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
+			jumpFlashTimer.stop();
+		}
+		pendingJumpSystemName = null;
+		pendingJumpLockedName = null;
+		pendingJumpLockedAddress = 0L;
+		jumpFlashOn = true;
+		rebuildDisplayedEntries();
+		fireSessionStateChanged();
+	}
+
 	private void setCurrentSystemIfEmpty(String systemName, long systemAddress) {
 		if (tableModel.getRowCount() > 0) {
 			return; // route exists, nothing to do
