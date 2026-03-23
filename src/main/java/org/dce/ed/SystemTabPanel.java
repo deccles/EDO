@@ -187,7 +187,7 @@ public class SystemTabPanel extends JPanel {
                     state.setSystemName(text);
                     state.setSystemAddress(0L);
 
-                    loadSystem(text, 0L);
+                    loadSystem(text, 0L, true);
                 }
             }
         });
@@ -470,12 +470,11 @@ public class SystemTabPanel extends JPanel {
         }
         if (event instanceof FsdJumpEvent) {
             FsdJumpEvent e = (FsdJumpEvent) event;
-
             new Thread(() -> {
 
 
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                    loadSystem(e.getStarSystem(), e.getSystemAddress());
+                    loadSystem(e.getStarSystem(), e.getSystemAddress(), true);
                     requestRebuild();
                     persistIfPossible();
                 });
@@ -494,6 +493,7 @@ public class SystemTabPanel extends JPanel {
     // ---------------------------------------------------------------------
 
     public void refreshFromCache() {
+        long startedAtMs = System.currentTimeMillis();
         try {
             java.nio.file.Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
             if (journalDir == null || !java.nio.file.Files.isDirectory(journalDir)) {
@@ -521,11 +521,13 @@ public class SystemTabPanel extends JPanel {
 
             if ((systemName == null || systemName.isEmpty()) && systemAddress == 0L) {
                 rebuildTable();
+                System.out.println("[EDO][Cache] refreshFromCache: no current system, took " + (System.currentTimeMillis() - startedAtMs) + "ms");
                 return;
             }
             
-            loadSystem(systemName, systemAddress);
+            loadSystem(systemName, systemAddress, false);
             rebuildTable();
+            System.out.println("[EDO][Cache] refreshFromCache: loaded " + systemName + " in " + (System.currentTimeMillis() - startedAtMs) + "ms");
 
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -717,7 +719,8 @@ public class SystemTabPanel extends JPanel {
         return null;
     }
 
-    private void loadSystem(String systemName, long systemAddress) {
+    private void loadSystem(String systemName, long systemAddress, boolean allowEdsmEnrichment) {
+        long startedAtMs = System.currentTimeMillis();
         SystemCache cache = SystemCache.getInstance();
         CachedSystem cs = cache.get(systemAddress, systemName);
 
@@ -735,20 +738,23 @@ public class SystemTabPanel extends JPanel {
             cache.loadInto(state, cs);
         }
 
-        // 2) Always try to enrich with EDSM via a single bodies call
-        try {
-            BodiesResponse edsmBodies = edsmClient.showBodies(systemName);
-            if (edsmBodies != null) {
-                edsmClient.mergeBodiesFromEdsm(state, edsmBodies);
+        // 2) Optionally enrich with EDSM via a single bodies call.
+        if (allowEdsmEnrichment) {
+            try {
+                BodiesResponse edsmBodies = edsmClient.showBodies(systemName);
+                if (edsmBodies != null) {
+                    edsmClient.mergeBodiesFromEdsm(state, edsmBodies);
+                }
+            } catch (Exception ex) {
+                // EDSM is best-effort; overlay should still work from cache/logs.
+                ex.printStackTrace();
             }
-        } catch (Exception ex) {
-            // EDSM is best-effort; overlay should still work from cache/logs.
-            ex.printStackTrace();
         }
 
         // 3) Refresh UI and persist merged result
         rebuildTable();
         persistIfPossible();
+        System.out.println("[EDO][Cache] loadSystem lookup+hydrate for " + systemName + " took " + (System.currentTimeMillis() - startedAtMs) + "ms");
     }
     private final AtomicBoolean rebuildPending = new AtomicBoolean(false);
 
@@ -1879,7 +1885,6 @@ static class Row {
     public SystemState getState() {
         return state;
     }
-
 
     private void injectIntermediateDestinationRow(List<Row> rows) {
         Integer parentId = targetDestinationParentBodyId;

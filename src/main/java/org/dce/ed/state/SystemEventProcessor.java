@@ -7,6 +7,7 @@ import java.util.Locale;
 import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
+import org.dce.ed.cache.SystemStore;
 import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.exobiology.BodyAttributes;
 import org.dce.ed.exobiology.ExobiologyData;
@@ -41,7 +42,7 @@ import org.dce.ed.util.SpanshLandmarkCache;
 public class SystemEventProcessor {
 
     private final SystemState state;
-    private final SystemCache systemCache;
+    private final SystemStore systemCache;
     private final EdsmClient edsmClient; // optional; may be null
 	private String clientKey;
 

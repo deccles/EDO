@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -31,6 +32,7 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
 
     public LocalCsvBackend(Path csvPath) {
         this.csvPath = csvPath != null ? csvPath : defaultPath();
+        migrateLegacyPathIfNeeded(this.csvPath);
     }
 
     public LocalCsvBackend() {
@@ -38,7 +40,31 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
     }
 
     private static Path defaultPath() {
+        return Paths.get(System.getProperty("user.home", ""), ".edo").resolve("prospector_log.csv");
+    }
+
+    private static Path legacyDefaultPath() {
         return Paths.get(System.getProperty("user.home", ""), "EDO").resolve("prospector_log.csv");
+    }
+
+    private static void migrateLegacyPathIfNeeded(Path targetPath) {
+        if (targetPath == null) {
+            return;
+        }
+        Path legacy = legacyDefaultPath();
+        if (Files.exists(targetPath) || !Files.exists(legacy)) {
+            return;
+        }
+        try {
+            Path parent = targetPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.copy(legacy, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[EDO][Mining] Migrated prospector CSV to " + targetPath);
+        } catch (Exception ex) {
+            System.err.println("[EDO][Mining] Failed to migrate prospector CSV to " + targetPath + ": " + ex.getMessage());
+        }
     }
 
     @Override
@@ -115,11 +141,18 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
 
     @Override
     public List<ProspectorLogRow> loadRows() {
-        if (!Files.exists(csvPath)) {
+        Path readPath = csvPath;
+        if (!Files.exists(readPath)) {
+            Path legacy = legacyDefaultPath();
+            if (Files.exists(legacy)) {
+                readPath = legacy;
+            }
+        }
+        if (!Files.exists(readPath)) {
             return List.of();
         }
         List<ProspectorLogRow> out = new ArrayList<>();
-        try (BufferedReader reader = Files.newBufferedReader(csvPath, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = Files.newBufferedReader(readPath, StandardCharsets.UTF_8)) {
             String header = reader.readLine();
             if (header == null) {
                 return List.of();

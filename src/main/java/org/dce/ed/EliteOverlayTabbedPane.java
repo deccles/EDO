@@ -220,7 +220,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 		applyTabButtonStyle(miningButton);
 		applyTabButtonStyle(nearbyButton);
 		applyTabButtonStyle(fleetCarrierButton);
-		systemTab.refreshFromCache();
+		// SystemTabPanel already refreshes cache in its constructor.
+		// Avoid triggering a second startup load path.
 
 		// Wire up buttons to show cards
 		routeButton.addActionListener(new ActionListener() {

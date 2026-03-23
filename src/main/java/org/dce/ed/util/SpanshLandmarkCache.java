@@ -46,4 +46,11 @@ public final class SpanshLandmarkCache {
         }
         return result;
     }
+
+    /**
+     * Returns cached exobiology info if present; never performs network I/O.
+     */
+    public SpanshBodyExobiologyInfo getIfPresent(String systemName, String bodyName) {
+        return cache.get(key(systemName, bodyName));
+    }
 }

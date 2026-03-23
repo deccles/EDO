@@ -603,7 +603,7 @@ public class PreferencesDialog extends JDialog {
 		gbcLog.insets = new Insets(6, 8, 6, 8);
 
 		ButtonGroup logBackendGroup = new ButtonGroup();
-		miningLogBackendLocalRadio = new JRadioButton("Local CSV (file in ~/EDO/)");
+		miningLogBackendLocalRadio = new JRadioButton("Local CSV (file in ~/.edo/)");
 		miningLogBackendLocalRadio.setOpaque(false);
 		miningLogBackendGoogleRadio = new JRadioButton("Google Sheets");
 		miningLogBackendGoogleRadio.setOpaque(false);

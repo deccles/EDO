@@ -8,6 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -35,21 +40,29 @@ import com.google.gson.reflect.TypeToken;
 
 
 
-public final class SystemCache {
+public final class SystemCache implements SystemStore {
     private CachedSystem lastLoadedSystem;
 
     private static final String CACHE_FILE_NAME = ".edOverlaySystems.json";
+    private static final String CACHE_DB_FILE_NAME = "ed-overlay-systems-v1.db";
 
     /**
      * Optional override for where the cache JSON is stored.
      * Used by tools like RescanJournalsMain when --cache is provided.
      */
     public static final String CACHE_PATH_PROPERTY = "edo.cacheFile";
+    public static final String CACHE_DB_PATH_PROPERTY = "edo.cacheDbFile";
+    public static final String CACHE_BACKEND_PROPERTY = "edo.cache.backend";
+    public static final String CACHE_BACKEND_JSON = "json";
+    public static final String CACHE_BACKEND_SQLITE = "sqlite";
 
     private static final SystemCache INSTANCE = new SystemCache();
 
     private final Gson gson;
     private final Path cachePath;
+    private final Path cacheDbPath;
+    private Connection sqliteConnection;
+    private boolean sqliteReady;
 
     private final Map<Long, CachedSystem> byAddress = new HashMap<>();
     private final Map<String, CachedSystem> byName = new HashMap<>();
@@ -72,6 +85,8 @@ public final class SystemCache {
             }
             this.cachePath = Paths.get(home, CACHE_FILE_NAME);
         }
+        this.cacheDbPath = resolveDbPath();
+        this.sqliteReady = initializeSqliteIfConfigured();
     }
 
     /**
@@ -79,6 +94,7 @@ public final class SystemCache {
      *
      * Intended for tools that want a true "start from scratch" rebuild.
      */
+    @Override
     public synchronized void clearAndDeleteOnDisk() {
     	System.out.println("Delete cachefile " + cachePath);
         // Mark loaded so ensureLoaded() won't re-load from disk later in this JVM.
@@ -93,6 +109,20 @@ public final class SystemCache {
         } catch (IOException ex) {
             System.err.println("SystemCache: failed to delete cache file " + cachePath + ": " + ex.getMessage());
         }
+        if (sqliteReady) {
+            try {
+                if (sqliteConnection != null) {
+                    sqliteConnection.close();
+                }
+            } catch (SQLException ignored) {
+            }
+            try {
+                Files.deleteIfExists(cacheDbPath);
+            } catch (IOException ex) {
+                System.err.println("SystemCache: failed to delete sqlite cache file " + cacheDbPath + ": " + ex.getMessage());
+            }
+            sqliteReady = initializeSqliteIfConfigured();
+        }
     }
 
     public static SystemCache getInstance() {
@@ -100,9 +130,18 @@ public final class SystemCache {
     }
 
     public static CachedSystem load() throws IOException {
-        SystemCache cache = getInstance();
-        cache.ensureLoaded();
-        return cache.lastLoadedSystem;
+        return getInstance().loadLastSystem();
+    }
+
+    @Override
+    public synchronized CachedSystem loadLastSystem() throws IOException {
+        if (sqliteReady) {
+            CachedSystem cs = sqliteLoadLastSystem();
+            lastLoadedSystem = cs;
+            return cs;
+        }
+        ensureLoaded();
+        return lastLoadedSystem;
     }
 
 
@@ -145,7 +184,11 @@ public final class SystemCache {
         return (name == null) ? null : name.toLowerCase(Locale.ROOT);
     }
     
+    @Override
     public synchronized CachedSystem get(long systemAddress, String systemName) {
+        if (sqliteReady) {
+            return sqliteGet(systemAddress, systemName);
+        }
         ensureLoaded();
 
         CachedSystem cs = null;
@@ -161,6 +204,7 @@ public final class SystemCache {
     /**
      * Stores/updates a cached system and persists to disk.
      */
+    @Override
     public synchronized void put(long systemAddress,
             String systemName,
             double starPos[],
@@ -169,6 +213,43 @@ public final class SystemCache {
             Double fssProgress,
             Boolean allBodiesFound,
             List<CachedBody> bodies) {
+        if (sqliteReady) {
+            CachedSystem cs = sqliteGet(systemAddress, systemName);
+            if (cs == null) {
+                cs = new CachedSystem();
+            }
+            cs.starPos = starPos;
+            cs.systemAddress = systemAddress;
+            cs.systemName = systemName;
+            cs.totalBodies = totalBodies;
+            cs.nonBodyCount = nonBodyCount;
+            cs.fssProgress = fssProgress;
+            cs.allBodiesFound = allBodiesFound;
+            if (cs.bodies == null) {
+                cs.bodies = new ArrayList<>();
+            }
+            if (bodies != null && !bodies.isEmpty()) {
+                for (CachedBody newBody : bodies) {
+                    boolean merged = false;
+                    for (int i = 0; i < cs.bodies.size(); i++) {
+                        CachedBody existing = cs.bodies.get(i);
+                        boolean idMatch = (newBody.bodyId >= 0 && existing.bodyId >= 0 && newBody.bodyId == existing.bodyId);
+                        boolean nameMatch = (newBody.name != null && !newBody.name.isEmpty() && newBody.name.equals(existing.name));
+                        if (idMatch || nameMatch) {
+                            cs.bodies.set(i, newBody);
+                            merged = true;
+                            break;
+                        }
+                    }
+                    if (!merged) {
+                        cs.bodies.add(newBody);
+                    }
+                }
+            }
+            sqliteUpsert(cs);
+            lastLoadedSystem = cs;
+            return;
+        }
         ensureLoaded();
 
 //        System.out.println("systemcache.put " + starPos[0] + "," + starPos[1] + "," + starPos[2]);
@@ -226,6 +307,7 @@ public final class SystemCache {
     }
 
     
+    @Override
     public void loadInto(SystemState state, CachedSystem cs) {
         if (state == null || cs == null) {
             return;
@@ -335,6 +417,7 @@ public final class SystemCache {
      *   - We match by EDSM bodyId (remote.id) / journal BodyID.
      *   - If there is no local body with the same BodyID, the EDSM body is ignored.
      */
+    @Override
     public void mergeBodiesFromEdsm(SystemState state, BodiesResponse edsm) {
         if (state == null || edsm == null || edsm.bodies == null || edsm.bodies.isEmpty()) {
             return;
@@ -542,6 +625,7 @@ public final class SystemCache {
         return null;
     }
 
+    @Override
     public void storeSystem(SystemState state) {
         if (state == null || state.getSystemName() == null || state.getSystemAddress() == 0L) {
             return;
@@ -781,6 +865,7 @@ public final class SystemCache {
      * If EDSM says "this body has some discovery commander", we set a
      * placeholder so that downstream logic can treat it as "discovered".
      */
+    @Override
     public void mergeDiscoveryFlags(SystemState state, Map<String, Boolean> discoveryFlagsByBodyName) {
         if (state == null || discoveryFlagsByBodyName == null || discoveryFlagsByBodyName.isEmpty()) {
             return;
@@ -799,6 +884,279 @@ public final class SystemCache {
                 b.setDiscoveryCommander("EDSM");
             }
         }
+    }
+
+    @Override
+    public synchronized CachedSystemSummary getSummary(long systemAddress, String systemName) {
+        if (sqliteReady) {
+            return sqliteGetSummary(systemAddress, systemName);
+        }
+        CachedSystem cs = get(systemAddress, systemName);
+        if (cs == null) {
+            return null;
+        }
+        int bodyCount = cs.bodies != null ? cs.bodies.size() : 0;
+        return new CachedSystemSummary(
+                cs.systemAddress,
+                cs.systemName,
+                cs.totalBodies,
+                cs.fssProgress,
+                cs.allBodiesFound,
+                bodyCount);
+    }
+
+    private Path resolveDbPath() {
+        String override = System.getProperty(CACHE_DB_PATH_PROPERTY);
+        if (override != null && !override.isBlank()) {
+            return Paths.get(override).toAbsolutePath().normalize();
+        }
+        String home = System.getProperty("user.home");
+        if (home == null || home.isEmpty()) {
+            home = ".";
+        }
+        return Paths.get(home, ".edo", CACHE_DB_FILE_NAME).toAbsolutePath().normalize();
+    }
+
+    private boolean initializeSqliteIfConfigured() {
+        String backend = System.getProperty(CACHE_BACKEND_PROPERTY, CACHE_BACKEND_SQLITE);
+        if (!CACHE_BACKEND_SQLITE.equalsIgnoreCase(backend)) {
+            System.out.println("[EDO][Cache] backend=json path=" + cachePath.toAbsolutePath());
+            return false;
+        }
+        try {
+            Path parent = cacheDbPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            sqliteConnection = DriverManager.getConnection("jdbc:sqlite:" + cacheDbPath.toString());
+            try (PreparedStatement ps = sqliteConnection.prepareStatement("PRAGMA journal_mode=WAL")) {
+                ps.execute();
+            }
+            try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                    "CREATE TABLE IF NOT EXISTS systems (" +
+                    "cache_key TEXT PRIMARY KEY," +
+                    "system_address INTEGER," +
+                    "canonical_name TEXT," +
+                    "system_name TEXT," +
+                    "total_bodies INTEGER," +
+                    "fss_progress REAL," +
+                    "all_bodies_found INTEGER," +
+                    "cached_body_count INTEGER," +
+                    "updated_at INTEGER," +
+                    "payload_json TEXT NOT NULL" +
+                    ")")) {
+                ps.execute();
+            }
+            try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_systems_canonical_name ON systems(canonical_name) WHERE canonical_name IS NOT NULL")) {
+                ps.execute();
+            }
+            try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                    "CREATE INDEX IF NOT EXISTS idx_systems_address ON systems(system_address)")) {
+                ps.execute();
+            }
+
+            if (sqliteCountRows() == 0 && Files.isRegularFile(cachePath)) {
+                sqliteImportFromJson();
+            }
+            System.out.println("[EDO][Cache] backend=sqlite path=" + cacheDbPath.toAbsolutePath());
+            return true;
+        } catch (Exception ex) {
+            System.err.println("SystemCache: sqlite init failed, falling back to json: " + ex.getMessage());
+            try {
+                if (sqliteConnection != null) {
+                    sqliteConnection.close();
+                }
+            } catch (SQLException ignored) {
+            }
+            sqliteConnection = null;
+            System.out.println("[EDO][Cache] backend=json path=" + cachePath.toAbsolutePath());
+            return false;
+        }
+    }
+
+    private int sqliteCountRows() throws SQLException {
+        try (PreparedStatement ps = sqliteConnection.prepareStatement("SELECT COUNT(*) FROM systems");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    private void sqliteImportFromJson() {
+        long start = System.currentTimeMillis();
+        try (BufferedReader reader = Files.newBufferedReader(cachePath, StandardCharsets.UTF_8)) {
+            Type type = new TypeToken<List<CachedSystem>>() {}.getType();
+            List<CachedSystem> systems = gson.fromJson(reader, type);
+            if (systems == null || systems.isEmpty()) {
+                return;
+            }
+            sqliteConnection.setAutoCommit(false);
+            for (CachedSystem cs : systems) {
+                if (cs != null) {
+                    sqliteUpsert(cs);
+                }
+            }
+            sqliteConnection.commit();
+            sqliteConnection.setAutoCommit(true);
+            System.out.println("SystemCache: imported " + systems.size() + " systems to sqlite in " + (System.currentTimeMillis() - start) + "ms");
+        } catch (Exception ex) {
+            try {
+                if (sqliteConnection != null) {
+                    sqliteConnection.rollback();
+                    sqliteConnection.setAutoCommit(true);
+                }
+            } catch (SQLException ignored) {
+            }
+            System.err.println("SystemCache: sqlite import from json failed: " + ex.getMessage());
+        }
+    }
+
+    private static String sqliteKey(long systemAddress, String systemName) {
+        if (systemAddress != 0L) {
+            return "addr:" + systemAddress;
+        }
+        String canonical = canonicalName(systemName);
+        if (canonical != null && !canonical.isBlank()) {
+            return "name:" + canonical;
+        }
+        return null;
+    }
+
+    private CachedSystem sqliteGet(long systemAddress, String systemName) {
+        if (sqliteConnection == null) {
+            return null;
+        }
+        try {
+            if (systemAddress != 0L) {
+                try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                        "SELECT payload_json FROM systems WHERE system_address=? ORDER BY updated_at DESC LIMIT 1")) {
+                    ps.setLong(1, systemAddress);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            CachedSystem cs = gson.fromJson(rs.getString(1), CachedSystem.class);
+                            lastLoadedSystem = cs;
+                            return cs;
+                        }
+                    }
+                }
+            }
+            String canonical = canonicalName(systemName);
+            if (canonical != null && !canonical.isBlank()) {
+                try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                        "SELECT payload_json FROM systems WHERE canonical_name=? LIMIT 1")) {
+                    ps.setString(1, canonical);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            CachedSystem cs = gson.fromJson(rs.getString(1), CachedSystem.class);
+                            lastLoadedSystem = cs;
+                            return cs;
+                        }
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite get failed: " + ex.getMessage());
+        }
+        return null;
+    }
+
+    private CachedSystem sqliteLoadLastSystem() {
+        if (sqliteConnection == null) {
+            return null;
+        }
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "SELECT payload_json FROM systems ORDER BY updated_at DESC LIMIT 1");
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                return gson.fromJson(rs.getString(1), CachedSystem.class);
+            }
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite load last failed: " + ex.getMessage());
+        }
+        return null;
+    }
+
+    private void sqliteUpsert(CachedSystem cs) {
+        if (sqliteConnection == null || cs == null) {
+            return;
+        }
+        String key = sqliteKey(cs.systemAddress, cs.systemName);
+        if (key == null) {
+            return;
+        }
+        int cachedBodyCount = (cs.bodies == null) ? 0 : cs.bodies.size();
+        String payload = gson.toJson(cs);
+        long now = System.currentTimeMillis();
+        String sql = "INSERT INTO systems (cache_key, system_address, canonical_name, system_name, total_bodies, fss_progress, all_bodies_found, cached_body_count, updated_at, payload_json) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "ON CONFLICT(cache_key) DO UPDATE SET " +
+                "system_address=excluded.system_address, canonical_name=excluded.canonical_name, system_name=excluded.system_name, " +
+                "total_bodies=excluded.total_bodies, fss_progress=excluded.fss_progress, all_bodies_found=excluded.all_bodies_found, " +
+                "cached_body_count=excluded.cached_body_count, updated_at=excluded.updated_at, payload_json=excluded.payload_json";
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(sql)) {
+            ps.setString(1, key);
+            ps.setLong(2, cs.systemAddress);
+            String canonical = canonicalName(cs.systemName);
+            if (canonical == null || canonical.isBlank()) {
+                ps.setNull(3, java.sql.Types.VARCHAR);
+            } else {
+                ps.setString(3, canonical);
+            }
+            ps.setString(4, cs.systemName);
+            if (cs.totalBodies == null) ps.setNull(5, java.sql.Types.INTEGER); else ps.setInt(5, cs.totalBodies.intValue());
+            if (cs.fssProgress == null) ps.setNull(6, java.sql.Types.DOUBLE); else ps.setDouble(6, cs.fssProgress.doubleValue());
+            if (cs.allBodiesFound == null) ps.setNull(7, java.sql.Types.INTEGER); else ps.setInt(7, cs.allBodiesFound.booleanValue() ? 1 : 0);
+            ps.setInt(8, cachedBodyCount);
+            ps.setLong(9, now);
+            ps.setString(10, payload);
+            ps.executeUpdate();
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite upsert failed: " + ex.getMessage());
+        }
+    }
+
+    private CachedSystemSummary sqliteGetSummary(long systemAddress, String systemName) {
+        if (sqliteConnection == null) {
+            return null;
+        }
+        try {
+            if (systemAddress != 0L) {
+                try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                        "SELECT system_address, system_name, total_bodies, fss_progress, all_bodies_found, cached_body_count FROM systems WHERE system_address=? ORDER BY updated_at DESC LIMIT 1")) {
+                    ps.setLong(1, systemAddress);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            return readSummary(rs);
+                        }
+                    }
+                }
+            }
+            String canonical = canonicalName(systemName);
+            if (canonical != null && !canonical.isBlank()) {
+                try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                        "SELECT system_address, system_name, total_bodies, fss_progress, all_bodies_found, cached_body_count FROM systems WHERE canonical_name=? LIMIT 1")) {
+                    ps.setString(1, canonical);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            return readSummary(rs);
+                        }
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite summary failed: " + ex.getMessage());
+        }
+        return null;
+    }
+
+    private static CachedSystemSummary readSummary(ResultSet rs) throws SQLException {
+        long addr = rs.getLong(1);
+        String name = rs.getString(2);
+        Integer total = rs.getObject(3) != null ? Integer.valueOf(rs.getInt(3)) : null;
+        Double progress = rs.getObject(4) != null ? Double.valueOf(rs.getDouble(4)) : null;
+        Boolean all = rs.getObject(5) != null ? Boolean.valueOf(rs.getInt(5) == 1) : null;
+        int bodyCount = rs.getInt(6);
+        return new CachedSystemSummary(addr, name, total, progress, all, bodyCount);
     }
 
     

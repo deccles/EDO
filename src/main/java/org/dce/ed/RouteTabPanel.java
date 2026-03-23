@@ -42,6 +42,7 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.cache.CachedSystem;
+import org.dce.ed.cache.CachedSystemSummary;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.edsm.BodiesResponse;
@@ -1750,24 +1751,22 @@ public class RouteTabPanel extends JPanel {
 			return ScanStatus.UNKNOWN;
 		}
 		SystemCache cache = SystemCache.getInstance();
-		CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
-		if (cs == null) {
+		CachedSystemSummary summary = cache.getSummary(entry.systemAddress, entry.systemName);
+		if (summary == null) {
 			return ScanStatus.UNKNOWN; // not visited / no local info
 		}
-		SystemState tmp = new SystemState();
-		cache.loadInto(tmp, cs);
-		Boolean all = tmp.getAllBodiesFound();
+		Boolean all = summary.allBodiesFound;
 		if (Boolean.TRUE.equals(all)) {
 			return ScanStatus.FULLY_DISCOVERED_VISITED;
 		}
-		Integer totalBodies = tmp.getTotalBodies();
-		int knownBodies = tmp.getBodies().size();
+		Integer totalBodies = summary.totalBodies;
+		int knownBodies = summary.cachedBodyCount;
 		// If we know the system body count and we don't have them all locally -> X
 		if (totalBodies != null && totalBodies > 0 && knownBodies > 0 && knownBodies < totalBodies) {
 			return ScanStatus.DISCOVERY_MISSING_VISITED;
 		}
 		// If we know counts match and FSS progress says complete -> checkmark
-		Double progress = tmp.getFssProgress();
+		Double progress = summary.fssProgress;
 		if (totalBodies != null && totalBodies > 0 && knownBodies >= totalBodies
 				&& progress != null && progress >= 1.0) {
 			return ScanStatus.FULLY_DISCOVERED_VISITED;
@@ -1801,32 +1800,29 @@ public class RouteTabPanel extends JPanel {
 		}
 		// Look up cached system by address/name (same pattern as SystemTabPanel)
 		SystemCache cache = SystemCache.getInstance();
-		CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
-		if (cs == null) {
+		CachedSystemSummary summary = cache.getSummary(entry.systemAddress, entry.systemName);
+		if (summary == null) {
 			// Nothing cached locally → definitely not "fully scanned by me"
 			return false;
 		}
-		// Load into a temporary SystemState so we can inspect metadata
-		SystemState tmp = new SystemState();
-		cache.loadInto(tmp, cs);
 		// 1) If we have an explicit "all bodies found" flag, trust that first.
-		Boolean all = tmp.getAllBodiesFound();
+		Boolean all = summary.allBodiesFound;
 		if (Boolean.TRUE.equals(all)) {
 			return true;
 		}
 		//        // 2) Otherwise, fall back to counts / progress.
-		Integer totalBodies = tmp.getTotalBodies();
+		Integer totalBodies = summary.totalBodies;
 		//        if (totalBodies == null || totalBodies == 0) {
 		//            // We don't know how many bodies there should be; can't claim "fully scanned".
 		//            return false;
 		//        }
-		int knownBodies = tmp.getBodies().size();
+		int knownBodies = summary.cachedBodyCount;
 		if (totalBodies != null && knownBodies < totalBodies) {
 			// We've seen some bodies but not all → not fully scanned.
 			return false;
 		}
 		// If FSS progress exists, require it to be ~100%.
-		Double progress = tmp.getFssProgress();
+		Double progress = summary.fssProgress;
 		if (progress != null && progress == 1.0) {// 0.999) {
 			return true;
 		}
@@ -1879,8 +1875,7 @@ public class RouteTabPanel extends JPanel {
 			return false;
 		}
 		SystemCache cache = SystemCache.getInstance();
-		CachedSystem cs = cache.get(entry.systemAddress, entry.systemName);
-		return cs != null;
+		return cache.getSummary(entry.systemAddress, entry.systemName) != null;
 	}
 
 	private String getCurrentSystemName() {

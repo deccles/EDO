@@ -109,7 +109,7 @@ final class BioTableBuilder {
             boolean hasPreds = preds != null && !preds.isEmpty();
 
             if (!Boolean.TRUE.equals(b.getWasFootfalled()) && b.getSpanshLandmarks() == null) {
-                SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
+                SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getIfPresent(b.getStarSystem(), b.getBodyName());
                 if (info != null) {
                     b.setSpanshLandmarks(info.getLandmarks());
                     b.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
@@ -425,7 +425,7 @@ final class BioTableBuilder {
         }
 
         if (!Boolean.TRUE.equals(b.getWasFootfalled()) && b.getSpanshLandmarks() == null) {
-            SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
+            SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getIfPresent(b.getStarSystem(), b.getBodyName());
             if (info != null) {
                 b.setSpanshLandmarks(info.getLandmarks());
                 b.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
@@ -527,4 +527,5 @@ final class BioTableBuilder {
         String[] parts = s.trim().split("\\s+");
         return parts.length > 0 ? parts[0] : "";
     }
+
 }
