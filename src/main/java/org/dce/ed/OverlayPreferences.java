@@ -39,6 +39,7 @@ public final class OverlayPreferences {
     // --- UI theme colors ---
     private static final String KEY_UI_MAIN_TEXT_RGB = "ui.colors.mainTextRgb"; // 0xRRGGBB
     private static final String KEY_UI_BACKGROUND_RGB = "ui.colors.backgroundRgb"; // 0xRRGGBB
+    private static final String KEY_UI_SNEAKER_RGB = "ui.colors.sneakerRgb"; // 0xRRGGBB
 
     // --- Speech / Polly (new) ---
     private static final String KEY_SPEECH_ENABLED = "speech.enabled";
@@ -896,6 +897,15 @@ public static Engine getSpeechEngine() {
         PREFS.putInt(KEY_UI_BACKGROUND_RGB, rgb & 0x00FFFFFF);
     }
 
+    public static int getUiSneakerRgb() {
+        // Default matches legacy hard-coded sneaker canvas: rgb(206, 44, 44)
+        return PREFS.getInt(KEY_UI_SNEAKER_RGB, 0xCE2C2C);
+    }
+
+    public static void setUiSneakerRgb(int rgb) {
+        PREFS.putInt(KEY_UI_SNEAKER_RGB, rgb & 0x00FFFFFF);
+    }
+
     /**
      * Apply persisted theme preferences into {@link EdoUi.User} and refresh derived colors.
      * Safe to call multiple times.
@@ -903,6 +913,7 @@ public static Engine getSpeechEngine() {
     public static void applyThemeToEdoUi() {
         EdoUi.User.MAIN_TEXT = EdoUi.fromRgbInt(getUiMainTextRgb());
         EdoUi.User.BACKGROUND = EdoUi.fromRgbInt(getUiBackgroundRgb());
+        EdoUi.User.SNEAKER = EdoUi.fromRgbInt(getUiSneakerRgb());
         EdoUi.refreshDerivedColors();
     }
 

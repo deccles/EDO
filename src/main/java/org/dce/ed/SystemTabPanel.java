@@ -1700,8 +1700,13 @@ public class SystemTabPanel extends JPanel {
                 double iw = Math.max(8.0, w - 1.0);
                 double ih = Math.max(6.0, h - 1.0);
 
-                Color upper = new Color(206, 44, 44, 245);
-                Color upperShade = new Color(164, 30, 30, 220);
+                Color sneakerBase = EdoUi.User.SNEAKER;
+                Color upper = EdoUi.withAlpha(sneakerBase, 245);
+                Color upperShade = new Color(
+                        clamp255((int) Math.round(sneakerBase.getRed() * 0.797f)),
+                        clamp255((int) Math.round(sneakerBase.getGreen() * 0.682f)),
+                        clamp255((int) Math.round(sneakerBase.getBlue() * 0.682f)),
+                        220);
                 Color outline = new Color(50, 50, 50, 235);
                 Color sole = new Color(252, 252, 252, 250);
                 Color trim = new Color(150, 150, 150, 230);
@@ -1725,7 +1730,7 @@ public class SystemTabPanel extends JPanel {
                 g2.setColor(outline);
                 g2.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(shoe);
-                g2.setColor(EdoUi.withAlpha(upperShade, 180));
+                g2.setColor(EdoUi.withAlpha(new Color(upperShade.getRed(), upperShade.getGreen(), upperShade.getBlue()), 180));
                 g2.draw(new java.awt.geom.Line2D.Double(ix + iw * 0.16, iy + ih * 0.22, ix + iw * 0.30, iy + ih * 0.70));
 
                 // Rubber toe cap: 90deg corner + quarter-arc to the right.
@@ -1787,6 +1792,10 @@ public class SystemTabPanel extends JPanel {
             } finally {
                 g2.dispose();
             }
+        }
+
+        private static int clamp255(int v) {
+            return Math.max(0, Math.min(255, v));
         }
     }
 
@@ -2460,7 +2469,8 @@ static class Row {
         bioLeafIcon = new CachedIcon(new LeafIcon(leafSize, leafSize));
         bioDollarIcon = new CachedIcon(new DollarIcon(dollarSize, dollarSize));
         bioGeoIcon = new CachedIcon(new RingedPlanetIcon(geoSize, geoSize));
-        landSneakerIcon = new CachedIcon(new SneakerIcon(sneakerW, sneakerH));
+        // Not wrapped in CachedIcon: sneaker color comes from theme prefs and must repaint when it changes.
+        landSneakerIcon = new SneakerIcon(sneakerW, sneakerH);
     }
 
 

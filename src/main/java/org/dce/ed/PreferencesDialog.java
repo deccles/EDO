@@ -89,6 +89,7 @@ public class PreferencesDialog extends JDialog {
 	// Colors-tab fields
 	private JButton uiMainTextColorButton;
 	private JButton uiBackgroundColorButton;
+	private JButton uiSneakerColorButton;
 
 	// Mining-tab fields
 	private JTextField prospectorMaterialsField;
@@ -136,6 +137,7 @@ public class PreferencesDialog extends JDialog {
 
 	private final int originalUiMainTextRgb;
 	private final int originalUiBackgroundRgb;
+	private final int originalUiSneakerRgb;
 
 
 	public static final String[] STANDARD_US_ENGLISH_VOICES = new String[] {
@@ -163,6 +165,7 @@ public class PreferencesDialog extends JDialog {
 
 		this.originalUiMainTextRgb = OverlayPreferences.getUiMainTextRgb();
 		this.originalUiBackgroundRgb = OverlayPreferences.getUiBackgroundRgb();
+		this.originalUiSneakerRgb = OverlayPreferences.getUiSneakerRgb();
 
 
 		this.okPressed = false;
@@ -416,6 +419,7 @@ public class PreferencesDialog extends JDialog {
 
 		int initialMainRgb = OverlayPreferences.getUiMainTextRgb();
 		int initialBgRgb = OverlayPreferences.getUiBackgroundRgb();
+		int initialSneakerRgb = OverlayPreferences.getUiSneakerRgb();
 
 		JPanel grid = new JPanel(new GridBagLayout());
 		grid.setOpaque(false);
@@ -460,6 +464,25 @@ public class PreferencesDialog extends JDialog {
 
 		gbc.gridx = 0;
 		gbc.gridy++;
+		gbc.gridwidth = 1;
+		gbc.anchor = GridBagConstraints.WEST;
+		grid.add(new JLabel("Sneaker (landable icon):"), gbc);
+
+		gbc.gridx = 1;
+		uiSneakerColorButton = new JButton("Choose...");
+		uiSneakerColorButton.setBackground(rgbToColor(initialSneakerRgb));
+		uiSneakerColorButton.setOpaque(true);
+		uiSneakerColorButton.addActionListener(e -> {
+			Color chosen = JColorChooser.showDialog(this, "Choose sneaker color", uiSneakerColorButton.getBackground());
+			if (chosen != null) {
+				uiSneakerColorButton.setBackground(chosen);
+				applyLiveColorPreviewFromButtons();
+			}
+		});
+		grid.add(uiSneakerColorButton, gbc);
+
+		gbc.gridx = 0;
+		gbc.gridy++;
 		gbc.gridwidth = 2;
 		gbc.anchor = GridBagConstraints.CENTER;
 
@@ -467,6 +490,7 @@ public class PreferencesDialog extends JDialog {
 		resetColorsButton.addActionListener(e -> {
 			uiMainTextColorButton.setBackground(new Color(255, 140, 0));
 			uiBackgroundColorButton.setBackground(new Color(10, 10, 10));
+			uiSneakerColorButton.setBackground(new Color(206, 44, 44));
 			applyLiveColorPreviewFromButtons();
 		});
 		grid.add(resetColorsButton, gbc);
@@ -477,19 +501,21 @@ public class PreferencesDialog extends JDialog {
 		return panel;
 	}
 	private void applyLiveColorPreviewFromButtons() {
-		if (uiMainTextColorButton == null || uiBackgroundColorButton == null) {
+		if (uiMainTextColorButton == null || uiBackgroundColorButton == null || uiSneakerColorButton == null) {
 			return;
 		}
 		int mainRgb = colorToRgb(uiMainTextColorButton.getBackground());
 		int bgRgb = colorToRgb(uiBackgroundColorButton.getBackground());
-		applyLiveColorPreview(mainRgb, bgRgb);
+		int sneakerRgb = colorToRgb(uiSneakerColorButton.getBackground());
+		applyLiveColorPreview(mainRgb, bgRgb, sneakerRgb);
 	}
 
-	private void applyLiveColorPreview(int mainRgb, int bgRgb) {
+	private void applyLiveColorPreview(int mainRgb, int bgRgb, int sneakerRgb) {
 		// Live preview: write to preferences so the existing theme plumbing picks it up.
 		// If the user cancels, revertLivePreviewIfNeeded() restores the original values.
 		OverlayPreferences.setUiMainTextRgb(mainRgb);
 		OverlayPreferences.setUiBackgroundRgb(bgRgb);
+		OverlayPreferences.setUiSneakerRgb(sneakerRgb);
 		OverlayPreferences.applyThemeToEdoUi();
 
 		if (getOwner() instanceof OverlayUiPreviewHost) {
@@ -1134,6 +1160,7 @@ public class PreferencesDialog extends JDialog {
 		// Revert theme colors
 		OverlayPreferences.setUiMainTextRgb(originalUiMainTextRgb);
 		OverlayPreferences.setUiBackgroundRgb(originalUiBackgroundRgb);
+		OverlayPreferences.setUiSneakerRgb(originalUiSneakerRgb);
 		OverlayPreferences.applyThemeToEdoUi();
 		f.applyThemeFromPreferences();
 
@@ -1467,6 +1494,9 @@ public class PreferencesDialog extends JDialog {
             // Keep the overlay background in sync with the UI theme background.
             OverlayPreferences.setNormalBackgroundRgb(rgb);
             OverlayPreferences.setPassThroughBackgroundRgb(rgb);
+        }
+        if (uiSneakerColorButton != null) {
+            OverlayPreferences.setUiSneakerRgb(colorToRgb(uiSneakerColorButton.getBackground()));
         }
 
         // Mining

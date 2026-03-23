@@ -31,6 +31,9 @@ public final class EdoUi {
         public static Color VALUABLE = new Color(212, 175, 55); // gold
         /** Mining tab: color for discovered core (motherlode) materials. */
         public static Color CORE_BLUE = new Color(100, 180, 255);
+
+        /** System tab: landable sneaker icon — canvas / upper (preferences). */
+        public static Color SNEAKER = new Color(206, 44, 44);
     }
 
     /**
