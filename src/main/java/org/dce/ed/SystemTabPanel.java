@@ -81,9 +81,9 @@ public class SystemTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
-    // Bio column icons (painted, no external resources)
-    private static final Icon BIO_LEAF_ICON = new LeafIcon(18, 18);
-    private static final Icon BIO_DOLLAR_ICON = new DollarIcon(16, 16);
+    // Bio column icons (painted, no external resources) - scaled from current UI font.
+    private Icon bioLeafIcon = new LeafIcon(18, 18);
+    private Icon bioDollarIcon = new DollarIcon(16, 16);
 
     private static final long BIO_DOLLAR_THRESHOLD = 20_000_000L;
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
@@ -221,7 +221,8 @@ public class SystemTabPanel extends JPanel {
         table.setPreferredScrollableViewportSize(new Dimension(500, 300));
         // NEW: apply ED font to table cells
         table.setFont(uiFont);
-        table.setRowHeight(24);
+        refreshBioIcons();
+        table.setRowHeight(computeRowHeight(table, uiFont, 8));
 
         table.setFocusable(false);
         table.setRowSelectionAllowed(false);
@@ -362,6 +363,19 @@ public class SystemTabPanel extends JPanel {
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
         scrollPane.getViewport().setBackground(EdoUi.Internal.TRANSPARENT);
+        // Prevent LAF default white corner/scrollbar paints in transparent overlay mode.
+        javax.swing.JPanel upperRightCorner = new javax.swing.JPanel();
+        upperRightCorner.setOpaque(false);
+        upperRightCorner.setBackground(EdoUi.Internal.TRANSPARENT);
+        javax.swing.JPanel lowerRightCorner = new javax.swing.JPanel();
+        lowerRightCorner.setOpaque(false);
+        lowerRightCorner.setBackground(EdoUi.Internal.TRANSPARENT);
+        scrollPane.setCorner(ScrollPaneConstants.UPPER_RIGHT_CORNER, upperRightCorner);
+        scrollPane.setCorner(ScrollPaneConstants.LOWER_RIGHT_CORNER, lowerRightCorner);
+        if (scrollPane.getVerticalScrollBar() != null) {
+            scrollPane.getVerticalScrollBar().setOpaque(false);
+            scrollPane.getVerticalScrollBar().setBackground(EdoUi.Internal.TRANSPARENT);
+        }
         
         JViewport headerViewport = scrollPane.getColumnHeader();
         if (headerViewport != null) {
@@ -941,9 +955,9 @@ public class SystemTabPanel extends JPanel {
             HorizontalIconStack stack = null;
             if (hasBio) {
                 stack = new HorizontalIconStack(4);
-                stack.add(BIO_LEAF_ICON);
+                stack.add(bioLeafIcon);
                 if (showDollar) {
-                    stack.add(BIO_DOLLAR_ICON);
+                    stack.add(bioDollarIcon);
                 }
             }
 
@@ -1093,93 +1107,131 @@ return c;
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+                // Inset drawing area by 1px so outline/strokes do not clip at icon bounds.
+                // (ix, iy) is the top-left anchor of the drawable area.
                 double ix = x + 1.0;
                 double iy = y + 1.0;
+                // Keep a minimum drawable size so the icon still reads if the configured icon size shrinks.
                 double iw = Math.max(8.0, getIconWidth() - 2.0);
                 double ih = Math.max(8.0, getIconHeight() - 2.0);
 
                 Path2D leaf = new Path2D.Double();
-                // More classic spear-like leaf profile with a true pointed tip.
-                leaf.moveTo(ix + iw * 0.16, iy + ih * 0.62); // left base shoulder
+                // Leaf outer silhouette:
+                // - start at left base shoulder
+                // - curve up left edge
+                // - run into pointed tip
+                // - curve down right edge
+                // - return to base
+                leaf.moveTo(ix + iw * 0.16, iy + ih * 0.62); // start: left base shoulder
                 leaf.curveTo(
-                    ix + iw * 0.26, iy + ih * 0.30,
-                    ix + iw * 0.54, iy + ih * 0.10,
-                    ix + iw * 0.88, iy + ih * 0.18
+                    ix + iw * 0.26, iy + ih * 0.30, // left-edge control 1
+                    ix + iw * 0.54, iy + ih * 0.10, // left-edge control 2
+                    ix + iw * 0.88, iy + ih * 0.25  // near-tip left endpoint (lowered again)
                 );
-                leaf.lineTo(ix + iw * 0.96, iy + ih * 0.30); // sharp tip
+                leaf.lineTo(ix + iw * 0.96, iy + ih * 0.30); // tip point
                 leaf.curveTo(
-                    ix + iw * 0.82, iy + ih * 0.40,
-                    ix + iw * 0.74, iy + ih * 0.70,
-                    ix + iw * 0.56, iy + ih * 0.90
+                    ix + iw * 0.82, iy + ih * 0.40, // right-edge control 1
+                    ix + iw * 0.74, iy + ih * 0.70, // right-edge control 2
+                    ix + iw * 0.56, iy + ih * 0.90  // lower-right body point
                 );
                 leaf.curveTo(
-                    ix + iw * 0.40, iy + ih * 0.98,
-                    ix + iw * 0.22, iy + ih * 0.88,
-                    ix + iw * 0.16, iy + ih * 0.62
+                    ix + iw * 0.40, iy + ih * 0.98, // bottom control 1
+                    ix + iw * 0.22, iy + ih * 0.88, // bottom control 2
+                    ix + iw * 0.16, iy + ih * 0.62  // close back to left shoulder
                 );
                 leaf.closePath();
 
+                // Base fill for the leaf body.
                 g2.setColor(fillColor);
                 g2.fill(leaf);
 
                 Path2D highlight = new Path2D.Double();
-                highlight.moveTo(ix + iw * 0.30, iy + ih * 0.58);
+                // Internal shape for soft top-left highlight on the leaf surface.
+                highlight.moveTo(ix + iw * 0.30, iy + ih * 0.58); // highlight start (lower-left of highlight)
                 highlight.curveTo(
-                    ix + iw * 0.36, iy + ih * 0.36,
-                    ix + iw * 0.54, iy + ih * 0.24,
-                    ix + iw * 0.72, iy + ih * 0.30
+                    ix + iw * 0.36, iy + ih * 0.36, // highlight control 1 (upward lift)
+                    ix + iw * 0.54, iy + ih * 0.24, // highlight control 2 (toward tip)
+                    ix + iw * 0.72, iy + ih * 0.30  // highlight upper-right
                 );
                 highlight.curveTo(
-                    ix + iw * 0.58, iy + ih * 0.34,
-                    ix + iw * 0.44, iy + ih * 0.44,
-                    ix + iw * 0.36, iy + ih * 0.62
+                    ix + iw * 0.58, iy + ih * 0.34, // return control 1
+                    ix + iw * 0.44, iy + ih * 0.44, // return control 2
+                    ix + iw * 0.36, iy + ih * 0.62  // highlight lower edge
                 );
                 highlight.closePath();
                 g2.setColor(highlightColor);
                 g2.fill(highlight);
 
+                // Crisp outer border to keep shape legible on bright/dark backgrounds.
                 g2.setColor(outlineColor);
                 g2.setStroke(new BasicStroke(1.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(leaf);
 
+                // Main (central) vein running from lower-left base region toward tip.
                 g2.setColor(veinColor);
                 g2.setStroke(new BasicStroke(0.95f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.20, iy + ih * 0.72,
-                    ix + iw * 0.52, iy + ih * 0.48,
-                    ix + iw * 0.92, iy + ih * 0.30
+                    ix + iw * 0.22, iy + ih * 0.78, // central vein root (at stem/leaf junction)
+                    ix + iw * 0.52, iy + ih * 0.40, // central vein control (higher for more arc)
+                    ix + iw * 0.92, iy + ih * 0.30  // central vein near-tip termination
                 ));
+
+                // Lower-right offshoot vein:
+                // root stays at the same central branch point; endpoint trends toward tip.
                 g2.setStroke(new BasicStroke(0.75f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.44, iy + ih * 0.60,
-                    ix + iw * 0.57, iy + ih * 0.67,
-                    ix + iw * 0.72, iy + ih * 0.58
+                    ix + iw * 0.44, iy + ih * 0.56, // offshoot root (aligned to central vein)
+                    ix + iw * 0.57, iy + ih * 0.67, // lower offshoot control
+                    ix + iw * 0.72, iy + ih * 0.58  // lower offshoot termination (right/lower)
                 ));
+
+                // Upper-right offshoot vein:
+                // same root as lower offshoot, terminating above it toward the tip.
                 g2.setColor(veinColor);
                 g2.setStroke(new BasicStroke(0.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.44, iy + ih * 0.60,
-                    ix + iw * 0.54, iy + ih * 0.47,
-                    ix + iw * 0.70, iy + ih * 0.36
+                    ix + iw * 0.44, iy + ih * 0.56, // offshoot root (shared, aligned to central vein)
+                    ix + iw * 0.43, iy + ih * 0.34, // upper offshoot control (mid-height, shifted further left)
+                    ix + iw * 0.58, iy + ih * 0.24  // upper offshoot termination (near top, more vertical)
                 ));
+
+                // Secondary (short) offshoot veins:
+                // start about halfway between the primary offshoot root and stem root,
+                // and use roughly half-length / half-curve versions of the two primary branches.
+                g2.setStroke(new BasicStroke(0.65f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.30, iy + ih * 0.70, // secondary shared root (shifted ~25% toward stem)
+                    ix + iw * 0.43, iy + ih * 0.78, // lower secondary control
+                    ix + iw * 0.53, iy + ih * 0.75  // lower secondary termination (near lower edge)
+                ));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.30, iy + ih * 0.70, // secondary shared root (shifted ~25% toward stem)
+                    ix + iw * 0.25, iy + ih * 0.51, // upper secondary control (shifted with root)
+                    ix + iw * 0.37, iy + ih * 0.37  // upper secondary termination (shifted with root)
+                ));
+
+                // Tiny dark connector near base (kept from earlier style passes).
                 g2.draw(new Line2D.Double(
-                    ix + iw * 0.20, iy + ih * 0.74,
-                    ix + iw * 0.10, iy + ih * 0.95
+                    ix + iw * 0.20, iy + ih * 0.74, // connector start (near central root)
+                    ix + iw * 0.10, iy + ih * 0.95  // connector end (toward stem area)
                 ));
+
+                // Brown stem line extending down-left from the leaf base.
                 g2.setColor(stemColor);
-                g2.setStroke(new BasicStroke(1.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.22, iy + ih * 0.78,
-                    ix + iw * 0.13, iy + ih * 0.88,
-                    ix + iw * 0.07, iy + ih * 0.99
+                    ix + iw * 0.22, iy + ih * 0.78, // stem root at leaf base
+                    ix + iw * 0.13, iy + ih * 0.88, // stem control (gentle bend)
+                    ix + iw * 0.07, iy + ih * 0.99  // stem tip
                 ));
-                // Bright edge highlight on the stem (not the leaf vein).
+
+                // Stem edge highlight (slightly lighter brown), drawn on top of stem.
                 g2.setColor(accentLineColor);
-                g2.setStroke(new BasicStroke(0.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.20, iy + ih * 0.80,
-                    ix + iw * 0.12, iy + ih * 0.89,
-                    ix + iw * 0.08, iy + ih * 0.97
+                    ix + iw * 0.20, iy + ih * 0.80, // highlight root (offset from stem root)
+                    ix + iw * 0.12, iy + ih * 0.89, // highlight control
+                    ix + iw * 0.08, iy + ih * 0.97  // highlight tip
                 ));
             } finally {
                 g2.dispose();
@@ -1843,6 +1895,7 @@ static class Row {
         }
 
         uiFont = font;
+        refreshBioIcons();
 
         // Apply recursively so all labels/etc. stay consistent.
         applyFontRecursively(this, uiFont);
@@ -1855,6 +1908,7 @@ static class Row {
         }
         if (table != null) {
             table.setFont(uiFont);
+            table.setRowHeight(computeRowHeight(table, uiFont, 8));
             if (table.getTableHeader() != null) {
                 table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
             }
@@ -1879,6 +1933,31 @@ static class Row {
                 applyFontRecursively(child, font);
             }
         }
+    }
+
+    private int computeRowHeight(JTable table, Font font, int verticalPaddingPx) {
+        if (table == null || font == null) {
+            return 24;
+        }
+        FontMetrics fm = table.getFontMetrics(font);
+        int iconHeight = Math.max(
+                bioLeafIcon != null ? bioLeafIcon.getIconHeight() : 0,
+                bioDollarIcon != null ? bioDollarIcon.getIconHeight() : 0
+        );
+        int textHeight = fm.getAscent() + fm.getDescent();
+        int h = Math.max(textHeight, iconHeight) + verticalPaddingPx;
+        if (h < 24) {
+            h = 24;
+        }
+        return h;
+    }
+
+    private void refreshBioIcons() {
+        int fontSize = (uiFont != null) ? uiFont.getSize() : 14;
+        int leafSize = Math.max(14, Math.round(fontSize * 1.15f));
+        int dollarSize = Math.max(12, Math.round(fontSize * 1.00f));
+        bioLeafIcon = new LeafIcon(leafSize, leafSize);
+        bioDollarIcon = new DollarIcon(dollarSize, dollarSize);
     }
 
 
