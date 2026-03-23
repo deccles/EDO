@@ -82,8 +82,8 @@ public class SystemTabPanel extends JPanel {
     private static final long serialVersionUID = 1L;
 
     // Bio column icons (painted, no external resources)
-    private static final Icon BIO_LEAF_ICON = new LeafIcon(14, 14);
-    private static final Icon BIO_DOLLAR_ICON = new DollarIcon(14, 14);
+    private static final Icon BIO_LEAF_ICON = new LeafIcon(18, 18);
+    private static final Icon BIO_DOLLAR_ICON = new DollarIcon(16, 16);
 
     private static final long BIO_DOLLAR_THRESHOLD = 20_000_000L;
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
@@ -1073,100 +1073,112 @@ return c;
         public int getIconHeight() {
             return h;
         }
-        Color fillColor = Color.green;
-        Color outlineColor = Color.black;
-        Color veinColor = Color.black;
-        
+
+        private final Color fillColor = new Color(81, 189, 87);
+        private final Color highlightColor = new Color(135, 228, 137);
+        private final Color outlineColor = EdoUi.Internal.BLACK_ALPHA_180;
+        private final Color veinColor = new Color(20, 70, 24, 220);
+        private final Color stemColor = new Color(113, 76, 44);
+        private final Color accentLineColor = new Color(194, 156, 112, 220);
+
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y) {
             Graphics2D g2 = (Graphics2D) g.create();
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                int w = getIconWidth();
-                int h = getIconHeight();
+                double ix = x + 1.0;
+                double iy = y + 1.0;
+                double iw = Math.max(8.0, getIconWidth() - 2.0);
+                double ih = Math.max(8.0, getIconHeight() - 2.0);
 
-                // Slight tilt makes it read much more like a leaf than a teardrop
-                g2.rotate(Math.toRadians(-12), x + w / 2.0, y + h / 2.0);
-
-                // Small inset so strokes don't clip, but let it fill most of the box
-                double ix = x + 0.5;
-                double iy = y + 0.5;
-                double iw = w - 1.0;
-                double ih = h - 1.0;
-
-                // Leaf outline (pointed tip + slight asymmetry)
                 Path2D leaf = new Path2D.Double();
-                leaf.moveTo(ix + iw * 0.50, iy + ih * 0.04); // tip
-
-                // Right side (slightly "fatter")
+                // More classic spear-like leaf profile with a true pointed tip.
+                leaf.moveTo(ix + iw * 0.16, iy + ih * 0.62); // left base shoulder
                 leaf.curveTo(
-                    ix + iw * 0.80, iy + ih * 0.14,  // asymmetry here (was 0.82, 0.12)
-                    ix + iw * 0.98, iy + ih * 0.42,
-                    ix + iw * 0.64, iy + ih * 0.81
+                    ix + iw * 0.26, iy + ih * 0.30,
+                    ix + iw * 0.54, iy + ih * 0.10,
+                    ix + iw * 0.88, iy + ih * 0.18
                 );
-
-                // Bottom
+                leaf.lineTo(ix + iw * 0.96, iy + ih * 0.30); // sharp tip
                 leaf.curveTo(
-                    ix + iw * 0.56, iy + ih * 0.93,
-                    ix + iw * 0.43, iy + ih * 0.95,
-                    ix + iw * 0.36, iy + ih * 0.88
+                    ix + iw * 0.82, iy + ih * 0.40,
+                    ix + iw * 0.74, iy + ih * 0.70,
+                    ix + iw * 0.56, iy + ih * 0.90
                 );
-
-                // Left side (kept a bit tighter)
                 leaf.curveTo(
-                    ix + iw * 0.03, iy + ih * 0.57,
-                    ix + iw * 0.16, iy + ih * 0.18,
-                    ix + iw * 0.50, iy + ih * 0.04
+                    ix + iw * 0.40, iy + ih * 0.98,
+                    ix + iw * 0.22, iy + ih * 0.88,
+                    ix + iw * 0.16, iy + ih * 0.62
                 );
-
                 leaf.closePath();
 
-                // Fill
                 g2.setColor(fillColor);
                 g2.fill(leaf);
 
-                // Outline
-                g2.setStroke(new BasicStroke(1.35f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                Path2D highlight = new Path2D.Double();
+                highlight.moveTo(ix + iw * 0.30, iy + ih * 0.58);
+                highlight.curveTo(
+                    ix + iw * 0.36, iy + ih * 0.36,
+                    ix + iw * 0.54, iy + ih * 0.24,
+                    ix + iw * 0.72, iy + ih * 0.30
+                );
+                highlight.curveTo(
+                    ix + iw * 0.58, iy + ih * 0.34,
+                    ix + iw * 0.44, iy + ih * 0.44,
+                    ix + iw * 0.36, iy + ih * 0.62
+                );
+                highlight.closePath();
+                g2.setColor(highlightColor);
+                g2.fill(highlight);
+
                 g2.setColor(outlineColor);
+                g2.setStroke(new BasicStroke(1.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(leaf);
 
-                // Stem (tiny, subtle)
-                g2.setStroke(new BasicStroke(1.05f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                g2.setColor(outlineColor);
-                g2.draw(new Line2D.Double(
-                    ix + iw * 0.42, iy + ih * 0.88,
-                    ix + iw * 0.30, iy + ih * 1.02
-                ));
-
-                // Midrib (main vein)
                 g2.setColor(veinColor);
-                g2.setStroke(new BasicStroke(1.05f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.50, iy + ih * 0.10,
-                    ix + iw * 0.60, iy + ih * 0.46,
-                    ix + iw * 0.44, iy + ih * 0.84
-                ));
-
-                // Side veins (a touch offset to match tilt/asymmetry)
                 g2.setStroke(new BasicStroke(0.95f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.52, iy + ih * 0.30,
-                    ix + iw * 0.73, iy + ih * 0.35,
-                    ix + iw * 0.83, iy + ih * 0.45
+                    ix + iw * 0.20, iy + ih * 0.72,
+                    ix + iw * 0.52, iy + ih * 0.48,
+                    ix + iw * 0.92, iy + ih * 0.30
                 ));
+                g2.setStroke(new BasicStroke(0.75f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 g2.draw(new QuadCurve2D.Double(
-                    ix + iw * 0.50, iy + ih * 0.47,
-                    ix + iw * 0.30, iy + ih * 0.55,
-                    ix + iw * 0.18, iy + ih * 0.65
+                    ix + iw * 0.44, iy + ih * 0.60,
+                    ix + iw * 0.57, iy + ih * 0.67,
+                    ix + iw * 0.72, iy + ih * 0.58
+                ));
+                g2.setColor(veinColor);
+                g2.setStroke(new BasicStroke(0.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.44, iy + ih * 0.60,
+                    ix + iw * 0.54, iy + ih * 0.47,
+                    ix + iw * 0.70, iy + ih * 0.36
+                ));
+                g2.draw(new Line2D.Double(
+                    ix + iw * 0.20, iy + ih * 0.74,
+                    ix + iw * 0.10, iy + ih * 0.95
+                ));
+                g2.setColor(stemColor);
+                g2.setStroke(new BasicStroke(1.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.22, iy + ih * 0.78,
+                    ix + iw * 0.13, iy + ih * 0.88,
+                    ix + iw * 0.07, iy + ih * 0.99
+                ));
+                // Bright edge highlight on the stem (not the leaf vein).
+                g2.setColor(accentLineColor);
+                g2.setStroke(new BasicStroke(0.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(new QuadCurve2D.Double(
+                    ix + iw * 0.20, iy + ih * 0.80,
+                    ix + iw * 0.12, iy + ih * 0.89,
+                    ix + iw * 0.08, iy + ih * 0.97
                 ));
             } finally {
                 g2.dispose();
             }
         }
-
-        
-        
     }
 
     private static final class DollarIcon implements Icon {
