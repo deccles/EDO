@@ -12,6 +12,7 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Line2D;
@@ -47,7 +48,6 @@ import org.dce.ed.cache.CachedSystem;
 import org.dce.ed.cache.SystemCache;
 import org.dce.ed.util.FirstBonusHelper;
 import org.dce.ed.util.SpanshLandmark;
-import org.dce.ed.util.SpanshLandmarkCache;
 import org.dce.ed.edsm.BodiesResponse;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.exobiology.ExobiologyData;
@@ -374,8 +374,12 @@ public class SystemTabPanel extends JPanel {
         scrollPane.setCorner(ScrollPaneConstants.UPPER_RIGHT_CORNER, upperRightCorner);
         scrollPane.setCorner(ScrollPaneConstants.LOWER_RIGHT_CORNER, lowerRightCorner);
         if (scrollPane.getVerticalScrollBar() != null) {
-            scrollPane.getVerticalScrollBar().setOpaque(false);
-            scrollPane.getVerticalScrollBar().setBackground(EdoUi.Internal.TRANSPARENT);
+            javax.swing.JScrollBar vsb = scrollPane.getVerticalScrollBar();
+            vsb.setOpaque(false);
+            vsb.setBackground(EdoUi.Internal.TRANSPARENT);
+            vsb.setUI(new SubtleScrollBarUI());
+            // Slightly wider hit area while keeping a subtle visual thumb.
+            vsb.setPreferredSize(new Dimension(12, Integer.MAX_VALUE));
         }
         
         JViewport headerViewport = scrollPane.getColumnHeader();
@@ -946,7 +950,8 @@ public class SystemTabPanel extends JPanel {
                         BodyInfo parent = state.getBodies().get(Integer.valueOf(r.parentId));
                         if (parent != null) {
                             boolean excludeFromExobiology = Boolean.TRUE.equals(parent.getSpanshExcludeFromExobiology());
-                            long maxPredictedBioValue = excludeFromExobiology ? Long.MIN_VALUE : getMaxPredictedBioValue(parent);
+                            // Renderer path: keep this lightweight and never trigger remote fetches.
+                            long maxPredictedBioValue = excludeFromExobiology ? Long.MIN_VALUE : getMaxPredictedBioValueNoFetch(parent);
                             if (maxPredictedBioValue >= BIO_DOLLAR_THRESHOLD) {
                                 stack.add(bioDollarIcon);
                             }
@@ -994,10 +999,15 @@ public class SystemTabPanel extends JPanel {
             c.setText(text);
             c.setHorizontalTextPosition(SwingConstants.RIGHT);
             c.setIconTextGap(6);
-return c;
+            return c;
         }
     }
-    private static long getMaxPredictedBioValue(BodyInfo b) {
+
+    /**
+     * Lightweight variant for paint/render paths.
+     * Uses only already-available prediction data and never performs Spansh/network fetches.
+     */
+    private static long getMaxPredictedBioValueNoFetch(BodyInfo b) {
         if (b == null) {
             return Long.MIN_VALUE;
         }
@@ -1005,19 +1015,7 @@ return c;
         if (preds == null || preds.isEmpty()) {
             return Long.MIN_VALUE;
         }
-
-        if (!Boolean.TRUE.equals(b.getWasFootfalled()) && b.getSpanshLandmarks() == null) {
-            org.dce.ed.util.SpanshBodyExobiologyInfo info = SpanshLandmarkCache.getInstance().getOrFetch(b.getStarSystem(), b.getBodyName());
-            if (info != null) {
-                b.setSpanshLandmarks(info.getLandmarks());
-                b.setSpanshExcludeFromExobiology(info.isExcludeFromExobiology());
-            }
-        }
-        if (Boolean.TRUE.equals(b.getSpanshExcludeFromExobiology())) {
-            return Long.MIN_VALUE; // Spansh has signals but none Biological — eliminate from exobiology
-        }
         boolean firstBonus = FirstBonusHelper.firstBonusApplies(b);
-
         long max = Long.MIN_VALUE;
         for (ExobiologyData.BioCandidate c : preds) {
             if (c == null) {
@@ -1112,6 +1110,117 @@ return c;
                 return;
             }
             delegate.paintIcon(c, g, x, y);
+        }
+    }
+
+    private static final class CachedIcon implements Icon {
+        private final Icon delegate;
+        private transient BufferedImage cachedImage;
+        private transient int cachedW = -1;
+        private transient int cachedH = -1;
+
+        CachedIcon(Icon delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return delegate != null ? delegate.getIconWidth() : 0;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return delegate != null ? delegate.getIconHeight() : 0;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            if (delegate == null) {
+                return;
+            }
+            int w = Math.max(1, delegate.getIconWidth());
+            int h = Math.max(1, delegate.getIconHeight());
+            if (cachedImage == null || cachedW != w || cachedH != h) {
+                cachedW = w;
+                cachedH = h;
+                cachedImage = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2 = cachedImage.createGraphics();
+                try {
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    delegate.paintIcon(c, g2, 0, 0);
+                } finally {
+                    g2.dispose();
+                }
+            }
+            g.drawImage(cachedImage, x, y, null);
+        }
+    }
+
+    private static final class SubtleScrollBarUI extends javax.swing.plaf.basic.BasicScrollBarUI {
+        @Override
+        protected Dimension getMinimumThumbSize() {
+            return new Dimension(10, 24);
+        }
+
+        @Override
+        protected void configureScrollBarColors() {
+            trackColor = EdoUi.Internal.TRANSPARENT;
+            thumbColor = EdoUi.withAlpha(EdoUi.User.MAIN_TEXT, 72);
+            thumbDarkShadowColor = EdoUi.Internal.TRANSPARENT;
+            thumbHighlightColor = EdoUi.Internal.TRANSPARENT;
+            thumbLightShadowColor = EdoUi.Internal.TRANSPARENT;
+            trackHighlightColor = EdoUi.Internal.TRANSPARENT;
+        }
+
+        @Override
+        protected javax.swing.JButton createDecreaseButton(int orientation) {
+            return createZeroButton();
+        }
+
+        @Override
+        protected javax.swing.JButton createIncreaseButton(int orientation) {
+            return createZeroButton();
+        }
+
+        private javax.swing.JButton createZeroButton() {
+            javax.swing.JButton b = new javax.swing.JButton();
+            b.setPreferredSize(new Dimension(0, 0));
+            b.setMinimumSize(new Dimension(0, 0));
+            b.setMaximumSize(new Dimension(0, 0));
+            b.setOpaque(false);
+            b.setFocusable(false);
+            b.setBorderPainted(false);
+            b.setContentAreaFilled(false);
+            return b;
+        }
+
+        @Override
+        protected void paintTrack(Graphics g, JComponent c, Rectangle trackBounds) {
+            // Intentionally minimal/transparent track for overlay look.
+        }
+
+        @Override
+        protected void paintThumb(Graphics g, JComponent c, Rectangle thumbBounds) {
+            if (thumbBounds == null || thumbBounds.width <= 0 || thumbBounds.height <= 0) {
+                return;
+            }
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(EdoUi.withAlpha(EdoUi.User.MAIN_TEXT, 90));
+                int padX = 2; // keep visual thumb slim inside larger hit area
+                int padY = 1;
+                int arc = Math.max(6, thumbBounds.width - padX * 2);
+                g2.fillRoundRect(
+                        thumbBounds.x + padX,
+                        thumbBounds.y + padY,
+                        Math.max(1, thumbBounds.width - padX * 2),
+                        Math.max(1, thumbBounds.height - padY * 2),
+                        arc,
+                        arc);
+            } finally {
+                g2.dispose();
+            }
         }
     }
 
@@ -1246,7 +1355,7 @@ return c;
                     ix + iw * 0.37, iy + ih * 0.37  // upper secondary termination (shifted with root)
                 );
 
-                // Tiny dark connector near base (kept from earlier style passes).
+                // Tiny dark connector near base.
                 g2.draw(new Line2D.Double(
                     ix + iw * 0.20, iy + ih * 0.74, // connector start (near central root)
                     ix + iw * 0.10, iy + ih * 0.95  // connector end (toward stem area)
@@ -2183,9 +2292,9 @@ static class Row {
         int leafSize = Math.max(14, Math.round(fontSize * 1.15f));
         int dollarSize = Math.max(16, Math.round(fontSize * 1.45f));
         int geoSize = Math.max(14, Math.round(fontSize * 1.35f));
-        bioLeafIcon = new LeafIcon(leafSize, leafSize);
-        bioDollarIcon = new DollarIcon(dollarSize, dollarSize);
-        bioGeoIcon = new RingedPlanetIcon(geoSize, geoSize);
+        bioLeafIcon = new CachedIcon(new LeafIcon(leafSize, leafSize));
+        bioDollarIcon = new CachedIcon(new DollarIcon(dollarSize, dollarSize));
+        bioGeoIcon = new CachedIcon(new RingedPlanetIcon(geoSize, geoSize));
     }
 
 
