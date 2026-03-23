@@ -236,8 +236,15 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         setResizable(true);
         setMinimumSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
 
-        // Save bounds and session state on close
+        // Save bounds and session state on close; re-apply Win32 click-through once HWND exists.
         addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowOpened(java.awt.event.WindowEvent e) {
+                // If we toggled pass-through before first show, applyPassThrough was a no-op (hwnd was null).
+                tryAcquireHwnd();
+                applyPassThrough(passThroughEnabled);
+            }
+
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
                 saveSessionState();
@@ -682,21 +689,39 @@ private void updateLeftStatusLabel() {
     public void showOverlay() {
         setVisible(true);
 
+        tryAcquireHwnd();
+        // Respect the configured startup pass-through state instead of forcing non-pass-through.
+        applyPassThrough(this.passThroughEnabled);
+        System.out.println(
+                "Overlay size: " + getWidth() + "x" + getHeight()
+                        + " at (" + getX() + "," + getY() + ")"
+        );
+    }
+
+    /**
+     * Obtains the Win32 HWND after the AWT peer exists. Required for {@code WS_EX_TRANSPARENT}.
+     * Previously only {@link #showOverlay()} did this; if the app started in decorated mode and
+     * later switched to pass-through, {@code hwnd} stayed null and clicks never passed through.
+     */
+    private boolean tryAcquireHwnd() {
+        if (hwnd != null) {
+            return true;
+        }
+        if (!isDisplayable()) {
+            return false;
+        }
         try {
             Pointer ptr = Native.getWindowPointer(this);
             if (ptr == null) {
                 System.err.println("Failed to obtain native window pointer for overlay window.");
-            } else {
-                hwnd = new HWND(ptr);
-                // Respect the configured startup pass-through state instead of forcing non-pass-through.
-                applyPassThrough(this.passThroughEnabled);
-                System.out.println(
-                        "Overlay size: " + getWidth() + "x" + getHeight()
-                                + " at (" + getX() + "," + getY() + ")"
-                );
+                return false;
             }
+            hwnd = new HWND(ptr);
+            return true;
         } catch (Exception ex) {
+            System.err.println("Failed to obtain native window pointer for overlay window.");
             ex.printStackTrace();
+            return false;
         }
     }
 
@@ -802,7 +827,7 @@ private void updateLeftStatusLabel() {
 
 
     private void applyPassThrough(boolean enable) {
-        if (hwnd == null) {
+        if (!tryAcquireHwnd()) {
             return;
         }
 

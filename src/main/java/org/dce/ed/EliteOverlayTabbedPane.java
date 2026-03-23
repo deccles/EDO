@@ -780,6 +780,8 @@ public class EliteOverlayTabbedPane extends JPanel {
 		}
 
 		Color c = button.isSelected() ? TAB_WHITE : EdoUi.Internal.MAIN_TEXT_ALPHA_220;
+		boolean passThrough = hoverSwitchEnabled != null && hoverSwitchEnabled.getAsBoolean();
+		boolean forceSolidTabBackground = !passThrough;
 
 		// Selected tab: force opaque background so adjacent tab labels don't show through
 		// (avoids "logy" / "ining" ghosting when overlay is transparent).
@@ -787,8 +789,14 @@ public class EliteOverlayTabbedPane extends JPanel {
 			button.setOpaque(true);
 			button.setBackground(EdoUi.Internal.GRAY_180);
 		} else {
-			button.setOpaque(!OverlayPreferences.isOverlayTransparent());
-			button.setBackground(EdoUi.Internal.DARK_ALPHA_220);
+			if (forceSolidTabBackground) {
+				// In non-pass-through mode, keep tab fills solid to prevent lower-row text bleed-through.
+				button.setOpaque(true);
+				button.setBackground(EdoUi.User.PANEL_BG);
+			} else {
+				button.setOpaque(!OverlayPreferences.isOverlayTransparent());
+				button.setBackground(EdoUi.Internal.DARK_ALPHA_220);
+			}
 		}
 
 		// This restores size/padding compared to a bare LineBorder.
