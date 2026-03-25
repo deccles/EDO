@@ -108,6 +108,9 @@ import org.dce.ed.ui.EdoUi;
  */
 public class LogTabPanel extends JPanel {
 
+    /** Journal viewer uses fixed black text; it does not follow overlay {@link org.dce.ed.ui.EdoUi.User} theme colors. */
+    private static final Color JOURNAL_TEXT = Color.BLACK;
+
     private static final String PREF_KEY_EXCLUDED_EVENT_NAMES = "log.excludedEventNames";
 
     private static final ZoneId LOCAL_ZONE = ZoneId.systemDefault();
@@ -276,6 +279,7 @@ public class LogTabPanel extends JPanel {
         JButton nextDayButton = new JButton(">>");
         dateLabel = new JLabel("-");
         dateLabel.setBorder(new EmptyBorder(0, 8, 0, 8));
+        dateLabel.setForeground(JOURNAL_TEXT);
 
         JButton reloadButton = new JButton("Reload");
         JButton filterButton = new JButton("Filter...");
@@ -292,6 +296,8 @@ public class LogTabPanel extends JPanel {
         toolBar.add(Box.createHorizontalStrut(8));
 
         searchField = new JTextField(24);
+        searchField.setForeground(JOURNAL_TEXT);
+        searchField.setCaretColor(JOURNAL_TEXT);
         searchField.setToolTipText("Regex search (press Enter). Empty = show all.");
         searchField.setMaximumSize(searchField.getPreferredSize()); // keeps toolbar height sane
         searchField.addActionListener(e -> applySearchFromField());
@@ -336,6 +342,9 @@ public class LogTabPanel extends JPanel {
         rowSorter.setComparator(1, String.CASE_INSENSITIVE_ORDER);
         rowSorter.setComparator(2, String.CASE_INSENSITIVE_ORDER);
         logTable.setRowSorter(rowSorter);
+        logTable.setForeground(JOURNAL_TEXT);
+        logTable.setSelectionForeground(JOURNAL_TEXT);
+        logTable.getTableHeader().setForeground(JOURNAL_TEXT);
 
         // Column widths: Date and Event narrow, Details fills the rest
         logTable.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
@@ -425,6 +434,8 @@ public class LogTabPanel extends JPanel {
 
                 Component c = super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
+
+                c.setForeground(isSelected ? table.getSelectionForeground() : JOURNAL_TEXT);
 
                 if (!isSelected) {
                     if (row == simCurrentViewRow) {
@@ -558,6 +569,8 @@ simPlayButton.addActionListener(e -> startSimulation());
 
         JTextArea area = new JTextArea(pretty);
         area.setEditable(false);
+        area.setForeground(JOURNAL_TEXT);
+        area.setCaretColor(JOURNAL_TEXT);
         area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         area.setLineWrap(false);
         area.setWrapStyleWord(false);
@@ -1142,12 +1155,14 @@ simPlayButton.addActionListener(e -> startSimulation());
             gbc.fill = GridBagConstraints.NONE;
             gbc.anchor = GridBagConstraints.WEST;
             JLabel excludedLabel = new JLabel("Excluded:");
+            excludedLabel.setForeground(JOURNAL_TEXT);
             panel.add(excludedLabel, gbc);
 
             // Row 1: Excluded list
             gbc.gridy = 1;
             gbc.fill = GridBagConstraints.BOTH;
             gbc.anchor = GridBagConstraints.CENTER;
+            excludedList.setForeground(JOURNAL_TEXT);
             JScrollPane excludedScroll = new JScrollPane(excludedList);
             excludedScroll.setPreferredSize(new Dimension(260, 120));
             panel.add(excludedScroll, gbc);
@@ -1168,12 +1183,14 @@ simPlayButton.addActionListener(e -> startSimulation());
             gbc.fill = GridBagConstraints.NONE;
             gbc.anchor = GridBagConstraints.WEST;
             JLabel includedLabel = new JLabel("Included:");
+            includedLabel.setForeground(JOURNAL_TEXT);
             panel.add(includedLabel, gbc);
 
             // Row 4: Included list
             gbc.gridy = 4;
             gbc.fill = GridBagConstraints.BOTH;
             gbc.anchor = GridBagConstraints.CENTER;
+            includedList.setForeground(JOURNAL_TEXT);
             JScrollPane includedScroll = new JScrollPane(includedList);
             includedScroll.setPreferredSize(new Dimension(260, 140));
             panel.add(includedScroll, gbc);

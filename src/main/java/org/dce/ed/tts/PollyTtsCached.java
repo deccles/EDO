@@ -27,6 +27,7 @@ import java.util.Vector;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -43,7 +44,11 @@ import javax.swing.event.HyperlinkListener;
 
 import org.dce.ed.OverlayPreferences;
 
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.polly.PollyClient;
 import software.amazon.awssdk.services.polly.model.Engine;
 import software.amazon.awssdk.services.polly.model.OutputFormat;
@@ -54,6 +59,9 @@ import software.amazon.awssdk.services.polly.model.TextType;
 import software.amazon.awssdk.services.polly.model.VoiceId;
 
 public class PollyTtsCached implements Closeable {
+
+    /** Avoid spamming the same modal when many TTS calls fail for the same reason. */
+    private static final AtomicBoolean AWS_CREDENTIAL_POPUP_SHOWN = new AtomicBoolean(false);
 
     // Trim leading/trailing silence from Polly PCM before writing cache WAVs.
     private static final int TRIM_ABS_THRESHOLD = 250;  // 16-bit PCM amplitude threshold (0..32767)
@@ -76,9 +84,41 @@ public class PollyTtsCached implements Closeable {
     private final Object manifestLock = new Object();
 
     public PollyTtsCached() {
-        this.polly = PollyClient.builder()
-                .region(software.amazon.awssdk.regions.Region.of(OverlayPreferences.getSpeechAwsRegion()))
-                .build();
+        var b = PollyClient.builder()
+                .region(software.amazon.awssdk.regions.Region.of(OverlayPreferences.getSpeechAwsRegion()));
+        b.credentialsProvider(resolveSpeechCredentialsProvider());
+        this.polly = b.build();
+    }
+
+    private static AwsCredentialsProvider resolveSpeechCredentialsProvider() {
+        String profile = OverlayPreferences.getSpeechAwsProfile();
+        if (profile != null && !profile.isBlank()) {
+            return ProfileCredentialsProvider.builder()
+                    .profileName(profile.trim())
+                    .build();
+        }
+        return DefaultCredentialsProvider.create();
+    }
+
+    static boolean isMissingAwsCredentialsError(Throwable t) {
+        for (Throwable x = t; x != null; x = x.getCause()) {
+            if (x instanceof SdkClientException sce) {
+                String m = sce.getMessage();
+                if (m != null && m.contains("Unable to load credentials")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static void reportMissingAwsCredentialsIfNeeded(String voiceNameForUi) {
+        String label = (voiceNameForUi == null || voiceNameForUi.isBlank()) ? "TTS" : voiceNameForUi;
+        if (AWS_CREDENTIAL_POPUP_SHOWN.compareAndSet(false, true)) {
+            showMissingAwsTtsKeyPopup(label);
+        } else {
+            System.err.println("[EDO] TTS skipped: AWS credentials not configured (Amazon Polly). Voice: " + label);
+        }
     }
 
     public ExecutorService getPlaybackQueue() {
@@ -93,7 +133,11 @@ public class PollyTtsCached implements Closeable {
             try {
                 speakBlocking(text);
             } catch (Exception e) {
-                e.printStackTrace();
+                if (isMissingAwsCredentialsError(e)) {
+                    System.err.println("[EDO] TTS skipped: Amazon Polly needs AWS credentials (see earlier dialog or Preferences).");
+                } else {
+                    e.printStackTrace();
+                }
             }
         });
     }
@@ -388,6 +432,23 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
         Path tmp = wav.getParent().resolve(wav.getFileName().toString() + ".tmp");
         try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
             writePcmAsWav(audio, tmp, sampleRate);
+        } catch (Exception e) {
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (IOException ignored) {
+                // ignore
+            }
+            if (isMissingAwsCredentialsError(e)) {
+                reportMissingAwsCredentialsIfNeeded(voiceName);
+                return null;
+            }
+            if (e instanceof IOException ioe) {
+                throw ioe;
+            }
+            if (e instanceof RuntimeException re) {
+                throw re;
+            }
+            throw new IOException(e);
         }
 
         try {
@@ -475,11 +536,6 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
             throw new IllegalArgumentException("Unknown Polly voice: " + s.voiceName);
         }
 
-        if (voiceId == null) {
-            throw new IllegalArgumentException("Unknown Polly voice: " + s.voiceName);
-        }
-
-
         SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
                 .engine(s.engine)
                 .voiceId(voiceId)
@@ -489,13 +545,21 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
                 .text(ssml)
                 .build();
 
-        try {
-        	ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req);
-        	return audio.readAllBytes();
+        try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
+            return audio.readAllBytes();
         } catch (Exception e) {
-        	showMissingAwsTtsKeyPopup(s.voiceName + " " + ssml);
+            if (isMissingAwsCredentialsError(e)) {
+                reportMissingAwsCredentialsIfNeeded(s.voiceName);
+                throw new IOException("AWS Polly credentials not configured", e);
+            }
+            if (e instanceof IOException ioe) {
+                throw ioe;
+            }
+            if (e instanceof RuntimeException re) {
+                throw re;
+            }
+            throw new IOException(e);
         }
-        return null;
     }
 
     public static void showMissingAwsTtsKeyPopup(String voiceName) {
@@ -504,9 +568,11 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
         String html =
                 "<html>"
               + "<body style='font-family:sans-serif; font-size:12px;'>"
-              + "Could not generate text-to-speech for <b>" + escapeHtml(voiceName) + "</b> because no AWS access key is configured.<br><br>"
-              + "This will be fixed in a future update so an AWS key is not required.<br><br>"
-              + "If you'd like to configure your own AWS key now, see:<br>"
+              + "Could not use Amazon Polly for <b>" + escapeHtml(voiceName) + "</b> because no AWS credentials were found.<br><br>"
+              + "Fix: set environment variables <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code>, "
+              + "or create a credentials file (see link below). In EDO Preferences you can set the AWS region and optional profile name.<br><br>"
+              + "Alternatively, turn off on-demand AWS synthesis and use only cached speech clips if you already have them.<br><br>"
+              + "IAM access keys overview:<br>"
               + "<a href='" + url + "'>" + url + "</a>"
               + "</body>"
               + "</html>";
@@ -628,6 +694,9 @@ private static void showMissingSpeechCachePopup(String voiceName, Path voiceDir,
 
     private Map<String, Integer> synthesizeSsmlMarkTimes(String ssml, VoiceSettings s) throws IOException {
         VoiceId voiceId = resolveVoiceId(s.voiceName);
+        if (voiceId == null) {
+            throw new IllegalArgumentException("Unknown Polly voice: " + s.voiceName);
+        }
 
         SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
                 .engine(s.engine)
@@ -641,6 +710,18 @@ private static void showMissingSpeechCachePopup(String voiceName, Path voiceDir,
         try (ResponseInputStream<SynthesizeSpeechResponse> marks = polly.synthesizeSpeech(req)) {
             String jsonLines = new String(marks.readAllBytes(), StandardCharsets.UTF_8);
             return parseSsmlMarks(jsonLines);
+        } catch (Exception e) {
+            if (isMissingAwsCredentialsError(e)) {
+                reportMissingAwsCredentialsIfNeeded(s.voiceName);
+                throw new IOException("AWS Polly credentials not configured", e);
+            }
+            if (e instanceof IOException ioe) {
+                throw ioe;
+            }
+            if (e instanceof RuntimeException re) {
+                throw re;
+            }
+            throw new IOException(e);
         }
     }
 
