@@ -7,6 +7,7 @@ import javax.swing.SwingUtilities;
 
 import org.dce.ed.exobiology.audit.ExoPredictionDebuggerMain;
 import org.dce.ed.mining.GoogleSheetsBackend;
+import org.dce.ed.tools.EdoSqliteDatabaseFrame;
 import org.dce.ed.tools.RunTimesBackfill;
 import org.dce.ed.ui.ShowConsoleAction;
 import org.dce.ed.util.EdsmQueryTool;
@@ -68,6 +69,10 @@ public final class OverlayToolsLaunchers {
 
     public static void backfillMiningRunTimes(Component parent) {
         RunTimesBackfill.backfillUsingPreferences(parent);
+    }
+
+    public static void launchSqliteCacheBrowser(Component parent) {
+        EdoSqliteDatabaseFrame.showDefaultOrBringToFront(parent);
     }
 
     public static void launchExoPredictionDebugger(Component parent) {

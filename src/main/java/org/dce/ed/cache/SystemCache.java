@@ -914,7 +914,11 @@ public final class SystemCache implements SystemStore {
                 bodyCount);
     }
 
-    private Path resolveDbPath() {
+    /**
+     * Absolute path to the SQLite system-cache database file (same rules as the internal cache).
+     * Intended for developer tools; does not open a connection.
+     */
+    public static Path getSqliteCacheDbPath() {
         String override = System.getProperty(CACHE_DB_PATH_PROPERTY);
         if (override != null && !override.isBlank()) {
             return Paths.get(override).toAbsolutePath().normalize();
@@ -924,6 +928,10 @@ public final class SystemCache implements SystemStore {
             home = ".";
         }
         return Paths.get(home, ".edo", CACHE_DB_FILE_NAME).toAbsolutePath().normalize();
+    }
+
+    private Path resolveDbPath() {
+        return getSqliteCacheDbPath();
     }
 
     private boolean initializeSqliteIfConfigured() {

@@ -12,6 +12,13 @@ import java.util.List;
         public double starPos[];
         public List<CachedBody> bodies = new ArrayList<>();
 
+    /**
+     * Exobiology running total (expected credits, unsold).
+     * Stored in the same cache payload as the last visited system so it persists
+     * across tool restarts.
+     */
+    public Long exobiologyCreditsTotalUnsold;
+
         public Integer totalBodies;
         public Integer nonBodyCount;
         public Double fssProgress;

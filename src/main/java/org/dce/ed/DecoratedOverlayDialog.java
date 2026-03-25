@@ -350,6 +350,11 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		edsm.addActionListener(e -> OverlayToolsLaunchers.launchEdsmQueryTools(this));
 		toolsMenu.add(edsm);
 
+		JMenuItem sqlite = new JMenuItem("SQLite cache browser…");
+		styleMenuItem(sqlite);
+		sqlite.addActionListener(e -> OverlayToolsLaunchers.launchSqliteCacheBrowser(this));
+		toolsMenu.add(sqlite);
+
 		JMenuItem console = new JMenuItem("Show console");
 		styleMenuItem(console);
 		console.addActionListener(e -> OverlayToolsLaunchers.showConsole());
