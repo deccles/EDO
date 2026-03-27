@@ -74,6 +74,24 @@ public final class RouteTargetState {
         clearedSideTrip = false;
     }
 
+    /**
+     * Clears the plotted FSD target when the journal confirms we are already in that system.
+     * Otherwise {@code hasSideTripTarget} stays true, {@link RouteMarkerAssignment} skips the
+     * main-route next-hop marker, and the target row is skipped too because it is already CURRENT.
+     */
+    public void clearTargetIfMatchesArrival(String arrivalName, long arrivalAddress) {
+        if (targetSystemName == null || targetSystemName.isBlank()) {
+            return;
+        }
+        boolean matchByAddr = arrivalAddress != 0L && targetSystemAddress != 0L
+                && targetSystemAddress == arrivalAddress;
+        boolean matchByName = arrivalName != null && arrivalName.equals(targetSystemName);
+        if (matchByAddr || matchByName) {
+            targetSystemName = null;
+            targetSystemAddress = 0L;
+        }
+    }
+
     public void applyFsdTargetEvent(FsdTargetEvent e, boolean inHyperspace, boolean timerRunning) {
         clearedSideTrip = false;
         if (inHyperspace || timerRunning) {

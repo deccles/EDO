@@ -19,6 +19,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.dce.ed.OverlayPreferences;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
+import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.LocationEvent;
 
 /**
  * High-level convenience API for reading Elite Dangerous journal events.
@@ -74,7 +77,13 @@ public class EliteJournalReader {
         return events;
     }
     /**
-     * Read all events whose timestamp is strictly after the given Instant.
+     * Read all events whose timestamp is at or after the given Instant.
+     * <p>
+     * Inclusive of {@code since} so this stays consistent with {@code LiveJournalMonitor},
+     * which skips only {@code ts.isBefore(cursor)}. Journal timestamps are often
+     * whole-second; a new {@code FSDJump} can share the same {@link Instant} as the
+     * last event that advanced the import cursor — strict {@code isAfter} would miss it
+     * on startup rescan.
      * <p>
      * This is implemented on top of readEventsFromLastNJournalFiles(int),
      * so we avoid re-reading the entire journal history when the cursor
@@ -133,11 +142,11 @@ public class EliteJournalReader {
             windowEvents = expanded;
         }
 
-        // Now filter the window down to strictly-after-since.
+        // Filter: at or after cursor (inclusive), matching live tail semantics.
         List<EliteLogEvent> result = new ArrayList<>();
         for (EliteLogEvent e : windowEvents) {
             Instant ts = e.getTimestamp();
-            if (ts != null && ts.isAfter(since)) {
+            if (ts != null && !ts.isBefore(since)) {
                 result.add(e);
             }
         }
@@ -386,6 +395,58 @@ public class EliteJournalReader {
         for (int i = events.size() - 1; i >= 0; i--) {
             EliteLogEvent e = events.get(i);
             if (e != null && e.getType() == type) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find the latest system-transition event (Location, FSDJump, CarrierJump).
+     *
+     * Uses adaptive recent-file expansion to avoid full-history reads:
+     * starts from recent journals and doubles the window until we reach the
+     * requested cutoff time (when provided) or we stop getting additional events.
+     *
+     * @param notBefore optional lower bound for useful history (usually last import cursor minus safety margin)
+     * @return latest matching system-transition event, or null if none found
+     */
+    public EliteLogEvent findMostRecentSystemTransitionEvent(Instant notBefore) throws IOException {
+        int filesToRead = 4;
+        List<EliteLogEvent> windowEvents = readEventsFromLastNJournalFiles(filesToRead);
+        if (windowEvents.isEmpty()) {
+            return null;
+        }
+
+        while (notBefore != null) {
+            Instant earliest = windowEvents.stream()
+                    .map(EliteLogEvent::getTimestamp)
+                    .filter(Objects::nonNull)
+                    .min(Instant::compareTo)
+                    .orElse(null);
+
+            if (earliest == null || !earliest.isAfter(notBefore)) {
+                break;
+            }
+
+            int next = filesToRead * 2;
+            if (next <= filesToRead) {
+                break;
+            }
+            List<EliteLogEvent> expanded = readEventsFromLastNJournalFiles(next);
+            if (expanded.size() <= windowEvents.size()) {
+                break;
+            }
+            filesToRead = next;
+            windowEvents = expanded;
+        }
+
+        for (int i = windowEvents.size() - 1; i >= 0; i--) {
+            EliteLogEvent e = windowEvents.get(i);
+            if (e == null) {
+                continue;
+            }
+            if (e instanceof LocationEvent || e instanceof FsdJumpEvent || e instanceof CarrierJumpEvent) {
                 return e;
             }
         }

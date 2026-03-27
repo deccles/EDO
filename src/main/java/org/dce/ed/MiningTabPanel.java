@@ -2877,22 +2877,8 @@ String getName() {
 		private void updateScatterRunSummaryLines() {
 			// Scatter's Run line(s) should reflect all active runs (same rule as the table),
 			// regardless of current scatter filter or commander selection.
-			// #region agent log
-			MiningTabPanel.agentDebugLog(
-				"H1",
-				"MiningTabPanel.updateScatterRunSummaryLines",
-				"before summaries rows=" + (currentRows != null ? currentRows.size() : 0)
-			);
-			// #endregion
 			List<RunSummary> summaries = ProspectorLogTableModel
 				.getActiveRunSummaries(currentRows, matcher);
-			// #region agent log
-			MiningTabPanel.agentDebugLog(
-				"H1",
-				"MiningTabPanel.updateScatterRunSummaryLines",
-				"after summaries count=" + (summaries != null ? summaries.size() : 0)
-			);
-			// #endregion
 			scatterPanel.setRunSummaries(summaries);
 		}
 
@@ -3049,13 +3035,6 @@ String getName() {
 
 		void setRunSummaries(List<RunSummary> summaries) {
 			this.runSummaries = (summaries != null) ? new ArrayList<>(summaries) : new ArrayList<>();
-			// #region agent log
-			MiningTabPanel.agentDebugLog(
-				"H3",
-				"ProspectorLogScatterPanel.setRunSummaries",
-				"runSummariesSize=" + this.runSummaries.size()
-			);
-			// #endregion
 			repaint();
 		}
 
@@ -3185,13 +3164,6 @@ String getName() {
 
 			// Run summary lines at top (same text and size as Table tab Run row).
 			if (!runSummaries.isEmpty()) {
-				// #region agent log
-				MiningTabPanel.agentDebugLog(
-					"H3",
-					"ProspectorLogScatterPanel.paintComponent",
-					"drawingRunSummaries count=" + runSummaries.size()
-				);
-				// #endregion
 				Font runLineFont = getFont().deriveFont(Font.BOLD, getFont().getSize2D() + 2f);
 				g2.setFont(runLineFont);
 				FontMetrics sumFm = g2.getFontMetrics();
@@ -3862,11 +3834,6 @@ String getName() {
 			}
 
 			if (byCommander.isEmpty()) {
-				MiningTabPanel.agentDebugLog(
-					"H2",
-					"ProspectorLogTableModel.getActiveRunSummaries",
-					"noActiveRuns"
-				);
 				return List.of();
 			}
 
@@ -3888,11 +3855,6 @@ String getName() {
 			}
 
 			if (activeSummaries.isEmpty()) {
-				MiningTabPanel.agentDebugLog(
-					"H2",
-					"ProspectorLogTableModel.getActiveRunSummaries",
-					"noActiveRuns"
-				);
 				return List.of();
 			}
 
@@ -4071,20 +4033,4 @@ String getName() {
 			);
 		}
 	}
-
-	// #region agent log
-	static void agentDebugLog(String hypothesisId, String location, String message) {
-		try (java.io.FileWriter fw = new java.io.FileWriter("debug-91c1c3.log", true)) {
-			long ts = System.currentTimeMillis();
-			String id = java.util.UUID.randomUUID().toString();
-			String json = "{\"sessionId\":\"91c1c3\",\"id\":\"" + id
-				+ "\",\"timestamp\":" + ts
-				+ ",\"location\":\"" + location
-				+ "\",\"message\":\"" + message
-				+ "\",\"data\":{},\"runId\":\"pre-fix\",\"hypothesisId\":\"" + hypothesisId + "\"}\n";
-			fw.write(json);
-		} catch (Exception ignored) {
-		}
-	}
-	// #endregion
 }

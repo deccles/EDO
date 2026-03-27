@@ -52,6 +52,17 @@ class RouteSessionTest {
     }
 
     @Test
+    void fsdJumpClearsPlottedTargetWhenArrivalMatches() {
+        session.getTargetState().restoreFromPersistence("Remote", 999L, null, null, null);
+        FsdJumpEvent jump = new FsdJumpEvent(Instant.now(), new JsonObject(), "Remote", 999L, new double[] { 1, 2, 3 },
+                null, 0, null, 0, 0, 0, null);
+        session.applySecondaryJournalEvent(jump);
+        assertTrue(session.getTargetState().getTargetSystemName() == null
+                || session.getTargetState().getTargetSystemName().isBlank());
+        assertEquals(0L, session.getTargetState().getTargetSystemAddress());
+    }
+
+    @Test
     void navRouteReloadClearsTargetState() {
         session.getTargetState().restoreFromPersistence("T", 5L, null, null, null);
         session.applyNavRouteReloadParsed(List.of(sampleEntry("A", 1L)));

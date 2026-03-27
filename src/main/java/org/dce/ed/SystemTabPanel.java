@@ -56,7 +56,9 @@ import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
 import org.dce.ed.logreader.event.BioScanPredictionEvent.PredictionKind;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
+import org.dce.ed.logreader.event.IFsdJump;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.BodyInfo;
@@ -80,7 +82,6 @@ import org.dce.ed.edsm.UtilTable;
 public class SystemTabPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
-
     // Bio column icons (painted, no external resources) - scaled from current UI font.
     private Icon bioLeafIcon = new LeafIcon(18, 18);
     private Icon bioDollarIcon = new DollarIcon(16, 16);
@@ -531,8 +532,8 @@ public class SystemTabPanel extends JPanel {
         		}
         	}
         }
-        if (event instanceof FsdJumpEvent) {
-            FsdJumpEvent e = (FsdJumpEvent) event;
+        if (event instanceof IFsdJump) {
+            IFsdJump e = (IFsdJump) event;
             new Thread(() -> {
 
 
@@ -558,6 +559,18 @@ public class SystemTabPanel extends JPanel {
     public void refreshFromCache() {
         long startedAtMs = System.currentTimeMillis();
         try {
+            // Primary startup source of truth:
+            // RescanJournalsMain runs before UI startup and persists the latest system snapshot.
+            CachedSystem last = SystemCache.load();
+            if (last != null && last.systemName != null && !last.systemName.isBlank() && last.systemAddress != 0L) {
+                loadSystem(last.systemName, last.systemAddress, false);
+                rebuildTable();
+                System.out.println("[EDO][Cache] refreshFromCache: loaded from rescan cache " + last.systemName
+                        + " in " + (System.currentTimeMillis() - startedAtMs) + "ms");
+                return;
+            }
+
+            // Fallback for edge cases where cache has not been populated yet.
             java.nio.file.Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
             if (journalDir == null || !java.nio.file.Files.isDirectory(journalDir)) {
                 rebuildTable();
@@ -567,16 +580,18 @@ public class SystemTabPanel extends JPanel {
 
             String systemName = null;
             long systemAddress = 0L;
-
-            List<EliteLogEvent> events = reader.readEventsFromLastNJournalFiles(3);
-
-            for (EliteLogEvent event : events) {
-                if (event instanceof LocationEvent) {
-                    LocationEvent e = (LocationEvent) event;
-                    systemName = e.getStarSystem();
-                    systemAddress = e.getSystemAddress();
-                } else if (event instanceof FsdJumpEvent) {
-                    FsdJumpEvent e = (FsdJumpEvent) event;
+            EliteLogEvent transition = reader.findMostRecentSystemTransitionEvent(null);
+            if (transition instanceof LocationEvent) {
+                LocationEvent e = (LocationEvent) transition;
+                systemName = e.getStarSystem();
+                systemAddress = e.getSystemAddress();
+            } else if (transition instanceof FsdJumpEvent) {
+                FsdJumpEvent e = (FsdJumpEvent) transition;
+                systemName = e.getStarSystem();
+                systemAddress = e.getSystemAddress();
+            } else if (transition instanceof CarrierJumpEvent) {
+                CarrierJumpEvent e = (CarrierJumpEvent) transition;
+                if (e.isDocked()) {
                     systemName = e.getStarSystem();
                     systemAddress = e.getSystemAddress();
                 }

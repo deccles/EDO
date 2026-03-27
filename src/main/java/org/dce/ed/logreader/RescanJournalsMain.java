@@ -152,6 +152,10 @@ public class RescanJournalsMain {
 		state.setExobiologyCreditsTotalUnsold(exoCreditsTotal);
 
 		Instant newestEventTimestamp = lastImport;
+		Instant latestTransitionTs = null;
+		String latestTransitionType = null;
+		String latestTransitionSystem = null;
+		long latestTransitionAddress = 0L;
 
 		// Track latest carrier-related event so we can update session state for overlay countdown.
 		EliteLogEvent latestCarrierEvent = null;
@@ -177,9 +181,21 @@ public class RescanJournalsMain {
 			// Location/FSDJump that causes the reset.
 			if (event instanceof LocationEvent) {
 				LocationEvent le = (LocationEvent) event;
+				if (ts != null && (latestTransitionTs == null || ts.isAfter(latestTransitionTs))) {
+					latestTransitionTs = ts;
+					latestTransitionType = "Location";
+					latestTransitionSystem = le.getStarSystem();
+					latestTransitionAddress = le.getSystemAddress();
+				}
 				persistIfSystemIsChanging(cache, state, le.getStarSystem(), le.getSystemAddress());
 			} else if (event instanceof FsdJumpEvent) {
 				FsdJumpEvent je = (FsdJumpEvent) event;
+				if (ts != null && (latestTransitionTs == null || ts.isAfter(latestTransitionTs))) {
+					latestTransitionTs = ts;
+					latestTransitionType = "FSDJump";
+					latestTransitionSystem = je.getStarSystem();
+					latestTransitionAddress = je.getSystemAddress();
+				}
 				persistIfSystemIsChanging(cache, state, je.getStarSystem(), je.getSystemAddress());
 			}
 

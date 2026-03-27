@@ -185,6 +185,7 @@ public class RouteTabPanel extends JPanel {
 		} else if (routeSession.getCurrentSystemName() != null) {
 			tableModel.setCurrentSystemName(routeSession.getCurrentSystemName());
 		}
+		reconcileRouteCurrentWithPostRescanCache();
 		rebuildDisplayedEntries();
 	}
 
@@ -1144,7 +1145,8 @@ public class RouteTabPanel extends JPanel {
 			CachedSystem cached = SystemCache.load();
 			String fromCache = (cached != null) ? cached.systemName : null;
 			if (fromCache != null && !fromCache.isBlank()) {
-				routeSession.setCurrentSystemName(fromCache);
+				routeSession.applyKnownCurrentSystem(fromCache, cached.systemAddress,
+						cached.starPos != null ? cached.starPos : null);
 				return fromCache;
 			}
 		} catch (IOException e) {
@@ -1153,6 +1155,31 @@ public class RouteTabPanel extends JPanel {
 		// Never return null (renderer comparisons should not explode or behave oddly)
 		return "";
 	}
+
+	/**
+	 * After {@link #applySessionState}, persisted route "current" can lag journal reality because
+	 * {@link org.dce.ed.logreader.RescanJournalsMain} already advanced {@link SystemCache} from the
+	 * same journals. Align route markers with that cache when it disagrees with the restored session.
+	 */
+	private void reconcileRouteCurrentWithPostRescanCache() {
+		try {
+			CachedSystem cs = SystemCache.load();
+			if (cs == null || cs.systemName == null || cs.systemName.isBlank() || cs.systemAddress == 0L) {
+				return;
+			}
+			String sn = routeSession.getCurrentSystemName();
+			long sa = routeSession.getCurrentSystemAddress();
+			boolean same = cs.systemName.equals(sn) && cs.systemAddress == sa;
+			if (same) {
+				return;
+			}
+			routeSession.applyKnownCurrentSystem(cs.systemName, cs.systemAddress, cs.starPos);
+			tableModel.setCurrentSystemName(cs.systemName);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
 	private String resolveCurrentSystemNameFromJournal() {
 	    try {
 	        Path journalDir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);

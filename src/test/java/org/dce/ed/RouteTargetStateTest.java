@@ -53,6 +53,18 @@ class RouteTargetStateTest {
     }
 
     @Test
+    void clearTargetIfMatchesArrival_clearsWhenNameOrAddressMatches() {
+        state.applyFsdTargetEvent(parseFsdTarget("Schee Flyi MW-X c16-4295", 1180676073825426L), false, false);
+        state.clearTargetIfMatchesArrival("Other", 1L);
+        assertEquals("Schee Flyi MW-X c16-4295", state.getTargetSystemName());
+        state.clearTargetIfMatchesArrival("Schee Flyi MW-X c16-4295", 0L);
+        assertNull(state.getTargetSystemName());
+        state.applyFsdTargetEvent(parseFsdTarget("Sol", 100L), false, false);
+        state.clearTargetIfMatchesArrival("Alpha", 100L);
+        assertNull(state.getTargetSystemName());
+    }
+
+    @Test
     void applyFsdTargetEvent_setsTargetWhenNotHyperspace() {
         state.applyFsdTargetEvent(parseFsdTarget("Barnard's Star", 45678L), false, false);
         assertEquals("Barnard's Star", state.getTargetSystemName());

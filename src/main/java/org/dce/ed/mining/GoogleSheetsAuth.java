@@ -40,23 +40,6 @@ public final class GoogleSheetsAuth {
         String refreshToken = OverlayPreferences.getMiningGoogleSheetsRefreshToken();
         if (clientId == null || clientId.isBlank() || clientSecret == null || clientSecret.isBlank()
             || refreshToken == null || refreshToken.isBlank()) {
-            // #region agent log
-            try (java.io.FileWriter fw = new java.io.FileWriter("debug-78e78c.log", true)) {
-                long tsMs = System.currentTimeMillis();
-                String id = java.util.UUID.randomUUID().toString();
-                String json = "{\"sessionId\":\"78e78c\",\"id\":\"" + id
-                    + "\",\"timestamp\":" + tsMs
-                    + ",\"location\":\"GoogleSheetsAuth.getCredential\""
-                    + ",\"message\":\"missing credentials\""
-                    + ",\"data\":{\"hasClientId\":" + (clientId != null && !clientId.isBlank())
-                    + ",\"hasClientSecret\":" + (clientSecret != null && !clientSecret.isBlank())
-                    + ",\"hasRefreshToken\":" + (refreshToken != null && !refreshToken.isBlank())
-                    + "}"
-                    + ",\"runId\":\"pre-fix\",\"hypothesisId\":\"H2\"}\n";
-                fw.write(json);
-            } catch (Exception ignored) {
-            }
-            // #endregion
             return null;
         }
         try {
@@ -78,37 +61,8 @@ public final class GoogleSheetsAuth {
             credential.setRefreshToken(refreshToken);
             credential.refreshToken();
 
-            // #region agent log
-            try (java.io.FileWriter fw = new java.io.FileWriter("debug-78e78c.log", true)) {
-                long tsMs = System.currentTimeMillis();
-                String id = java.util.UUID.randomUUID().toString();
-                String json = "{\"sessionId\":\"78e78c\",\"id\":\"" + id
-                    + "\",\"timestamp\":" + tsMs
-                    + ",\"location\":\"GoogleSheetsAuth.getCredential\""
-                    + ",\"message\":\"credential ok\""
-                    + ",\"data\":{\"hasRefreshToken\":true}"
-                    + ",\"runId\":\"pre-fix\",\"hypothesisId\":\"H2\"}\n";
-                fw.write(json);
-            } catch (Exception ignored) {
-            }
-            // #endregion
-
             return credential;
         } catch (Exception e) {
-            // #region agent log
-            try (java.io.FileWriter fw = new java.io.FileWriter("debug-78e78c.log", true)) {
-                long tsMs = System.currentTimeMillis();
-                String id = java.util.UUID.randomUUID().toString();
-                String json = "{\"sessionId\":\"78e78c\",\"id\":\"" + id
-                    + "\",\"timestamp\":" + tsMs
-                    + ",\"location\":\"GoogleSheetsAuth.getCredential\""
-                    + ",\"message\":\"credential error\""
-                    + ",\"data\":{\"exception\":\"" + e.getClass().getSimpleName() + "\"}"
-                    + ",\"runId\":\"pre-fix\",\"hypothesisId\":\"H2\"}\n";
-                fw.write(json);
-            } catch (Exception ignored) {
-            }
-            // #endregion
             return null;
         }
     }

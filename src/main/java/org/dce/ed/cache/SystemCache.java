@@ -63,6 +63,7 @@ public final class SystemCache implements SystemStore {
     private final Path cacheDbPath;
     private Connection sqliteConnection;
     private boolean sqliteReady;
+    private long lastUpdatedAtMs;
 
     private final Map<Long, CachedSystem> byAddress = new HashMap<>();
     private final Map<String, CachedSystem> byName = new HashMap<>();
@@ -310,6 +311,7 @@ public final class SystemCache implements SystemStore {
             byName.put(canonicalName(systemName), cs);
         }
 
+        lastLoadedSystem = cs;
         save();
     }
 
@@ -843,7 +845,21 @@ public final class SystemCache implements SystemStore {
                     unique.put(cs.systemName, cs);
                 }
             }
-            systems.addAll(unique.values());
+
+            CachedSystem latest = lastLoadedSystem;
+            String latestKey = null;
+            if (latest != null) {
+                latestKey = (latest.systemName != null) ? latest.systemName : "addr:" + latest.systemAddress;
+            }
+            for (Map.Entry<String, CachedSystem> e : unique.entrySet()) {
+                if (latestKey != null && latestKey.equals(e.getKey())) {
+                    continue;
+                }
+                systems.add(e.getValue());
+            }
+            if (latest != null) {
+                systems.add(latest);
+            }
 
             try (BufferedWriter writer = Files.newBufferedWriter(cachePath, StandardCharsets.UTF_8)) {
                 gson.toJson(systems, writer);
@@ -1085,7 +1101,8 @@ public final class SystemCache implements SystemStore {
                 "SELECT payload_json FROM systems ORDER BY updated_at DESC LIMIT 1");
              ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
-                return gson.fromJson(rs.getString(1), CachedSystem.class);
+                CachedSystem cs = gson.fromJson(rs.getString(1), CachedSystem.class);
+                return cs;
             }
         } catch (SQLException ex) {
             System.err.println("SystemCache: sqlite load last failed: " + ex.getMessage());
@@ -1103,7 +1120,7 @@ public final class SystemCache implements SystemStore {
         }
         int cachedBodyCount = (cs.bodies == null) ? 0 : cs.bodies.size();
         String payload = gson.toJson(cs);
-        long now = System.currentTimeMillis();
+        long now = nextMonotonicUpdateMillis();
         String sql = "INSERT INTO systems (cache_key, system_address, canonical_name, system_name, total_bodies, fss_progress, all_bodies_found, cached_body_count, updated_at, payload_json) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT(cache_key) DO UPDATE SET " +
@@ -1130,6 +1147,15 @@ public final class SystemCache implements SystemStore {
         } catch (SQLException ex) {
             System.err.println("SystemCache: sqlite upsert failed: " + ex.getMessage());
         }
+    }
+
+    private synchronized long nextMonotonicUpdateMillis() {
+        long now = System.currentTimeMillis();
+        if (now <= lastUpdatedAtMs) {
+            now = lastUpdatedAtMs + 1L;
+        }
+        lastUpdatedAtMs = now;
+        return now;
     }
 
     private CachedSystemSummary sqliteGetSummary(long systemAddress, String systemName) {
@@ -1176,5 +1202,4 @@ public final class SystemCache implements SystemStore {
         return new CachedSystemSummary(addr, name, total, progress, all, bodyCount);
     }
 
-    
 }

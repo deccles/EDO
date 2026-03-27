@@ -10,6 +10,7 @@ import org.dce.ed.logreader.event.CarrierLocationEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FsdTargetEvent;
 import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.StatusEvent;
 
 /**
  * Single owner of route navigation state and base plotted list (no Swing).
@@ -105,6 +106,25 @@ public final class RouteSession {
     }
 
     /**
+     * Sets current system name/address/position together (e.g. from {@link org.dce.ed.cache.SystemCache}
+     * after startup rescan). Avoids a name-only update leaving a stale {@code currentSystemAddress},
+     * which would make {@link RouteGeometry#findSystemRow} match the wrong route row.
+     */
+    public void applyKnownCurrentSystem(String name, long systemAddress, double[] starPos) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        this.currentSystemName = name;
+        if (systemAddress != 0L) {
+            this.currentSystemAddress = systemAddress;
+        }
+        if (starPos != null && starPos.length >= 3) {
+            this.currentStarPos = starPos.clone();
+        }
+        targetState.clearTargetIfMatchesArrival(this.currentSystemName, this.currentSystemAddress);
+    }
+
+    /**
      * Replaces base route after NavRoute.json parse (successful). Clears FSD target and Status destination
      * fields like the previous {@code RouteTabPanel} implementation.
      */
@@ -168,6 +188,7 @@ public final class RouteSession {
             setCurrentSystemName(loc.getStarSystem());
             currentSystemAddress = loc.getSystemAddress();
             currentStarPos = loc.getStarPos();
+            targetState.clearTargetIfMatchesArrival(loc.getStarSystem(), loc.getSystemAddress());
             clearPendingJumpState();
             inHyperspace = false;
             return new RouteJournalApplyOutcome(false, true);
@@ -176,6 +197,7 @@ public final class RouteSession {
             setCurrentSystemName(jump.getStarSystem());
             currentSystemAddress = jump.getSystemAddress();
             currentStarPos = jump.getStarPos();
+            targetState.clearTargetIfMatchesArrival(jump.getStarSystem(), jump.getSystemAddress());
             clearPendingJumpState();
             inHyperspace = false;
             jumpFlash.stopTimer();
@@ -189,6 +211,7 @@ public final class RouteSession {
             setCurrentSystemName(jump.getStarSystem());
             currentSystemAddress = jump.getSystemAddress();
             currentStarPos = jump.getStarPos();
+            targetState.clearTargetIfMatchesArrival(jump.getStarSystem(), jump.getSystemAddress());
             clearPendingJumpState();
             inHyperspace = false;
             jumpFlash.stopTimer();
@@ -197,11 +220,12 @@ public final class RouteSession {
         if (event instanceof CarrierLocationEvent loc) {
             setCurrentSystemName(loc.getStarSystem());
             currentSystemAddress = loc.getSystemAddress();
+            targetState.clearTargetIfMatchesArrival(loc.getStarSystem(), loc.getSystemAddress());
             clearPendingJumpState();
             inHyperspace = false;
             return new RouteJournalApplyOutcome(false, true);
         }
-        if (event instanceof org.dce.ed.logreader.event.StatusEvent se) {
+        if (event instanceof StatusEvent se) {
             return applyStatusEvent(se);
         }
         return new RouteJournalApplyOutcome(false, false);
@@ -213,7 +237,7 @@ public final class RouteSession {
         pendingJumpLockedAddress = 0L;
     }
 
-    private RouteJournalApplyOutcome applyStatusEvent(org.dce.ed.logreader.event.StatusEvent se) {
+    private RouteJournalApplyOutcome applyStatusEvent(StatusEvent se) {
         boolean hyperdriveCharging = se.isFsdHyperdriveCharging();
         boolean inHyperspaceNow = se.isFsdJump();
         inHyperspace = inHyperspaceNow;

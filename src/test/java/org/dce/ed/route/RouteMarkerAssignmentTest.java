@@ -25,6 +25,22 @@ class RouteMarkerAssignmentTest {
     }
 
     @Test
+    void nextHopPendingWhenNoSideTripAndNotCharging() {
+        List<RouteEntry> rows = new ArrayList<>();
+        rows.add(entry("A", 1L, 0, 0, 0));
+        rows.add(entry("B", 2L, 1, 0, 0));
+        rows.add(entry("C", 3L, 2, 0, 0));
+        RouteMarkerAssignment.applyMarkerKinds(rows,
+                "B", 2L,
+                null, 0L,
+                null, null, null,
+                null, 0L,
+                false);
+        assertEquals(RouteMarkerKind.CURRENT, rows.get(1).markerKind);
+        assertEquals(RouteMarkerKind.PENDING_JUMP, rows.get(2).markerKind);
+    }
+
+    @Test
     void fsdTargetGatingWhenNotChargingUsesTargetMarker() {
         List<RouteEntry> rows = new ArrayList<>();
         rows.add(entry("Sol", 1L, 0, 0, 0));

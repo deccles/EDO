@@ -16,6 +16,7 @@ import org.dce.ed.exobiology.NebulaGuardianClassifier;
 import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.LiveJournalMonitor;
 import org.dce.ed.logreader.event.BioScanPredictionEvent;
+import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssAllBodiesFoundEvent;
 import org.dce.ed.logreader.event.FssBodySignalsEvent;
@@ -88,6 +89,15 @@ public class SystemEventProcessor {
             // Normal ship FSD jumps have docked == null => always update system.
             // CarrierJump may include Docked=true/false => only update if Docked==true.
             if (e.getDocked() == null || e.getDocked()) {
+                enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
+            }
+            return;
+        }
+
+        if (event instanceof CarrierJumpEvent) {
+            CarrierJumpEvent e = (CarrierJumpEvent) event;
+            state.setDocked(e.isDocked());
+            if (e.isDocked()) {
                 enterSystem(e.getStarSystem(), e.getSystemAddress(), e.getStarPos());
             }
             return;
