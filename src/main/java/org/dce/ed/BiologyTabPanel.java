@@ -69,7 +69,15 @@ public class BiologyTabPanel extends JPanel {
     private final BioMapPanel mapPanel = new BioMapPanel();
 
     private final CenterLayoutPanel center = new CenterLayoutPanel();
-private static final int REQUIRED_SAMPLES = 3;
+
+    private static final int REQUIRED_SAMPLES = 3;
+
+    /** After a Sample scan, skip "Entering clonal colony" (new sample point lands at your feet). */
+    private static final long SUPPRESS_ENTER_AFTER_SAMPLE_MS = 5_000L;
+    /** If distance to last sample drops by this much in one update and we end up near the point, treat as teleport / scan pin. */
+    private static final double SUDDEN_DISTANCE_COLLAPSE_METERS = 55.0;
+    /** "Near" the last sample point (meters) for sudden-collapse detection. */
+    private static final double NEAR_LAST_SAMPLE_METERS = 25.0;
 
 private static final class MovementSample {
     private final Instant t;
@@ -99,6 +107,10 @@ private Double movementHeadingDeg; // 0=N, clockwise. null until we have enough 
     private String currentBodyName;
 
     private final Map<String, Boolean> insideStateByBioKey = new HashMap<>();
+    /** Previous great-circle distance (m) to the active row's last sample — for sudden-collapse detection. */
+    private final Map<String, Double> lastDistMByBioKey = new HashMap<>();
+    /** After a Sample scan for this bio, suppress "Entering" until this epoch ms. */
+    private final Map<String, Long> suppressEnterUntilMsByBioKey = new HashMap<>();
 
     public BiologyTabPanel() {
         super(new BorderLayout());
@@ -188,6 +200,19 @@ if (currentLat != null && currentLon != null && currentPlanetRadius != null) {
 
             updateVoiceTransitions();
             return;
+        }
+
+        if (event instanceof ScanOrganicEvent) {
+            ScanOrganicEvent so = (ScanOrganicEvent) event;
+            String st = so.getScanType();
+            if (st != null && "Sample".equalsIgnoreCase(st.trim())) {
+                String dn = displayNameFromScanOrganic(so);
+                if (dn != null && !dn.isBlank()) {
+                    suppressEnterUntilMsByBioKey.put(
+                            canonicalBioKey(dn),
+                            Long.valueOf(System.currentTimeMillis() + SUPPRESS_ENTER_AFTER_SAMPLE_MS));
+                }
+            }
         }
 
         if (event instanceof BioScanPredictionEvent || event instanceof ScanOrganicEvent || event instanceof SaasignalsFoundEvent) {
@@ -634,6 +659,35 @@ private static List<BioRow> buildRows(BodyInfo body) {
             return "";
         }
         return raw.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.trim().isEmpty()) {
+            return a.trim();
+        }
+        if (b != null && !b.trim().isEmpty()) {
+            return b.trim();
+        }
+        return "";
+    }
+
+    /** Same display name construction as {@link org.dce.ed.state.SystemEventProcessor#handleScanOrganic}. */
+    private static String displayNameFromScanOrganic(ScanOrganicEvent e) {
+        if (e == null) {
+            return null;
+        }
+        String genusName = firstNonBlank(e.getGenusLocalised(), e.getGenus());
+        String speciesName = firstNonBlank(e.getSpeciesLocalised(), e.getSpecies());
+        if (genusName.isEmpty()) {
+            return null;
+        }
+        if (speciesName.startsWith(genusName + " ")) {
+            speciesName = speciesName.replace(genusName, "").trim();
+        }
+        if (!speciesName.isEmpty()) {
+            return genusName + " " + speciesName;
+        }
+        return genusName;
     }
 
     private static double greatCircleMeters(double lat1Deg, double lon1Deg, double lat2Deg, double lon2Deg, double radiusM) {
@@ -1145,26 +1199,37 @@ private static List<BioRow> buildRows(BodyInfo body) {
         // Use canonical key to avoid duplicate state for casing differences.
         String bioKey = canonicalBioKey(active.displayName);
 
+        Double prevDist = lastDistMByBioKey.get(bioKey);
         Boolean prev = insideStateByBioKey.put(bioKey, Boolean.valueOf(inside));
         if (prev == null) {
             // First time we’ve evaluated this target; don’t speak.
+            lastDistMByBioKey.put(bioKey, Double.valueOf(distM));
             return;
         }
 
         if (prev.booleanValue() == inside) {
+            lastDistMByBioKey.put(bioKey, Double.valueOf(distM));
             return;
         }
 
         // Announce transition. Replaceables wrapped in {} for caching.
         if (inside) {
-            tts.speakf("Entering clonal colony range of {species}. Minimum {meters} meters.",
-                    active.displayName,
-                    Integer.valueOf(needed));
+            boolean suppressByRecentSample = System.currentTimeMillis()
+                    < suppressEnterUntilMsByBioKey.getOrDefault(bioKey, 0L).longValue();
+            boolean suddenCollapseNearSample = prevDist != null
+                    && (prevDist.doubleValue() - distM) >= SUDDEN_DISTANCE_COLLAPSE_METERS
+                    && distM <= NEAR_LAST_SAMPLE_METERS;
+            if (!suppressByRecentSample && !suddenCollapseNearSample) {
+                tts.speakf("Entering clonal colony range of {species}. Minimum {meters} meters.",
+                        active.displayName,
+                        Integer.valueOf(needed));
+            }
         } else {
             tts.speakf("Leaving clonal colony range of {species}. Minimum {meters} meters.",
                     active.displayName,
                     Integer.valueOf(needed));
         }
+        lastDistMByBioKey.put(bioKey, Double.valueOf(distM));
     }
 
 
