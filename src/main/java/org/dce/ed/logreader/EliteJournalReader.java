@@ -22,6 +22,8 @@ import org.dce.ed.OverlayPreferences;
 import org.dce.ed.logreader.event.CarrierJumpEvent;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.LocationEvent;
+import org.dce.ed.logreader.event.StatusEvent;
+import org.dce.ed.logreader.event.SupercruiseExitEvent;
 
 /**
  * High-level convenience API for reading Elite Dangerous journal events.
@@ -451,6 +453,50 @@ public class EliteJournalReader {
             }
         }
         return null;
+    }
+
+    /**
+     * Replays recent journal files and returns whether the latest state is undocked with a
+     * {@code PlanetaryRing} body type (same condition as switching to the Mining tab on
+     * {@link SupercruiseExitEvent} in {@code EliteOverlayTabbedPane}).
+     */
+    public boolean isLatestSituationPlanetaryRingMining() throws IOException {
+        List<EliteLogEvent> events = readEventsFromLastNJournalFiles(8);
+        if (events.isEmpty()) {
+            return false;
+        }
+        boolean docked = false;
+        String bodyType = null;
+        for (EliteLogEvent e : events) {
+            if (e instanceof LocationEvent le) {
+                docked = le.isDocked();
+                if (le.getBodyType() != null && !le.getBodyType().isBlank()) {
+                    bodyType = le.getBodyType();
+                }
+            } else if (e instanceof SupercruiseExitEvent se) {
+                if (se.getBodyType() != null && !se.getBodyType().isBlank()) {
+                    bodyType = se.getBodyType();
+                }
+            } else if (e instanceof FsdJumpEvent fj) {
+                if (fj.getBodyType() != null && !fj.getBodyType().isBlank()) {
+                    bodyType = fj.getBodyType();
+                }
+                if (fj.getDocked() != null && fj.getDocked()) {
+                    docked = true;
+                }
+            } else if (e instanceof CarrierJumpEvent cj) {
+                if (cj.getBodyType() != null && !cj.getBodyType().isBlank()) {
+                    bodyType = cj.getBodyType();
+                }
+            } else if (e instanceof StatusEvent se) {
+                docked = se.isDocked();
+            } else if (e.getType() == EliteEventType.DOCKED) {
+                docked = true;
+            } else if (e.getType() == EliteEventType.UNDOCKED) {
+                docked = false;
+            }
+        }
+        return !docked && bodyType != null && bodyType.contains("PlanetaryRing");
     }
 
 }

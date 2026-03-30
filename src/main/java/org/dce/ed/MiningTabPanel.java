@@ -43,6 +43,7 @@ import java.util.function.Supplier;
 
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
@@ -1838,6 +1839,9 @@ return EdoUi.User.MAIN_TEXT;
             if (cargoTable.getTableHeader() != null) cargoTable.getTableHeader().setOpaque(false);
             if (spreadsheetTable.getTableHeader() != null) spreadsheetTable.getTableHeader().setOpaque(false);
         }
+        if (spreadsheetScatterWrapper != null) {
+            spreadsheetScatterWrapper.applyScatterControlOpacity(!opaque);
+        }
 
         repaint();
     }
@@ -2789,6 +2793,7 @@ String getName() {
 		private final ProspectorLogScatterPanel scatterPanel;
 		private final JComboBox<String> modeCombo;
 		private final JComboBox<String> secondaryCombo;
+		private final JButton testGatherButton;
 		private List<ProspectorLogRow> currentRows = new ArrayList<>();
 
 		ProspectorLogScatterWrapperPanel(ProspectorLogScatterPanel scatterPanel) {
@@ -2832,8 +2837,22 @@ String getName() {
 			top.add(viewLabel);
 			top.add(modeCombo);
 			top.add(secondaryCombo);
+			testGatherButton = new JButton("Test gather");
+			testGatherButton.setOpaque(false);
+			testGatherButton.setForeground(EdoUi.User.MAIN_TEXT);
+			testGatherButton.setBackground(EdoUi.Internal.TRANSPARENT);
+			testGatherButton.addActionListener(e -> scatterPanel.triggerTestGatherAnimation());
+			top.add(testGatherButton);
 			add(top, BorderLayout.NORTH);
 			add(scatterPanel, BorderLayout.CENTER);
+		}
+
+		void applyScatterControlOpacity(boolean transparent) {
+			if (testGatherButton != null) {
+				testGatherButton.setOpaque(!transparent);
+				testGatherButton.setBackground(transparent ? EdoUi.Internal.TRANSPARENT : EdoUi.Internal.DARK_ALPHA_220);
+				testGatherButton.setForeground(EdoUi.User.MAIN_TEXT);
+			}
 		}
 
 		void setRows(List<ProspectorLogRow> rows) {
@@ -3107,6 +3126,151 @@ String getName() {
 		private static final float GATHER_PHASE_DELTA = 1f / 36f;
 		/** Retarget only when end moves more than this (avoids reset spam on every setRows / layout jitter). */
 		private static final int GATHER_RETARGET_MIN_MOVE_SQ = 8 * 8;
+		/** Laser emit point above bottom of plot (matches {@link #drawMobileGunPlatform} barrel tip). */
+		private static final int GUN_EMIT_UP_FROM_PLOT_BOTTOM = 27;
+
+		private final Map<String, Double> gunPlatformCenterXByCommander = new HashMap<>();
+
+		/** Laser fires from the bottom edge of the plot; X is ~30% across the plot width from the left. */
+		private int gatherLaserOriginX(PlotGeom geom) {
+			if (geom != null) {
+				return geom.plotX + (int) (geom.plotW * 0.3);
+			}
+			int w = getWidth();
+			int plotW = Math.max(0, w - PAD_LEFT - PAD_RIGHT);
+			return PAD_LEFT + (int) (plotW * 0.3);
+		}
+
+		private static int gunLaserEmitY(PlotGeom geom) {
+			return geom.plotY + geom.plotH - GUN_EMIT_UP_FROM_PLOT_BOTTOM;
+		}
+
+		/** Idle X center for gun {@code index} of {@code n} along the plot bottom (30% width when solo). */
+		private static double gunHomeCenterX(PlotGeom geom, int index, int n) {
+			if (n <= 1) {
+				return geom.plotX + geom.plotW * 0.3;
+			}
+			double t = (index + 1.0) / (n + 1.0);
+			return geom.plotX + t * geom.plotW;
+		}
+
+		private List<String> platformCommandersForPlot(List<ProspectorLogRow> toPlot) {
+			if (toPlot == null || toPlot.isEmpty()) {
+				return List.of();
+			}
+			if (filterMode == FilterMode.ALL) {
+				List<String> ord = toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList();
+				List<String> out = new ArrayList<>();
+				for (String c : ord) {
+					if (c != null && !c.isEmpty()) {
+						out.add(c);
+					}
+				}
+				return out;
+			}
+			if (selectedCommander != null && !selectedCommander.isEmpty()) {
+				return List.of(selectedCommander);
+			}
+			return List.of();
+		}
+
+		private double homeXForCommander(PlotGeom geom, String cmdr, List<String> ordered) {
+			int idx = ordered.indexOf(cmdr);
+			if (idx < 0) {
+				return gatherLaserOriginX(geom);
+			}
+			return gunHomeCenterX(geom, idx, ordered.size());
+		}
+
+		private void syncGunPlatformCenters(List<String> orderedCmdrs, PlotGeom geom) {
+			gunPlatformCenterXByCommander.keySet().retainAll(new HashSet<>(orderedCmdrs));
+			int n = orderedCmdrs.size();
+			for (int i = 0; i < n; i++) {
+				String c = orderedCmdrs.get(i);
+				gunPlatformCenterXByCommander.putIfAbsent(c, gunHomeCenterX(geom, i, n));
+			}
+		}
+
+		private void updateGatherLaserFromFromGun(PlotGeom geom, String cmdr) {
+			if (gatherLaserFrom == null) {
+				gatherLaserFrom = new Point(0, 0);
+			}
+			double cx = cmdr != null && !cmdr.isEmpty() && gunPlatformCenterXByCommander.containsKey(cmdr)
+				? gunPlatformCenterXByCommander.get(cmdr)
+				: gatherLaserOriginX(geom);
+			gatherLaserFrom.x = (int) Math.round(cx);
+			gatherLaserFrom.y = gunLaserEmitY(geom);
+		}
+
+		/** Small retro treaded platform + turret; laser emits from barrel top ({@link #GUN_EMIT_UP_FROM_PLOT_BOTTOM} px above plot bottom). */
+		private static void drawMobileGunPlatform(Graphics2D g2, int centerX, int plotBottomY, Color accent) {
+			int B = plotBottomY;
+			int left = centerX - 12;
+			Stroke strokeSave = g2.getStroke();
+			g2.setColor(new Color(38, 40, 44));
+			g2.fillRoundRect(left - 2, B - 5, 28, 6, 3, 3);
+			g2.setColor(new Color(22, 22, 26));
+			g2.setStroke(new BasicStroke(1f));
+			for (int u = 0; u < 6; u++) {
+				int gx = left + u * 5;
+				g2.drawLine(gx, B - 4, gx + 2, B - 2);
+			}
+			g2.setColor(new Color(58, 62, 68));
+			g2.fillRect(left - 1, B - 14, 26, 9);
+			g2.setColor(accent.darker());
+			g2.drawRect(left - 1, B - 14, 26, 9);
+			g2.setColor(new Color(48, 52, 58));
+			g2.fillPolygon(
+				new int[] { left + 2, left + 22, left + 20, left + 4 },
+				new int[] { B - 14, B - 14, B - 19, B - 19 },
+				4);
+			int emitY = B - GUN_EMIT_UP_FROM_PLOT_BOTTOM;
+			int turretCx = centerX;
+			int turretCy = emitY + 10;
+			g2.setColor(accent);
+			g2.fillOval(turretCx - 7, turretCy - 6, 14, 12);
+			g2.setColor(accent.darker());
+			g2.drawOval(turretCx - 7, turretCy - 6, 14, 12);
+			g2.setColor(new Color(72, 74, 80));
+			g2.fillRect(turretCx - 2, emitY, 4, 12);
+			g2.setColor(new Color(90, 92, 98));
+			g2.drawRect(turretCx - 2, emitY, 4, 12);
+			g2.setStroke(strokeSave);
+		}
+
+		private void drawGunPlatforms(Graphics2D g2, PlotGeom geom, List<ProspectorLogRow> toPlot, Map<String, Color> commanderColor) {
+			List<String> pcs = platformCommandersForPlot(toPlot);
+			if (pcs.isEmpty()) {
+				return;
+			}
+			syncGunPlatformCenters(pcs, geom);
+			int plotBottom = geom.plotY + geom.plotH;
+			for (int i = 0; i < pcs.size(); i++) {
+				String cmdr = pcs.get(i);
+				Color ac = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
+				double cx = gunPlatformCenterXByCommander.getOrDefault(cmdr, gunHomeCenterX(geom, i, pcs.size()));
+				drawMobileGunPlatform(g2, (int) Math.round(cx), plotBottom, ac);
+			}
+		}
+
+		void triggerTestGatherAnimation() {
+			endGatherAnimation();
+			PlotGeom geom = computePlotGeom();
+			if (geom == null || getWidth() <= 0 || getHeight() <= 0) {
+				return;
+			}
+			List<ProspectorLogRow> toPlot = filteredRows();
+			if (toPlot.isEmpty()) {
+				return;
+			}
+			int midX = geom.plotX + (int) (geom.plotW * 0.45);
+			int yHi = geom.plotY + (int) (geom.plotH * 0.28);
+			int yLo = geom.plotY + (int) (geom.plotH * 0.62);
+			ProspectorLogRow sample = toPlot.get(0);
+			String cmdrName = sample.getCommanderName() != null ? sample.getCommanderName() : "";
+			Color col = commanderColorFor(cmdrName, toPlot);
+			startGatherAnimation(new Point(midX, yHi), new Point(midX, yLo), col, "__testFrom", "__testTo", cmdrName);
+		}
 
 		ProspectorLogScatterPanel() {
 			// Normal Swing mouse events (non pass-through)
@@ -3367,13 +3531,19 @@ String getName() {
 			gatherPhaseSpin = asteroidSpinAngle;
 			gatherMoveFrom = new Point(from);
 			gatherMoveTo = new Point(to);
-			// Beam starts at the bottom of the plot's left border (Y-axis line meets bottom edge).
+			List<String> pcs = platformCommandersForPlot(filteredRows());
 			PlotGeom geom = computePlotGeom();
 			if (geom != null) {
-				gatherLaserFrom = new Point(geom.plotX, geom.plotY + geom.plotH);
+				syncGunPlatformCenters(pcs, geom);
+				String ac = animCommander != null ? animCommander : "";
+				if (!ac.isEmpty()) {
+					gunPlatformCenterXByCommander.put(ac, homeXForCommander(geom, ac, pcs));
+				}
+				gatherLaserFrom = new Point(0, 0);
+				updateGatherLaserFromFromGun(geom, ac);
 			} else {
 				int fallbackY = Math.min(getHeight() - 4, Math.max(gatherMoveFrom.y, gatherMoveTo.y) + 40);
-				gatherLaserFrom = new Point(gatherMoveFrom.x, fallbackY);
+				gatherLaserFrom = new Point(gatherLaserOriginX(null), fallbackY);
 			}
 			gatherAsteroidColor = asteroidColor;
 			gatherSkipRowKeyFrom = skipKeyFrom != null ? skipKeyFrom : "";
@@ -3418,7 +3588,7 @@ String getName() {
 				gatherMoveFrom.setLocation(cur);
 				gatherAnimPhase = GATHER_LASER_CONTACT_PHASE_END;
 			}
-			gatherLaserFrom = new Point(geom.plotX, geom.plotY + geom.plotH);
+			updateGatherLaserFromFromGun(geom, gatherAnimCommander);
 		}
 
 		private void tickGatherAnimation() {
@@ -3433,6 +3603,15 @@ String getName() {
 					p.vy += 0.06;
 				}
 				gatherParticles.removeIf(p -> p.ageMs > 700);
+				PlotGeom gDebris = computePlotGeom();
+				if (gDebris != null && !gatherAnimCommander.isEmpty()) {
+					List<String> pcsD = platformCommandersForPlot(filteredRows());
+					double home = homeXForCommander(gDebris, gatherAnimCommander, pcsD);
+					Double gx = gunPlatformCenterXByCommander.get(gatherAnimCommander);
+					if (gx != null) {
+						gunPlatformCenterXByCommander.put(gatherAnimCommander, gx + (home - gx) * 0.18);
+					}
+				}
 				if (gatherParticles.isEmpty()) {
 					endGatherAnimation();
 				}
@@ -3462,6 +3641,15 @@ String getName() {
 				gatherAnimPhase = 1f;
 				gatherDebrisPhaseOnly = true;
 				// Keep gatherSkipRowKey* until endGatherAnimation — clearing here let static redraw during debris.
+			}
+			PlotGeom gTrack = computePlotGeom();
+			if (gTrack != null && !gatherAnimCommander.isEmpty()) {
+				Point rockScr = currentGatherAsteroidScreenPos();
+				Double curX = gunPlatformCenterXByCommander.get(gatherAnimCommander);
+				if (curX != null) {
+					gunPlatformCenterXByCommander.put(gatherAnimCommander, curX + (rockScr.x - curX) * 0.22);
+				}
+				updateGatherLaserFromFromGun(gTrack, gatherAnimCommander);
 			}
 			repaint();
 		}
@@ -3506,6 +3694,13 @@ String getName() {
 			}
 			gatherSkipRowKeyFrom = "";
 			gatherSkipRowKeyTo = "";
+			PlotGeom gEnd = computePlotGeom();
+			if (gEnd != null) {
+				List<String> pcsE = platformCommandersForPlot(filteredRows());
+				for (int i = 0; i < pcsE.size(); i++) {
+					gunPlatformCenterXByCommander.put(pcsE.get(i), gunHomeCenterX(gEnd, i, pcsE.size()));
+				}
+			}
 			repaint();
 		}
 
@@ -4040,6 +4235,7 @@ String getName() {
 					}
 				}
 			}
+			drawGunPlatforms(g2, geom, toPlot, commanderColor);
 			drawGatherAnimationOverlay(g2);
 			g2.dispose();
 		}

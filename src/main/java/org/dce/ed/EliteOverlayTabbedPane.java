@@ -279,6 +279,7 @@ public class EliteOverlayTabbedPane extends JPanel {
 
 		applyOverlayTabBarVisibility();
 		selectFirstVisibleTab();
+		maybeSelectMiningTabFromStartupJournal();
 
 		add(tabBar, BorderLayout.NORTH);
 
@@ -512,6 +513,27 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 	private void showMiningTabFromStatusWatcher() {
 	    SwingUtilities.invokeLater(() -> selectTab(CARD_MINING, miningButton));
+	}
+
+	/**
+	 * If journals indicate the commander is undocked in a planetary ring, show Mining on startup
+	 * (same {@code PlanetaryRing} check as live {@link SupercruiseExitEvent} handling).
+	 */
+	private void maybeSelectMiningTabFromStartupJournal() {
+		if (miningButton == null || !miningButton.isVisible()) {
+			return;
+		}
+		try {
+			Path dir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+			if (dir == null || !Files.isDirectory(dir)) {
+				return;
+			}
+			EliteJournalReader reader = new EliteJournalReader(dir);
+			if (reader.isLatestSituationPlanetaryRingMining()) {
+				showMiningTabFromStatusWatcher();
+			}
+		} catch (IOException | RuntimeException ignored) {
+		}
 	}
 
 	private void handleProspectedAsteroid(ProspectedAsteroidEvent event) {
