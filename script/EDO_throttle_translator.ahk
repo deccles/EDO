@@ -6,17 +6,17 @@
 ; Elite Dangerous throttle translator (AHK v2)
 ; - Reads Status.json: GuiFocus + OnFoot
 ; - Translation ON only when: Elite active, GuiFocus==0, OnFoot==false, no modifier buttons held, no GUI-assume cooldown
-; - Joystick buttons:
-;     1Joy6 -> Ctrl+Alt+W (hold)
-;     1Joy5 -> Ctrl+Alt+S (hold)
+; - Throttle input buttons (via reWASD keyboard mapping):
+;     F14 -> Ctrl+Alt+W (hold)
+;     F13 -> Ctrl+Alt+S (hold)
+;     (PollJoyDrive uses GetAsyncKeyState(VK) for F1–F24 — GetKeyState("F13") is often wrong with remappers.)
 ; - 25% snap + long press:
-;     Home/PgUp tap -> +25%, hold -> 100%
-;     End/PgDn  tap -> -25%, hold -> 0%
+;     PgUp tap -> +25%, hold -> 100%
+;     PgDn tap -> -25%, hold -> 0%
 ;     Uses Ctrl+Alt+Numpad presets (safe try/finally)
 ; - Visual indicators:
-;     Tooltip #1: XLT: ON/OFF + GF + OnFoot
+;     Tooltip #1: XLT, Status, In (drive + PgUp/PgDn), Out (current CA chord), Last (preset/GUI pulse)
 ;     Tooltip #3: CA+W or CA+S when script is injecting throttle chord
-; - F12 suspend (always)
 ; ============================================================
 
 ; -------------------------
@@ -81,7 +81,7 @@ global xltTipId := 1
 global xltTipX := A_ScreenWidth - 200
 global xltTipY := 10
 
-global showEmitIndicator := true
+global showEmitIndicator := false
 global emitTipId := 3
 global emitTipX := A_ScreenWidth - 200
 global emitTipY := 30
@@ -97,6 +97,11 @@ global wsLastTick := 0
 ; Script injection flags (used for indicator)
 global sentW := false
 global sentS := false
+
+; Last one-shot emit (preset numpad / GUI tap) for tooltip
+global lastPulseEmitLabel := ""
+global lastPulseEmitTick := 0
+global pulseEmitShowMs := 3500
 
 ; Shared chord modifier hold counter (prevents Ctrl/Alt leaking or popping early)
 global chordHoldCount := 0
@@ -203,6 +208,31 @@ modifierHeld() {
     return false
 }
 
+; True if throttle/drive key is held. For F1–F24, GetAsyncKeyState(VK) matches reWASD / synthetic keys
+; more reliably than GetKeyState("F13") in many setups.
+driveKeyPhysDown(keyName) {
+    if InStr(keyName, "Joy")
+        return GetKeyState(keyName, "P")
+    if RegExMatch(keyName, "i)^F(\d{1,2})$", &m) {
+        n := Integer(m[1])
+        if (n >= 1 && n <= 24) {
+            vk := 0x70 + (n - 1)
+            return (DllCall("user32\GetAsyncKeyState", "int", vk, "short") & 0x8000) != 0
+        }
+    }
+    return GetKeyState(keyName, "P")
+}
+
+vkAsyncDown(vk) {
+    return (DllCall("user32\GetAsyncKeyState", "int", vk, "short") & 0x8000) != 0
+}
+
+notePulseEmit(label) {
+    global lastPulseEmitLabel, lastPulseEmitTick
+    lastPulseEmitLabel := label
+    lastPulseEmitTick := A_TickCount
+}
+
 isGuiAssumed() {
     global guiAssumeUntilTick
     return A_TickCount < guiAssumeUntilTick
@@ -247,6 +277,32 @@ translationAllowed() {
     return true
 }
 
+; Short label for the XLT tooltip when translation is blocked (keep in sync with translationAllowed).
+translationBlockReason() {
+    global gateOnGuiFocus, gateOnFoot, statusReadOk, lastGuiFocus, lastOnFoot
+
+    if (!isEliteActive())
+        return "not Elite active"
+    if (A_IsSuspended)
+        return "AHK suspended"
+    if (GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") || GetKeyState("Shift", "P")
+        || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
+        return "Ctrl/Alt/Shift/Win held"
+    if (modifierHeld())
+        return "modifierButtons held"
+    if (isGuiAssumed())
+        return "GUI-assume cooldown"
+    if (gateOnGuiFocus) {
+        if (!statusReadOk)
+            return "Status.json unreadable"
+        if (lastGuiFocus > 0)
+            return "GuiFocus>0 (menus)"
+    }
+    if (gateOnFoot && statusReadOk && lastOnFoot)
+        return "on foot"
+    return ""
+}
+
 isEliteGuiFocusActive() {
     global gateOnGuiFocus, statusReadOk, lastGuiFocus
     if (!isEliteActive())
@@ -261,10 +317,12 @@ sendGuiDriveDown(which) {
     lastGuiDriveTick := A_TickCount
 
     if (which = "up") {
+        notePulseEmit("tap {" guiDriveUpKey "} (GUI panel)")
         SendEvent "{" guiDriveUpKey " down}"
         Sleep guiTapMs
         SendEvent "{" guiDriveUpKey " up}"
     } else {
+        notePulseEmit("tap {" guiDriveDownKey "} (GUI panel)")
         SendEvent "{" guiDriveDownKey " down}"
         Sleep guiTapMs
         SendEvent "{" guiDriveDownKey " up}"
@@ -388,6 +446,7 @@ hardReleaseWS() {
 ; Ctrl+Alt+Numpad speed helpers (SAFE: always releases)
 ; -------------------------
 sendCtrlAltNumpad(numKeyName, holdMs := 35) {
+    notePulseEmit("Ctrl+Alt+" numKeyName " (preset)")
     try {
         SendEvent "{Ctrl down}"
         Sleep 5
@@ -701,8 +760,8 @@ PollJoyDrive() {
         global driveUpButton, driveDownButton, joyPrev
         global guiDriveUpSent, guiDriveDownSent
 
-        upNow := GetKeyState(driveUpButton, "P")
-        dnNow := GetKeyState(driveDownButton, "P")
+        upNow := driveKeyPhysDown(driveUpButton)
+        dnNow := driveKeyPhysDown(driveDownButton)
         upPrev := joyPrev.Has(driveUpButton) ? joyPrev[driveUpButton] : false
         dnPrev := joyPrev.Has(driveDownButton) ? joyPrev[driveDownButton] : false
 
@@ -764,13 +823,41 @@ UpdateIndicators() {
         global showXltIndicator, xltTipId, xltTipX, xltTipY
         global showEmitIndicator, emitTipId, emitTipX, emitTipY
         global sentW, sentS, statusReadOk, lastGuiFocus, lastOnFoot
+        global throttlePct, driveUpButton, driveDownButton
+        global throttleUpBaseKey, throttleDownBaseKey
+        global lastPulseEmitLabel, lastPulseEmitTick, pulseEmitShowMs
 
         if (showXltIndicator) {
-            txt := translationAllowed() ? "XLT: ON" : "XLT: OFF"
+            if (translationAllowed()) {
+                txt := "XLT: ON  thr~" Format("{:.0f}", throttlePct) "%"
+            } else {
+                why := translationBlockReason()
+                txt := "XLT: OFF" (why != "" ? "  (" why ")" : "")
+            }
             if (statusReadOk)
-                txt .= "  GF=" lastGuiFocus "  OnFoot=" (lastOnFoot ? "1" : "0")
+                txt .= "`nStatus  GF=" lastGuiFocus "  OnFoot=" (lastOnFoot ? "1" : "0")
             else
-                txt .= "  Status=?"
+                txt .= "`nStatus  (unreadable — gating conservative)"
+            guiTab := isEliteGuiFocusActive()
+            upHeld := driveKeyPhysDown(driveUpButton)
+            dnHeld := driveKeyPhysDown(driveDownButton)
+            pgUp := vkAsyncDown(0x21)
+            pgDn := vkAsyncDown(0x22)
+            txt .= "`nIn:  " driveUpButton "=" (upHeld ? "+" : ".") "  " driveDownButton "=" (dnHeld ? "+" : ".")
+                "  PgUp=" (pgUp ? "+" : ".") "  PgDn=" (pgDn ? "+" : ".")
+                (guiTab ? "  [GUI]" : "")
+            if (sentW)
+                outNow := "Ctrl+Alt+" StrUpper(throttleUpBaseKey) " (hold)"
+            else if (sentS)
+                outNow := "Ctrl+Alt+" StrUpper(throttleDownBaseKey) " (hold)"
+            else
+                outNow := "(no throttle chord)"
+            txt .= "`nOut: " outNow
+            age := A_TickCount - lastPulseEmitTick
+            if (lastPulseEmitLabel != "" && age >= 0 && age < pulseEmitShowMs)
+                txt .= "`nLast: " lastPulseEmitLabel "  (" Format("{:.1f}", age / 1000) "s ago)"
+            else
+                txt .= "`nLast: —"
             ToolTip(txt, xltTipX, xltTipY, xltTipId)
         } else {
             ToolTip(,,, xltTipId)
@@ -789,13 +876,6 @@ UpdateIndicators() {
     } catch {
     }
 }
-
-; -------------------------
-; Controls
-; -------------------------
-#SuspendExempt
-F12::Suspend
-#SuspendExempt False
 
 ; -------------------------
 ; Elite-active hotkeys
