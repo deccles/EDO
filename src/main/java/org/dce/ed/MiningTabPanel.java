@@ -16,6 +16,8 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Path2D;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.text.NumberFormat;
@@ -130,6 +132,8 @@ public class MiningTabPanel extends JPanel {
 	private final ProspectorLogScatterPanel spreadsheetScatterPanel;
 	private final ProspectorLogScatterWrapperPanel spreadsheetScatterWrapper;
 	private final JPanel spreadsheetCardPanel;
+	private final JToggleButton prospectorLogTableViewBtn;
+	private final JToggleButton prospectorLogScatterViewBtn;
 	private static final int SPREADSHEET_REFRESH_MS = 6_000;
 	private final Timer spreadsheetRefreshTimer;
 	private SystemTableHoverCopyManager miningSystemCopyManager;
@@ -654,22 +658,30 @@ private final JLayer<JTable> cargoLayer;
 		spreadsheetCardPanel.add(spreadsheetScroller, "table");
 		spreadsheetCardPanel.add(spreadsheetScatterWrapper, "scatter");
 		spreadsheetCardPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		JToggleButton tableViewBtn = new JToggleButton("Table", true);
-		JToggleButton scatterViewBtn = new JToggleButton("Scatter", false);
-		tableViewBtn.setOpaque(false);
-		scatterViewBtn.setOpaque(false);
+		boolean initialScatter = OverlayPreferences.isMiningProspectorLogScatterView();
+		prospectorLogTableViewBtn = new JToggleButton("Table", !initialScatter);
+		prospectorLogScatterViewBtn = new JToggleButton("Scatter", initialScatter);
+		prospectorLogTableViewBtn.setOpaque(false);
+		prospectorLogScatterViewBtn.setOpaque(false);
 		ButtonGroup spreadsheetViewGroup = new ButtonGroup();
-		spreadsheetViewGroup.add(tableViewBtn);
-		spreadsheetViewGroup.add(scatterViewBtn);
-		tableViewBtn.addActionListener(e -> ((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, "table"));
-		scatterViewBtn.addActionListener(e -> ((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, "scatter"));
+		spreadsheetViewGroup.add(prospectorLogTableViewBtn);
+		spreadsheetViewGroup.add(prospectorLogScatterViewBtn);
+		((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, initialScatter ? "scatter" : "table");
+		prospectorLogTableViewBtn.addActionListener(e -> {
+			((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, "table");
+			OverlayPreferences.setMiningProspectorLogScatterView(false);
+		});
+		prospectorLogScatterViewBtn.addActionListener(e -> {
+			((CardLayout) spreadsheetCardPanel.getLayout()).show(spreadsheetCardPanel, "scatter");
+			OverlayPreferences.setMiningProspectorLogScatterView(true);
+		});
 		// Hover-to-switch between Table and Scatter views (works in pass-through mode via global mouse polling).
-		SpreadsheetViewHoverPoller.register(tableViewBtn, 500, () -> tableViewBtn.doClick());
-		SpreadsheetViewHoverPoller.register(scatterViewBtn, 500, () -> scatterViewBtn.doClick());
+		SpreadsheetViewHoverPoller.register(prospectorLogTableViewBtn, 500, () -> prospectorLogTableViewBtn.doClick());
+		SpreadsheetViewHoverPoller.register(prospectorLogScatterViewBtn, 500, () -> prospectorLogScatterViewBtn.doClick());
 		JPanel spreadsheetToolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 		spreadsheetToolbar.setOpaque(false);
-		spreadsheetToolbar.add(tableViewBtn);
-		spreadsheetToolbar.add(scatterViewBtn);
+		spreadsheetToolbar.add(prospectorLogTableViewBtn);
+		spreadsheetToolbar.add(prospectorLogScatterViewBtn);
 		spreadsheetToolbar.setAlignmentX(Component.LEFT_ALIGNMENT);
 		spreadsheetLabel = new JLabel("Prospector log");
 		spreadsheetLabel.setForeground(EdoUi.User.MAIN_TEXT);
@@ -2998,6 +3010,9 @@ String getName() {
 		private ProspectorLogRow hoverRow;
 		private List<RunSummary> runSummaries = new ArrayList<>();
 		private final javax.swing.Timer hoverPollTimer;
+		private final javax.swing.Timer asteroidSpinTimer;
+		/** Rotation angle for line-art asteroid markers on the most recent active asteroid */
+		private double asteroidSpinAngle;
 
 		ProspectorLogScatterPanel() {
 			// Normal Swing mouse events (non pass-through)
@@ -3011,6 +3026,84 @@ String getName() {
 			hoverPollTimer = new javax.swing.Timer(40, e -> pollGlobalMouse());
 			hoverPollTimer.setRepeats(true);
 			hoverPollTimer.start();
+			asteroidSpinTimer = new javax.swing.Timer(45, e -> {
+				if (!isVisible()) {
+					return;
+				}
+				asteroidSpinAngle += 0.12;
+				if (asteroidSpinAngle > Math.PI * 2) {
+					asteroidSpinAngle -= Math.PI * 2;
+				}
+				repaint();
+			});
+			asteroidSpinTimer.setRepeats(true);
+		}
+
+		@Override
+		public void addNotify() {
+			super.addNotify();
+			if (asteroidSpinTimer != null) {
+				asteroidSpinTimer.start();
+			}
+		}
+
+		@Override
+		public void removeNotify() {
+			if (asteroidSpinTimer != null) {
+				asteroidSpinTimer.stop();
+			}
+			super.removeNotify();
+		}
+
+		/** Filled black body, commander-colored rim; rotated in place. */
+		private static void drawLineArtAsteroid(Graphics2D g2, int cx, int cy, Color color, double spinRadians, double phaseOffset) {
+			// Smooth polar rock: mean radius + a few harmonics (lumpy potato, not a spiky star).
+			final int n = 32;
+			final double rMean = 14.0;
+			double ph = phaseOffset * 19.0;
+			Path2D.Double path = new Path2D.Double();
+			for (int i = 0; i < n; i++) {
+				double theta = (i / (double) n) * Math.PI * 2 + Math.PI / 2;
+				double s = 0.0;
+				s += 0.24 * Math.cos(2 * theta + ph);
+				s += 0.20 * Math.cos(3 * theta + ph * 1.4);
+				s += 0.14 * Math.cos(5 * theta + 0.35);
+				s += 0.10 * Math.cos(7 * theta + ph * 0.55);
+				s += 0.06 * Math.cos(11 * theta + ph * 0.9);
+				double amp = 0.24 + 0.20 + 0.14 + 0.10 + 0.06;
+				double norm = s / amp;
+				// Map norm ∈ [-1,1] to radius band so outline stays lumpy without clamp artifacts
+				double t = (norm + 1.0) * 0.5;
+				double r = rMean * (0.60 + 0.40 * t);
+				// Slight elongation (wider than tall)
+				double ex = 1.08;
+				double ey = 0.92;
+				double x = Math.cos(theta) * r * ex;
+				double y = Math.sin(theta) * r * ey;
+				if (i == 0) {
+					path.moveTo(x, y);
+				} else {
+					path.lineTo(x, y);
+				}
+			}
+			path.closePath();
+			Stroke strokeSave = g2.getStroke();
+			AffineTransform old = g2.getTransform();
+			g2.translate(cx, cy);
+			g2.rotate(spinRadians + phaseOffset);
+			g2.setColor(Color.BLACK);
+			g2.fill(path);
+			g2.setColor(color);
+			g2.setStroke(new BasicStroke(1.35f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+			g2.draw(path);
+			// Crater bowl + facet lines (dark on black, still reads as texture)
+			g2.setColor(new Color(28, 28, 28));
+			g2.setStroke(new BasicStroke(0.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+			g2.drawArc(-7, -3, 13, 10, 188, 98);
+			g2.drawLine(-6, 5, 2, -1);
+			g2.drawLine(4, 6, 9, 2);
+			g2.setTransform(old);
+			g2.setStroke(strokeSave);
 		}
 
 		void setRows(List<ProspectorLogRow> rows) {
@@ -3328,23 +3421,19 @@ String getName() {
 				}
 
 				if (!latestAsteroidRowsByCommander.isEmpty()) {
-					Stroke savedStroke = g2.getStroke();
-					g2.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-					int ringRadius = (int) (POINT_RADIUS + 4);
 					for (Map.Entry<String, List<ProspectorLogRow>> e : latestAsteroidRowsByCommander.entrySet()) {
 						String cmdr = e.getKey();
-						Color ringColor = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
-						g2.setColor(ringColor);
+						Color markColor = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
+						double phase = (cmdr.hashCode() & 0xFFFF) * 0.001;
 						for (ProspectorLogRow row : e.getValue()) {
 							for (PointInfo pi : pointInfos) {
 								if (pi.row == row) {
-									g2.drawOval(pi.x - ringRadius, pi.y - ringRadius, 2 * ringRadius, 2 * ringRadius);
+									drawLineArtAsteroid(g2, pi.x, pi.y, markColor, asteroidSpinAngle, phase);
 									break;
 								}
 							}
 						}
 					}
-					g2.setStroke(savedStroke);
 				}
 			}
 
