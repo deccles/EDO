@@ -17,6 +17,17 @@ public interface SystemStore {
 
     CachedSystem get(long systemAddress, String systemName);
 
+    /**
+     * Persisted cache row for the same system identity as {@code state} ({@link #get(long, String)}).
+     * This is a snapshot from SQLite, not the live in-memory {@link SystemState} (which may be newer until {@link #storeSystem}).
+     */
+    default CachedSystem getCachedForState(SystemState state) {
+        if (state == null) {
+            return null;
+        }
+        return get(state.getSystemAddress(), state.getSystemName());
+    }
+
     void put(long systemAddress,
             String systemName,
             double[] starPos,

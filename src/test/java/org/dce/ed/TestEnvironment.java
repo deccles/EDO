@@ -8,7 +8,7 @@ import org.dce.ed.cache.SystemCache;
 /**
  * Test isolation: redirect any cache or file output away from user data.
  * Call {@link #ensureTestIsolation()} from a test class so it runs before tests;
- * if any code path touches {@link SystemCache}, it will use a temp file instead of ~/.edOverlaySystems.json.
+ * if any code path touches {@link SystemCache}, it will use a temp SQLite DB instead of the real cache.
  * <p>
  * Current unit tests do not trigger cache writes, Preferences, or other persistence:
  * <ul>
@@ -39,8 +39,8 @@ public final class TestEnvironment {
             try {
                 Path tempDir = Files.createTempDirectory("edo-test-cache");
                 tempDir.toFile().deleteOnExit();
-                Path cacheFile = tempDir.resolve("test-cache.json");
-                System.setProperty(SystemCache.CACHE_PATH_PROPERTY, cacheFile.toAbsolutePath().toString());
+                Path cacheDb = tempDir.resolve("test-cache.db");
+                System.setProperty(SystemCache.CACHE_DB_PATH_PROPERTY, cacheDb.toAbsolutePath().toString());
             } catch (Exception e) {
                 throw new RuntimeException("Could not set test cache path", e);
             }

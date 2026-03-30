@@ -613,9 +613,7 @@ private static String formatExoCredits(long credits) {
 
 private Long loadExoCreditsTotalFromSystemCache() {
     try {
-        CachedSystem cs = SystemCache.load();
-        if (cs == null) return null;
-        return cs.exobiologyCreditsTotalUnsold;
+        return SystemCache.getInstance().getPersistedExobiologyCreditsTotalUnsold();
     } catch (Exception ignored) {
         return null;
     }

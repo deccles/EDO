@@ -44,13 +44,7 @@ public class SystemState {
 
     // null = unknown, true = yes, false = known not complete (if you want that later)
     private Boolean allBodiesFound;
-    
-    /** Genera we know are present on this body (lower-cased, e.g. "bacterium", "stratum"). */
-    private java.util.Set<String> observedGenusPrefixes;
 
-    /** Human-readable names for actually observed biology, e.g. "Bacterium Nebulus". */
-    private java.util.Set<String> observedBioDisplayNames;
-    
     // Body ID → BodyInfo
     private final Map<Integer, BodyInfo> bodies = new HashMap<>();
 
@@ -153,43 +147,6 @@ public class SystemState {
     // Predictions + evaluation logic lives HERE, not in the GUI.
     // ------------------------------------------------------------
 
-    public java.util.Set<String> getObservedGenusPrefixes() {
-        return observedGenusPrefixes;
-    }
-
-    public void setObservedGenusPrefixes(java.util.Set<String> observedGenusPrefixes) {
-        this.observedGenusPrefixes = observedGenusPrefixes;
-    }
-
-    public void addObservedGenusPrefix(String genusPrefix) {
-        if (genusPrefix == null || genusPrefix.isEmpty()) {
-            return;
-        }
-        if (observedGenusPrefixes == null) {
-            observedGenusPrefixes = new java.util.HashSet<>();
-        }
-        observedGenusPrefixes.add(genusPrefix.toLowerCase(java.util.Locale.ROOT));
-    }
-
-    public java.util.Set<String> getObservedBioDisplayNames() {
-        return observedBioDisplayNames;
-    }
-
-    public void setObservedBioDisplayNames(java.util.Set<String> observedBioDisplayNames) {
-        this.observedBioDisplayNames = observedBioDisplayNames;
-    }
-
-    public void addObservedBioDisplayName(String displayName) {
-        if (displayName == null || displayName.isEmpty()) {
-            return;
-        }
-        if (observedBioDisplayNames == null) {
-            observedBioDisplayNames = new java.util.HashSet<>();
-        }
-        observedBioDisplayNames.add(displayName);
-    }
-
-    
     /**
      * For each body, compute or update prediction lists based on ExobiologyData.
      */

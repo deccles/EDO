@@ -73,6 +73,8 @@ public final class OverlayPreferences {
     // Deprecated: mining run counter is now derived from sheet data (commander + system/body).
     private static final String KEY_MINING_LOG_RUN_COUNTER = "mining.log.runCounter";
     private static final String KEY_MINING_LOG_COMMANDER_NAME = "mining.log.commanderName";
+    /** Prospector log sub-view: "table" or "scatter". */
+    private static final String KEY_MINING_PROSPECTOR_LOG_VIEW = "mining.prospectorLog.view";
 
     // Mining value estimation (Mining tab)
     private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
@@ -611,6 +613,17 @@ public static Engine getSpeechEngine() {
 
     public static void setMiningLogCommanderName(String name) {
         PREFS.put(KEY_MINING_LOG_COMMANDER_NAME, name != null ? name.trim() : "");
+    }
+
+    /**
+     * True if the Mining tab prospector log should open in scatter plot view; false for table.
+     */
+    public static boolean isMiningProspectorLogScatterView() {
+        return "scatter".equalsIgnoreCase(PREFS.get(KEY_MINING_PROSPECTOR_LOG_VIEW, "table").trim());
+    }
+
+    public static void setMiningProspectorLogScatterView(boolean scatter) {
+        PREFS.put(KEY_MINING_PROSPECTOR_LOG_VIEW, scatter ? "scatter" : "table");
     }
 
     // --- Nearby tab (exobiology sphere search) ---

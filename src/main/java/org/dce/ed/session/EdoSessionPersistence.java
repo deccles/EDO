@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import org.dce.ed.cache.SystemCache;
 
@@ -15,24 +14,14 @@ import com.google.gson.GsonBuilder;
 
 /**
  * Reads and writes {@link EdoSessionState} to a single JSON file (edo-session.json).
- * Uses the same directory as {@link SystemCache}: if {@value org.dce.ed.cache.SystemCache#CACHE_PATH_PROPERTY}
- * is set, the session file is in that path's parent; otherwise user.home.
+ * Uses {@link SystemCache#getCacheDataDirectory()} (see {@link SystemCache#CACHE_DATA_DIR_PROPERTY} and DB path).
  */
 public final class EdoSessionPersistence {
 
     private static final String SESSION_FILE_NAME = "edo-session.json";
 
     private static Path getSessionPath() {
-        String override = System.getProperty(SystemCache.CACHE_PATH_PROPERTY);
-        if (override != null && !override.isBlank()) {
-            Path cachePath = Paths.get(override).toAbsolutePath().normalize();
-            return cachePath.getParent().resolve(SESSION_FILE_NAME);
-        }
-        String home = System.getProperty("user.home");
-        if (home == null || home.isEmpty()) {
-            home = ".";
-        }
-        return Paths.get(home, SESSION_FILE_NAME);
+        return SystemCache.getCacheDataDirectory().resolve(SESSION_FILE_NAME);
     }
 
     private static final Gson GSON = new GsonBuilder()

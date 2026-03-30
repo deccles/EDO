@@ -1,10 +1,6 @@
 package org.dce.ed.cache;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.IOException;
-import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -27,15 +23,15 @@ import org.dce.ed.util.RingSummaryFormatter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
-
 /**
- * Simple on-disk cache of system bodies, similar in spirit to what
- * tools like Exploration Buddy do. The cache is keyed by system
- * address (when available) and falls back to system name.
- *
- * Data is persisted as JSON in the user's home directory so that
- * previously scanned systems can be shown immediately on future runs.
+ * SQLite-backed cache of star systems (bodies in {@code systems.payload_json}),
+ * plus a singleton {@code overlay_global_state} row for commander-global values and the
+ * current-system pointer (see {@link #getCacheDataDirectory()}).
+ * <p>
+ * <b>Current system:</b> {@code overlay_global_state} holds {@code current_system_address} /
+ * {@code current_system_name}, updated on {@link #storeSystem} (unless bulk rescan).
+ * {@link #loadLastSystem()} uses that pointer first, then the newest {@code systems} row.
+ * Live journals are authoritative at runtime; {@code edo-session.json} is separate UI/session state.
  */
 
 
@@ -43,87 +39,62 @@ import com.google.gson.reflect.TypeToken;
 public final class SystemCache implements SystemStore {
     private CachedSystem lastLoadedSystem;
 
-    private static final String CACHE_FILE_NAME = ".edOverlaySystems.json";
     private static final String CACHE_DB_FILE_NAME = "ed-overlay-systems-v1.db";
 
     /**
-     * Optional override for where the cache JSON is stored.
-     * Used by tools like RescanJournalsMain when --cache is provided.
+     * Single-row table for app-wide cache fields (not per-star-system), e.g. unsold exobiology credits.
      */
-    public static final String CACHE_PATH_PROPERTY = "edo.cacheFile";
+    private static final String SQLITE_GLOBAL_TABLE = "overlay_global_state";
+
     public static final String CACHE_DB_PATH_PROPERTY = "edo.cacheDbFile";
-    public static final String CACHE_BACKEND_PROPERTY = "edo.cache.backend";
-    public static final String CACHE_BACKEND_JSON = "json";
-    public static final String CACHE_BACKEND_SQLITE = "sqlite";
+    /**
+     * Optional directory for {@code edo-session.json}; default is the parent of the SQLite DB file.
+     */
+    public static final String CACHE_DATA_DIR_PROPERTY = "edo.cacheDir";
+    /**
+     * When {@code true}, {@link #storeSystem} skips updating the session header in {@code overlay_global_state}
+     * (bulk journal rescan).
+     */
+    public static final String CACHE_BULK_SYSTEM_WRITE_PROPERTY = "edo.cache.bulkSystemWrite";
 
     private static final SystemCache INSTANCE = new SystemCache();
 
     private final Gson gson;
-    private final Path cachePath;
     private final Path cacheDbPath;
     private Connection sqliteConnection;
     private boolean sqliteReady;
     private long lastUpdatedAtMs;
 
-    private final Map<Long, CachedSystem> byAddress = new HashMap<>();
-    private final Map<String, CachedSystem> byName = new HashMap<>();
-
-    private boolean loaded = false;
-    
     private SystemCache() {
         this.gson = new GsonBuilder()
                 .setPrettyPrinting()
                 .serializeSpecialFloatingPointValues()
                 .create();
-
-        String override = System.getProperty(CACHE_PATH_PROPERTY);
-        if (override != null && !override.isBlank()) {
-            this.cachePath = Paths.get(override).toAbsolutePath().normalize();
-        } else {
-            String home = System.getProperty("user.home");
-            if (home == null || home.isEmpty()) {
-                home = ".";
-            }
-            this.cachePath = Paths.get(home, CACHE_FILE_NAME);
-        }
         this.cacheDbPath = resolveDbPath();
-        this.sqliteReady = initializeSqliteIfConfigured();
+        this.sqliteReady = initializeSqlite();
     }
 
     /**
-     * Clears the in-memory cache and deletes the persisted JSON cache file.
-     *
-     * Intended for tools that want a true "start from scratch" rebuild.
+     * Deletes the SQLite cache database and resets the singleton connection.
      */
     @Override
     public synchronized void clearAndDeleteOnDisk() {
-    	System.out.println("Delete cachefile " + cachePath);
-        // Mark loaded so ensureLoaded() won't re-load from disk later in this JVM.
-        loaded = true;
-
-        byAddress.clear();
-        byName.clear();
+        System.out.println("Delete cache DB " + cacheDbPath);
         lastLoadedSystem = null;
-
         try {
-            Files.deleteIfExists(cachePath);
+            if (sqliteConnection != null) {
+                sqliteConnection.close();
+            }
+        } catch (SQLException ignored) {
+        }
+        sqliteConnection = null;
+        sqliteReady = false;
+        try {
+            Files.deleteIfExists(cacheDbPath);
         } catch (IOException ex) {
-            System.err.println("SystemCache: failed to delete cache file " + cachePath + ": " + ex.getMessage());
+            System.err.println("SystemCache: failed to delete sqlite cache file " + cacheDbPath + ": " + ex.getMessage());
         }
-        if (sqliteReady) {
-            try {
-                if (sqliteConnection != null) {
-                    sqliteConnection.close();
-                }
-            } catch (SQLException ignored) {
-            }
-            try {
-                Files.deleteIfExists(cacheDbPath);
-            } catch (IOException ex) {
-                System.err.println("SystemCache: failed to delete sqlite cache file " + cacheDbPath + ": " + ex.getMessage());
-            }
-            sqliteReady = initializeSqliteIfConfigured();
-        }
+        sqliteReady = initializeSqlite();
     }
 
     public static SystemCache getInstance() {
@@ -136,49 +107,22 @@ public final class SystemCache implements SystemStore {
 
     @Override
     public synchronized CachedSystem loadLastSystem() throws IOException {
-        if (sqliteReady) {
-            CachedSystem cs = sqliteLoadLastSystem();
-            lastLoadedSystem = cs;
-            return cs;
+        if (!sqliteReady) {
+            return null;
         }
-        ensureLoaded();
-        return lastLoadedSystem;
+        CachedSystem cs = sqliteLoadLastSystem();
+        lastLoadedSystem = cs;
+        return cs;
     }
 
-
-    private synchronized void ensureLoaded() {
-        if (loaded) {
-            return;
+    /**
+     * Unsold exobiology credits total as persisted on disk ({@code overlay_global_state}).
+     */
+    public synchronized Long getPersistedExobiologyCreditsTotalUnsold() {
+        if (!sqliteReady) {
+            return null;
         }
-        loaded = true;
-
-        if (!Files.isRegularFile(cachePath)) {
-            return;
-        }
-
-        System.out.println("SystemCache: loading from " + cachePath.toAbsolutePath());
-
-        try (BufferedReader reader = Files.newBufferedReader(cachePath, StandardCharsets.UTF_8)) {
-            Type type = new TypeToken<List<CachedSystem>>() {}.getType();
-            List<CachedSystem> systems = gson.fromJson(reader, type);
-            if (systems == null) {
-                return;
-            }
-            for (CachedSystem cs : systems) {
-                if (cs == null) {
-                    continue;
-                }
-                if (cs.systemAddress != 0L) {
-                    byAddress.put(cs.systemAddress, cs);
-                }
-                if (cs.systemName != null && !cs.systemName.isEmpty()) {
-                    byName.put(canonicalName(cs.systemName), cs);
-                }
-                lastLoadedSystem = cs;
-            }
-        } catch (IOException ex) {
-            // ignore; cache will just start empty
-        }
+        return sqliteReadGlobalExobiologyCredits();
     }
 
     private static String canonicalName(String name) {
@@ -187,19 +131,10 @@ public final class SystemCache implements SystemStore {
     
     @Override
     public synchronized CachedSystem get(long systemAddress, String systemName) {
-        if (sqliteReady) {
-            return sqliteGet(systemAddress, systemName);
+        if (!sqliteReady) {
+            return null;
         }
-        ensureLoaded();
-
-        CachedSystem cs = null;
-        if (systemAddress != 0L) {
-            cs = byAddress.get(systemAddress);
-        }
-        if (cs == null && systemName != null && !systemName.isEmpty()) {
-            cs = byName.get(canonicalName(systemName));
-        }
-        return cs;
+        return sqliteGet(systemAddress, systemName);
     }
 
     /**
@@ -215,54 +150,13 @@ public final class SystemCache implements SystemStore {
             Boolean allBodiesFound,
             Long exobiologyCreditsTotalUnsold,
             List<CachedBody> bodies) {
-        if (sqliteReady) {
-            CachedSystem cs = sqliteGet(systemAddress, systemName);
-            if (cs == null) {
-                cs = new CachedSystem();
-            }
-            cs.starPos = starPos;
-            cs.systemAddress = systemAddress;
-            cs.systemName = systemName;
-            cs.totalBodies = totalBodies;
-            cs.nonBodyCount = nonBodyCount;
-            cs.fssProgress = fssProgress;
-            cs.allBodiesFound = allBodiesFound;
-            if (exobiologyCreditsTotalUnsold != null) {
-                cs.exobiologyCreditsTotalUnsold = exobiologyCreditsTotalUnsold;
-            }
-            if (cs.bodies == null) {
-                cs.bodies = new ArrayList<>();
-            }
-            if (bodies != null && !bodies.isEmpty()) {
-                for (CachedBody newBody : bodies) {
-                    boolean merged = false;
-                    for (int i = 0; i < cs.bodies.size(); i++) {
-                        CachedBody existing = cs.bodies.get(i);
-                        boolean idMatch = (newBody.bodyId >= 0 && existing.bodyId >= 0 && newBody.bodyId == existing.bodyId);
-                        boolean nameMatch = (newBody.name != null && !newBody.name.isEmpty() && newBody.name.equals(existing.name));
-                        if (idMatch || nameMatch) {
-                            cs.bodies.set(i, newBody);
-                            merged = true;
-                            break;
-                        }
-                    }
-                    if (!merged) {
-                        cs.bodies.add(newBody);
-                    }
-                }
-            }
-            sqliteUpsert(cs);
-            lastLoadedSystem = cs;
+        if (!sqliteReady) {
             return;
         }
-        ensureLoaded();
-
-//        System.out.println("systemcache.put " + starPos[0] + "," + starPos[1] + "," + starPos[2]);
         if ((systemAddress == 0L) && (systemName == null || systemName.isEmpty())) {
             return;
         }
-
-        CachedSystem cs = get(systemAddress, systemName);
+        CachedSystem cs = sqliteGet(systemAddress, systemName);
         if (cs == null) {
             cs = new CachedSystem();
         }
@@ -273,22 +167,16 @@ public final class SystemCache implements SystemStore {
         cs.nonBodyCount = nonBodyCount;
         cs.fssProgress = fssProgress;
         cs.allBodiesFound = allBodiesFound;
-        if (exobiologyCreditsTotalUnsold != null) {
-            cs.exobiologyCreditsTotalUnsold = exobiologyCreditsTotalUnsold;
-        }
         if (cs.bodies == null) {
             cs.bodies = new ArrayList<>();
         }
-
         if (bodies != null && !bodies.isEmpty()) {
             for (CachedBody newBody : bodies) {
                 boolean merged = false;
                 for (int i = 0; i < cs.bodies.size(); i++) {
                     CachedBody existing = cs.bodies.get(i);
-                    // Prefer matching by bodyId when available, otherwise fall back to name.
                     boolean idMatch = (newBody.bodyId >= 0 && existing.bodyId >= 0 && newBody.bodyId == existing.bodyId);
-                    boolean nameMatch = (newBody.name != null && !newBody.name.isEmpty()
-                            && newBody.name.equals(existing.name));
+                    boolean nameMatch = (newBody.name != null && !newBody.name.isEmpty() && newBody.name.equals(existing.name));
                     if (idMatch || nameMatch) {
                         cs.bodies.set(i, newBody);
                         merged = true;
@@ -296,23 +184,15 @@ public final class SystemCache implements SystemStore {
                     }
                 }
                 if (!merged) {
-                	if (newBody.bodyId == -1) {
-                		new Throwable().printStackTrace();
-                	}
                     cs.bodies.add(newBody);
                 }
             }
         }
-
-        if (systemAddress != 0L) {
-            byAddress.put(systemAddress, cs);
+        sqliteUpsert(cs);
+        if (exobiologyCreditsTotalUnsold != null) {
+            sqliteWriteGlobalExobiologyCredits(exobiologyCreditsTotalUnsold.longValue());
         }
-        if (systemName != null && !systemName.isEmpty()) {
-            byName.put(canonicalName(systemName), cs);
-        }
-
         lastLoadedSystem = cs;
-        save();
     }
 
     
@@ -332,8 +212,13 @@ public final class SystemCache implements SystemStore {
         state.setNonBodyCount(cs.nonBodyCount);
         state.setFssProgress(cs.fssProgress);
         state.setAllBodiesFound(cs.allBodiesFound);
-        state.setExobiologyCreditsTotalUnsold(cs.exobiologyCreditsTotalUnsold);
-        
+        if (sqliteReady) {
+            state.setExobiologyCreditsTotalUnsold(sqliteReadGlobalExobiologyCredits());
+            state.setDocked(sqliteReadSessionHeader().docked);
+        }
+        if (cs.bodies == null) {
+            return;
+        }
         for (CachedBody cb : cs.bodies) {
             BodyInfo info = new BodyInfo();
             info.setBodyName(cb.name);
@@ -377,21 +262,20 @@ public final class SystemCache implements SystemStore {
             }
             if (cb.bioSampleCountsByDisplayName != null && !cb.bioSampleCountsByDisplayName.isEmpty()) {
                 info.setBioSampleCounts(cb.bioSampleCountsByDisplayName);
-            if (cb.bioSamplePointsByDisplayName != null && !cb.bioSamplePointsByDisplayName.isEmpty()) {
-                Map<String, List<BodyInfo.BioSamplePoint>> pts = new HashMap<>();
-                for (Map.Entry<String, List<CachedBody.BioSamplePoint>> e : cb.bioSamplePointsByDisplayName.entrySet()) {
-                    if (e.getValue() == null || e.getValue().isEmpty()) {
-                        continue;
+                if (cb.bioSamplePointsByDisplayName != null && !cb.bioSamplePointsByDisplayName.isEmpty()) {
+                    Map<String, List<BodyInfo.BioSamplePoint>> pts = new HashMap<>();
+                    for (Map.Entry<String, List<CachedBody.BioSamplePoint>> e : cb.bioSamplePointsByDisplayName.entrySet()) {
+                        if (e.getValue() == null || e.getValue().isEmpty()) {
+                            continue;
+                        }
+                        List<BodyInfo.BioSamplePoint> out = new ArrayList<>();
+                        for (CachedBody.BioSamplePoint p : e.getValue()) {
+                            out.add(new BodyInfo.BioSamplePoint(p.latitude, p.longitude));
+                        }
+                        pts.put(e.getKey(), out);
                     }
-                    List<BodyInfo.BioSamplePoint> out = new ArrayList<>();
-                    for (CachedBody.BioSamplePoint p : e.getValue()) {
-                        out.add(new BodyInfo.BioSamplePoint(p.latitude, p.longitude));
-                    }
-                    pts.put(e.getKey(), out);
+                    info.setBioSamplePoints(pts);
                 }
-                info.setBioSamplePoints(pts);
-            }
-
             }
             
             if (cb.predictions != null && !cb.predictions.isEmpty()) {
@@ -643,7 +527,6 @@ public final class SystemCache implements SystemStore {
 
         // Merge-on-save: preserve certain fields from the existing on-disk cache when the
         // current in-memory SystemState does not currently have them populated.
-        ensureLoaded();
         CachedSystem existing = get(state.getSystemAddress(), state.getSystemName());
 
         Map<Integer, CachedBody> existingBodies = new HashMap<>();
@@ -826,48 +709,15 @@ public final class SystemCache implements SystemStore {
                 state.getAllBodiesFound(),
                 state.getExobiologyCreditsTotalUnsold(),
                 list);
-    }
-
-    private synchronized void save() {
-        try {
-            List<CachedSystem> systems = new ArrayList<>();
-
-            Map<String, CachedSystem> unique = new HashMap<>();
-            for (CachedSystem cs : byAddress.values()) {
-                if (cs.systemName != null) {
-                    unique.put(cs.systemName, cs);
-                } else {
-                    unique.put("addr:" + cs.systemAddress, cs);
-                }
-            }
-            for (CachedSystem cs : byName.values()) {
-                if (cs.systemName != null) {
-                    unique.put(cs.systemName, cs);
-                }
-            }
-
-            CachedSystem latest = lastLoadedSystem;
-            String latestKey = null;
-            if (latest != null) {
-                latestKey = (latest.systemName != null) ? latest.systemName : "addr:" + latest.systemAddress;
-            }
-            for (Map.Entry<String, CachedSystem> e : unique.entrySet()) {
-                if (latestKey != null && latestKey.equals(e.getKey())) {
-                    continue;
-                }
-                systems.add(e.getValue());
-            }
-            if (latest != null) {
-                systems.add(latest);
-            }
-
-            try (BufferedWriter writer = Files.newBufferedWriter(cachePath, StandardCharsets.UTF_8)) {
-                gson.toJson(systems, writer);
-            }
-        } catch (IOException ex) {
-            // ignore; cache is best-effort
+        if (sqliteReady && !isBulkSystemWrite()) {
+            sqliteWriteSessionHeader(state.getSystemAddress(), state.getSystemName(), state.isDocked());
         }
     }
+
+    private static boolean isBulkSystemWrite() {
+        return Boolean.parseBoolean(System.getProperty(CACHE_BULK_SYSTEM_WRITE_PROPERTY, "false"));
+    }
+
     private static Integer toBodyKey(Long id) {
         if (id == null) {
             return null;
@@ -913,26 +763,18 @@ public final class SystemCache implements SystemStore {
 
     @Override
     public synchronized CachedSystemSummary getSummary(long systemAddress, String systemName) {
-        if (sqliteReady) {
-            return sqliteGetSummary(systemAddress, systemName);
-        }
-        CachedSystem cs = get(systemAddress, systemName);
-        if (cs == null) {
+        if (!sqliteReady) {
             return null;
         }
-        int bodyCount = cs.bodies != null ? cs.bodies.size() : 0;
-        return new CachedSystemSummary(
-                cs.systemAddress,
-                cs.systemName,
-                cs.totalBodies,
-                cs.fssProgress,
-                cs.allBodiesFound,
-                bodyCount);
+        return sqliteGetSummary(systemAddress, systemName);
     }
 
     /**
      * Absolute path to the SQLite system-cache database file (same rules as the internal cache).
      * Intended for developer tools; does not open a connection.
+     * <p>
+     * Tables include {@code systems} (per-system {@code payload_json}) and {@code overlay_global_state}
+     * (singleton row for app-wide values such as unsold exobiology credits).
      */
     public static Path getSqliteCacheDbPath() {
         String override = System.getProperty(CACHE_DB_PATH_PROPERTY);
@@ -946,16 +788,31 @@ public final class SystemCache implements SystemStore {
         return Paths.get(home, ".edo", CACHE_DB_FILE_NAME).toAbsolutePath().normalize();
     }
 
+    /**
+     * Directory for {@code edo-session.json} and related files (parent of DB unless {@link #CACHE_DATA_DIR_PROPERTY} is set).
+     */
+    public static Path getCacheDataDirectory() {
+        String override = System.getProperty(CACHE_DATA_DIR_PROPERTY);
+        if (override != null && !override.isBlank()) {
+            return Paths.get(override).toAbsolutePath().normalize();
+        }
+        Path db = getSqliteCacheDbPath();
+        Path parent = db.getParent();
+        if (parent != null) {
+            return parent;
+        }
+        String home = System.getProperty("user.home");
+        if (home == null || home.isEmpty()) {
+            return Paths.get(".").toAbsolutePath().normalize();
+        }
+        return Paths.get(home);
+    }
+
     private Path resolveDbPath() {
         return getSqliteCacheDbPath();
     }
 
-    private boolean initializeSqliteIfConfigured() {
-        String backend = System.getProperty(CACHE_BACKEND_PROPERTY, CACHE_BACKEND_SQLITE);
-        if (!CACHE_BACKEND_SQLITE.equalsIgnoreCase(backend)) {
-            System.out.println("[EDO][Cache] backend=json path=" + cachePath.toAbsolutePath());
-            return false;
-        }
+    private boolean initializeSqlite() {
         try {
             Path parent = cacheDbPath.getParent();
             if (parent != null) {
@@ -988,14 +845,19 @@ public final class SystemCache implements SystemStore {
                     "CREATE INDEX IF NOT EXISTS idx_systems_address ON systems(system_address)")) {
                 ps.execute();
             }
-
-            if (sqliteCountRows() == 0 && Files.isRegularFile(cachePath)) {
-                sqliteImportFromJson();
+            try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                    "CREATE TABLE IF NOT EXISTS " + SQLITE_GLOBAL_TABLE + " (" +
+                    "singleton INTEGER PRIMARY KEY CHECK (singleton = 1)," +
+                    "exobiology_credits_total_unsold INTEGER" +
+                    ")")) {
+                ps.execute();
             }
-            System.out.println("[EDO][Cache] backend=sqlite path=" + cacheDbPath.toAbsolutePath());
+            migrateOverlayGlobalStateSchema();
+            migrateExobiologyCreditsIntoGlobalTableIfNeeded();
+            System.out.println("[EDO][Cache] sqlite path=" + cacheDbPath.toAbsolutePath());
             return true;
         } catch (Exception ex) {
-            System.err.println("SystemCache: sqlite init failed, falling back to json: " + ex.getMessage());
+            System.err.println("SystemCache: sqlite init failed (cache disabled): " + ex.getMessage());
             try {
                 if (sqliteConnection != null) {
                     sqliteConnection.close();
@@ -1003,44 +865,172 @@ public final class SystemCache implements SystemStore {
             } catch (SQLException ignored) {
             }
             sqliteConnection = null;
-            System.out.println("[EDO][Cache] backend=json path=" + cachePath.toAbsolutePath());
             return false;
         }
     }
 
-    private int sqliteCountRows() throws SQLException {
-        try (PreparedStatement ps = sqliteConnection.prepareStatement("SELECT COUNT(*) FROM systems");
-             ResultSet rs = ps.executeQuery()) {
-            return rs.next() ? rs.getInt(1) : 0;
+    private void migrateOverlayGlobalStateSchema() throws SQLException {
+        ensureGlobalStateColumn("schema_version", "INTEGER NOT NULL DEFAULT 1");
+        ensureGlobalStateColumn("current_system_address", "INTEGER NOT NULL DEFAULT 0");
+        ensureGlobalStateColumn("current_system_name", "TEXT NOT NULL DEFAULT ''");
+        ensureGlobalStateColumn("docked", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void ensureGlobalStateColumn(String column, String typeAndConstraints) throws SQLException {
+        if (globalStateHasColumn(column)) {
+            return;
+        }
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "ALTER TABLE " + SQLITE_GLOBAL_TABLE + " ADD COLUMN " + column + " " + typeAndConstraints)) {
+            ps.execute();
         }
     }
 
-    private void sqliteImportFromJson() {
-        long start = System.currentTimeMillis();
-        try (BufferedReader reader = Files.newBufferedReader(cachePath, StandardCharsets.UTF_8)) {
-            Type type = new TypeToken<List<CachedSystem>>() {}.getType();
-            List<CachedSystem> systems = gson.fromJson(reader, type);
-            if (systems == null || systems.isEmpty()) {
+    private boolean globalStateHasColumn(String column) throws SQLException {
+        try (PreparedStatement ps = sqliteConnection.prepareStatement("PRAGMA table_info(" + SQLITE_GLOBAL_TABLE + ")");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString(2))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private String toSqlitePayloadJson(CachedSystem cs) {
+        Long exo = cs.exobiologyCreditsTotalUnsold;
+        cs.exobiologyCreditsTotalUnsold = null;
+        try {
+            return gson.toJson(cs);
+        } finally {
+            cs.exobiologyCreditsTotalUnsold = exo;
+        }
+    }
+
+    private boolean sqliteGlobalStateTableEmpty() throws SQLException {
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "SELECT COUNT(*) FROM " + SQLITE_GLOBAL_TABLE);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() && rs.getInt(1) == 0;
+        }
+    }
+
+    private void migrateExobiologyCreditsIntoGlobalTableIfNeeded() {
+        if (sqliteConnection == null) {
+            return;
+        }
+        try {
+            if (!sqliteGlobalStateTableEmpty()) {
                 return;
             }
-            sqliteConnection.setAutoCommit(false);
-            for (CachedSystem cs : systems) {
-                if (cs != null) {
-                    sqliteUpsert(cs);
+            try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                    "SELECT payload_json FROM systems ORDER BY updated_at DESC LIMIT 1");
+                 ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return;
+                }
+                String payload = rs.getString(1);
+                if (payload == null) {
+                    return;
+                }
+                CachedSystem parsed = gson.fromJson(payload, CachedSystem.class);
+                if (parsed != null && parsed.exobiologyCreditsTotalUnsold != null) {
+                    sqliteWriteGlobalExobiologyCredits(parsed.exobiologyCreditsTotalUnsold.longValue());
                 }
             }
-            sqliteConnection.commit();
-            sqliteConnection.setAutoCommit(true);
-            System.out.println("SystemCache: imported " + systems.size() + " systems to sqlite in " + (System.currentTimeMillis() - start) + "ms");
-        } catch (Exception ex) {
-            try {
-                if (sqliteConnection != null) {
-                    sqliteConnection.rollback();
-                    sqliteConnection.setAutoCommit(true);
-                }
-            } catch (SQLException ignored) {
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: migrate exobiology global row failed: " + ex.getMessage());
+        }
+    }
+
+    private Long sqliteReadGlobalExobiologyCredits() {
+        if (sqliteConnection == null) {
+            return null;
+        }
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "SELECT exobiology_credits_total_unsold FROM " + SQLITE_GLOBAL_TABLE + " WHERE singleton = 1");
+             ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) {
+                return null;
             }
-            System.err.println("SystemCache: sqlite import from json failed: " + ex.getMessage());
+            long v = rs.getLong(1);
+            if (rs.wasNull()) {
+                return null;
+            }
+            return Long.valueOf(v);
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite read global exobiology credits failed: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private void sqliteWriteGlobalExobiologyCredits(long credits) {
+        if (sqliteConnection == null) {
+            return;
+        }
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "INSERT INTO " + SQLITE_GLOBAL_TABLE + " (singleton, exobiology_credits_total_unsold) VALUES (1, ?) " +
+                "ON CONFLICT(singleton) DO UPDATE SET exobiology_credits_total_unsold = excluded.exobiology_credits_total_unsold")) {
+            ps.setLong(1, credits);
+            ps.executeUpdate();
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite write global exobiology credits failed: " + ex.getMessage());
+        }
+    }
+
+    private static final class SessionHeader {
+        final long currentSystemAddress;
+        final String currentSystemName;
+        final boolean docked;
+
+        SessionHeader(long addr, String name, boolean docked) {
+            this.currentSystemAddress = addr;
+            this.currentSystemName = name != null ? name : "";
+            this.docked = docked;
+        }
+    }
+
+    private SessionHeader sqliteReadSessionHeader() {
+        if (sqliteConnection == null) {
+            return new SessionHeader(0L, "", false);
+        }
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "SELECT current_system_address, current_system_name, docked FROM " + SQLITE_GLOBAL_TABLE + " WHERE singleton = 1");
+             ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) {
+                return new SessionHeader(0L, "", false);
+            }
+            long addr = rs.getLong(1);
+            String name = rs.getString(2);
+            if (name == null) {
+                name = "";
+            }
+            return new SessionHeader(addr, name, rs.getInt(3) != 0);
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite read session header failed: " + ex.getMessage());
+            return new SessionHeader(0L, "", false);
+        }
+    }
+
+    private void sqliteWriteSessionHeader(long systemAddress, String systemName, boolean docked) {
+        if (sqliteConnection == null) {
+            return;
+        }
+        String name = systemName != null ? systemName : "";
+        try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                "INSERT INTO " + SQLITE_GLOBAL_TABLE
+                        + " (singleton, current_system_address, current_system_name, docked) VALUES (1, ?, ?, ?) "
+                        + "ON CONFLICT(singleton) DO UPDATE SET "
+                        + "current_system_address = excluded.current_system_address, "
+                        + "current_system_name = excluded.current_system_name, "
+                        + "docked = excluded.docked")) {
+            ps.setLong(1, systemAddress);
+            ps.setString(2, name);
+            ps.setInt(3, docked ? 1 : 0);
+            ps.executeUpdate();
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: sqlite write session header failed: " + ex.getMessage());
         }
     }
 
@@ -1097,12 +1087,21 @@ public final class SystemCache implements SystemStore {
         if (sqliteConnection == null) {
             return null;
         }
-        try (PreparedStatement ps = sqliteConnection.prepareStatement(
-                "SELECT payload_json FROM systems ORDER BY updated_at DESC LIMIT 1");
-             ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                CachedSystem cs = gson.fromJson(rs.getString(1), CachedSystem.class);
-                return cs;
+        try {
+            SessionHeader head = sqliteReadSessionHeader();
+            if (head.currentSystemAddress != 0L
+                    || (head.currentSystemName != null && !head.currentSystemName.isEmpty())) {
+                CachedSystem byPtr = sqliteGet(head.currentSystemAddress, head.currentSystemName);
+                if (byPtr != null) {
+                    return byPtr;
+                }
+            }
+            try (PreparedStatement ps = sqliteConnection.prepareStatement(
+                    "SELECT payload_json FROM systems ORDER BY updated_at DESC LIMIT 1");
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return gson.fromJson(rs.getString(1), CachedSystem.class);
+                }
             }
         } catch (SQLException ex) {
             System.err.println("SystemCache: sqlite load last failed: " + ex.getMessage());
@@ -1119,7 +1118,7 @@ public final class SystemCache implements SystemStore {
             return;
         }
         int cachedBodyCount = (cs.bodies == null) ? 0 : cs.bodies.size();
-        String payload = gson.toJson(cs);
+        String payload = toSqlitePayloadJson(cs);
         long now = nextMonotonicUpdateMillis();
         String sql = "INSERT INTO systems (cache_key, system_address, canonical_name, system_name, total_bodies, fss_progress, all_bodies_found, cached_body_count, updated_at, payload_json) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +

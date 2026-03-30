@@ -202,7 +202,7 @@ public final class EdoSqliteDatabaseFrame extends JFrame {
     private void connectAndLoadSchema() throws SQLException {
         if (!Files.isRegularFile(dbPath)) {
             throw new SQLException("Database file not found:\n" + dbPath + "\n\n"
-                    + "If you use the JSON cache backend (edo.cache.backend=json), there is no SQLite file here.");
+                    + "Run the overlay or rescan once to create the cache, or check -D" + SystemCache.CACHE_DB_PATH_PROPERTY + ".");
         }
         connection = DriverManager.getConnection(jdbcUrl);
         statusLabel.setText("Connected: " + dbPath);

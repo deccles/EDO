@@ -14,8 +14,9 @@ import java.util.List;
 
     /**
      * Exobiology running total (expected credits, unsold).
-     * Stored in the same cache payload as the last visited system so it persists
-     * across tool restarts.
+     * Persisted inside each cached system JSON when using the JSON file backend.
+     * When using SQLite, this field is stored in table {@code overlay_global_state} instead
+     * and is omitted from {@code systems.payload_json}.
      */
     public Long exobiologyCreditsTotalUnsold;
 

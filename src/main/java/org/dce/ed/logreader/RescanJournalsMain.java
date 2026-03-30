@@ -82,7 +82,7 @@ public class RescanJournalsMain {
 	/**
 	 * Optional CLI-oriented overload:
 	 *  - forcedJournalFile: if provided, rescan ONLY that file (no copying into the game journal directory).
-	 *  - forcedCacheFile: if provided, sets a system property that SystemCache may honor.
+	 *  - forcedCacheFile: if provided, sets {@link SystemCache#CACHE_DB_PATH_PROPERTY} (SQLite DB path).
 	 */
 	public static void rescanJournals(boolean forceFull, Path forcedJournalFile, Path forcedCacheFile) throws IOException {
 		Path journalDirectory = org.dce.ed.OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
@@ -93,7 +93,7 @@ public class RescanJournalsMain {
 		EliteJournalReader reader = new EliteJournalReader(journalDirectory);
 
 		if (forcedCacheFile != null) {
-			System.setProperty(SystemCache.CACHE_PATH_PROPERTY, forcedCacheFile.toString());
+			System.setProperty(SystemCache.CACHE_DB_PATH_PROPERTY, forcedCacheFile.toString());
 		}
 
 		Instant lastImport = null;
@@ -140,10 +140,7 @@ public class RescanJournalsMain {
 		Preferences prefs = Preferences.userNodeForPackage(OverlayFrame.class);
 		Long cachedTotal = null;
 		try {
-			CachedSystem last = SystemCache.load();
-			if (last != null) {
-				cachedTotal = last.exobiologyCreditsTotalUnsold;
-			}
+			cachedTotal = SystemCache.getInstance().getPersistedExobiologyCreditsTotalUnsold();
 		} catch (Exception ignored) {
 			// Seed from preferences below.
 		}
@@ -160,7 +157,10 @@ public class RescanJournalsMain {
 		// Track latest carrier-related event so we can update session state for overlay countdown.
 		EliteLogEvent latestCarrierEvent = null;
 
-		for (EliteLogEvent event : events) {
+		String prevBulkCacheWrite = System.getProperty(SystemCache.CACHE_BULK_SYSTEM_WRITE_PROPERTY);
+		try {
+			System.setProperty(SystemCache.CACHE_BULK_SYSTEM_WRITE_PROPERTY, "true");
+			for (EliteLogEvent event : events) {
 			Instant ts = event.getTimestamp();
 			if (ts != null && (newestEventTimestamp == null || ts.isAfter(newestEventTimestamp))) {
 				newestEventTimestamp = ts;
@@ -236,6 +236,13 @@ public class RescanJournalsMain {
 				}
 			}
 			//            persistIfStarScan(cache, state, event);
+		}
+		} finally {
+			if (prevBulkCacheWrite != null) {
+				System.setProperty(SystemCache.CACHE_BULK_SYSTEM_WRITE_PROPERTY, prevBulkCacheWrite);
+			} else {
+				System.clearProperty(SystemCache.CACHE_BULK_SYSTEM_WRITE_PROPERTY);
+			}
 		}
 
 		// Persist exobiology expected credits total (unsold) for toolbar + future rescans.
