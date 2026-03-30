@@ -86,6 +86,10 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_LOG_COMMANDER_NAME = "mining.log.commanderName";
     /** Prospector log sub-view: "table" or "scatter". */
     private static final String KEY_MINING_PROSPECTOR_LOG_VIEW = "mining.prospectorLog.view";
+    /** Vertical split: fraction of Mining tab height for ship inventory (top pane). */
+    private static final String KEY_MINING_PANEL_SPLIT_OUTER = "mining.panel.splitOuter";
+    /** Vertical split: fraction of the lower pane for prospector (top of inner split). */
+    private static final String KEY_MINING_PANEL_SPLIT_INNER = "mining.panel.splitInner";
 
     // Mining value estimation (Mining tab)
     private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
@@ -711,6 +715,53 @@ public static Engine getSpeechEngine() {
 
     public static void setMiningProspectorLogScatterView(boolean scatter) {
         PREFS.put(KEY_MINING_PROSPECTOR_LOG_VIEW, scatter ? "scatter" : "table");
+    }
+
+    /**
+     * Fraction of Mining tab height for the ship inventory block (0–1). Remaining height is split
+     * between prospector and prospector log / scatter by {@link #getMiningPanelSplitInnerRatio()}.
+     */
+    public static double getMiningPanelSplitOuterRatio() {
+        String s = PREFS.get(KEY_MINING_PANEL_SPLIT_OUTER, "0.333");
+        try {
+            return clampSplitRatio(Double.parseDouble(s.trim()));
+        } catch (Exception e) {
+            return 1.0 / 3.0;
+        }
+    }
+
+    public static void setMiningPanelSplitOuterRatio(double ratio) {
+        PREFS.put(KEY_MINING_PANEL_SPLIT_OUTER, Double.toString(clampSplitRatio(ratio)));
+    }
+
+    /**
+     * Fraction of the area below the inventory split that goes to the prospector block (0–1).
+     * The rest is for the prospector log table / scatter plot.
+     */
+    public static double getMiningPanelSplitInnerRatio() {
+        String s = PREFS.get(KEY_MINING_PANEL_SPLIT_INNER, "0.5");
+        try {
+            return clampSplitRatio(Double.parseDouble(s.trim()));
+        } catch (Exception e) {
+            return 0.5;
+        }
+    }
+
+    public static void setMiningPanelSplitInnerRatio(double ratio) {
+        PREFS.put(KEY_MINING_PANEL_SPLIT_INNER, Double.toString(clampSplitRatio(ratio)));
+    }
+
+    private static double clampSplitRatio(double ratio) {
+        if (Double.isNaN(ratio) || Double.isInfinite(ratio)) {
+            return 0.5;
+        }
+        if (ratio < 0.05) {
+            return 0.05;
+        }
+        if (ratio > 0.95) {
+            return 0.95;
+        }
+        return ratio;
     }
 
     // --- Nearby tab (exobiology sphere search) ---

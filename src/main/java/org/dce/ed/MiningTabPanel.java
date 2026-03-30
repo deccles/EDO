@@ -22,6 +22,9 @@ import java.awt.geom.AffineTransform;
 import java.awt.geom.Path2D;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.beans.PropertyChangeListener;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -57,6 +60,7 @@ import javax.swing.JLayer;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JToggleButton;
 import javax.swing.JViewport;
@@ -92,6 +96,7 @@ import org.dce.ed.mining.ProspectorLogRow;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import org.dce.ed.ui.EdoMiningSplitPaneUi;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.TransparentTableHeaderUI;
@@ -141,6 +146,8 @@ public class MiningTabPanel extends JPanel {
 	private final JToggleButton prospectorLogScatterViewBtn;
 	private static final int SPREADSHEET_REFRESH_MS = 6_000;
 	private final Timer spreadsheetRefreshTimer;
+	private final JSplitPane miningOuterSplit;
+	private final JSplitPane miningInnerSplit;
 	private SystemTableHoverCopyManager miningSystemCopyManager;
 
 	private final Map<String, Long> lastCargoTonsByName = new HashMap<>();
@@ -697,29 +704,86 @@ private final JLayer<JTable> cargoLayer;
 		Dimension spreadPref = spreadsheetLabel.getPreferredSize();
 		spreadsheetLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, spreadPref.height));
 
-		// Leave about 10 rows for each table.
+		// Leave about 10 rows for each table (preferred sizes; split panes allocate extra space).
 		updateScrollerHeights();
 
-		JPanel centerPanel = new JPanel();
+		double outerRatio = OverlayPreferences.getMiningPanelSplitOuterRatio();
+		double innerRatio = OverlayPreferences.getMiningPanelSplitInnerRatio();
+
+		JPanel inventoryPanel = new JPanel(new BorderLayout());
+		inventoryPanel.setOpaque(false);
+		inventoryPanel.setBackground(EdoUi.Internal.TRANSPARENT);
+		JPanel invHeader = new JPanel();
+		invHeader.setOpaque(false);
+		invHeader.setLayout(new BoxLayout(invHeader, BoxLayout.Y_AXIS));
+		invHeader.add(inventoryLabel);
+		invHeader.add(Box.createVerticalStrut(2));
+		inventoryPanel.add(invHeader, BorderLayout.NORTH);
+		inventoryPanel.add(cargoScroller, BorderLayout.CENTER);
+
+		JPanel prospectorPanel = new JPanel(new BorderLayout());
+		prospectorPanel.setOpaque(false);
+		prospectorPanel.setBackground(EdoUi.Internal.TRANSPARENT);
+		JPanel proHeader = new JPanel();
+		proHeader.setOpaque(false);
+		proHeader.setLayout(new BoxLayout(proHeader, BoxLayout.Y_AXIS));
+		proHeader.add(prospectorLabel);
+		proHeader.add(Box.createVerticalStrut(4));
+		prospectorPanel.add(proHeader, BorderLayout.NORTH);
+		prospectorPanel.add(materialsScroller, BorderLayout.CENTER);
+
+		JPanel spreadsheetPanel = new JPanel(new BorderLayout());
+		spreadsheetPanel.setOpaque(false);
+		spreadsheetPanel.setBackground(EdoUi.Internal.TRANSPARENT);
+		JPanel logSpreadsheetNorth = new JPanel();
+		logSpreadsheetNorth.setOpaque(false);
+		logSpreadsheetNorth.setLayout(new BoxLayout(logSpreadsheetNorth, BoxLayout.Y_AXIS));
+		logSpreadsheetNorth.add(spreadsheetLabel);
+		logSpreadsheetNorth.add(Box.createVerticalStrut(2));
+		logSpreadsheetNorth.add(spreadsheetToolbar);
+		logSpreadsheetNorth.add(Box.createVerticalStrut(2));
+		spreadsheetPanel.add(logSpreadsheetNorth, BorderLayout.NORTH);
+		spreadsheetPanel.add(spreadsheetCardPanel, BorderLayout.CENTER);
+
+		miningInnerSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, prospectorPanel, spreadsheetPanel);
+		EdoMiningSplitPaneUi.install(miningInnerSplit);
+		configureMiningSplitPane(miningInnerSplit, innerRatio);
+		miningOuterSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inventoryPanel, miningInnerSplit);
+		EdoMiningSplitPaneUi.install(miningOuterSplit);
+		configureMiningSplitPane(miningOuterSplit, outerRatio);
+
+		PropertyChangeListener miningSplitPersistence = evt -> {
+			if (!JSplitPane.DIVIDER_LOCATION_PROPERTY.equals(evt.getPropertyName())) {
+				return;
+			}
+			saveMiningSplitRatios();
+		};
+		miningOuterSplit.addPropertyChangeListener(miningSplitPersistence);
+		miningInnerSplit.addPropertyChangeListener(miningSplitPersistence);
+
+		spreadsheetCardPanel.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				syncScatterPanelSizeToSpreadsheetCard();
+			}
+		});
+
+		JPanel centerPanel = new JPanel(new BorderLayout());
 		centerPanel.setOpaque(false);
 		centerPanel.setBackground(EdoUi.Internal.TRANSPARENT);
-		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
-		// Order: Inventory, then Prospector, then Spreadsheet
-		centerPanel.add(inventoryLabel);
-		centerPanel.add(Box.createVerticalStrut(2));
-		centerPanel.add(cargoScroller);
-		centerPanel.add(Box.createVerticalStrut(8));
-		centerPanel.add(prospectorLabel);
-		centerPanel.add(Box.createVerticalStrut(4));
-		centerPanel.add(materialsScroller);
-		centerPanel.add(Box.createVerticalStrut(8));
-		centerPanel.add(spreadsheetLabel);
-		centerPanel.add(Box.createVerticalStrut(2));
-		centerPanel.add(spreadsheetToolbar);
-		centerPanel.add(Box.createVerticalStrut(2));
-		centerPanel.add(spreadsheetCardPanel);
+		centerPanel.add(miningOuterSplit, BorderLayout.CENTER);
 
 		add(centerPanel, BorderLayout.CENTER);
+
+		SwingUtilities.invokeLater(() -> {
+			miningOuterSplit.setResizeWeight(outerRatio);
+			miningInnerSplit.setResizeWeight(innerRatio);
+			miningOuterSplit.setDividerLocation(outerRatio);
+			miningInnerSplit.setDividerLocation(innerRatio);
+			EdoMiningSplitPaneUi.applyDividerTheme(miningOuterSplit);
+			EdoMiningSplitPaneUi.applyDividerTheme(miningInnerSplit);
+			syncScatterPanelSizeToSpreadsheetCard();
+		});
 
 		refreshSpreadsheetFromBackend();
 		spreadsheetRefreshTimer = new Timer(SPREADSHEET_REFRESH_MS, e -> refreshSpreadsheetFromBackend());
@@ -733,7 +797,63 @@ private final JLayer<JTable> cargoLayer;
 		applyUiFontPreferences();
 	}
 
-	
+	private static void configureMiningSplitPane(JSplitPane split, double resizeWeight) {
+		split.setOpaque(false);
+		split.setBorder(null);
+		split.setContinuousLayout(true);
+		split.setOneTouchExpandable(false);
+		split.setDividerSize(9);
+		split.setResizeWeight(Math.max(0.05, Math.min(0.95, resizeWeight)));
+	}
+
+	private void saveMiningSplitRatios() {
+		if (miningOuterSplit == null || miningInnerSplit == null) {
+			return;
+		}
+		if (miningOuterSplit.getHeight() < 32 || miningInnerSplit.getHeight() < 32) {
+			return;
+		}
+		double outer = computeVerticalSplitRatio(miningOuterSplit);
+		double inner = computeVerticalSplitRatio(miningInnerSplit);
+		OverlayPreferences.setMiningPanelSplitOuterRatio(outer);
+		OverlayPreferences.setMiningPanelSplitInnerRatio(inner);
+		miningOuterSplit.setResizeWeight(outer);
+		miningInnerSplit.setResizeWeight(inner);
+	}
+
+	private static double computeVerticalSplitRatio(JSplitPane split) {
+		if (split == null) {
+			return 0.5;
+		}
+		int h = split.getHeight();
+		if (h <= 0) {
+			return 0.5;
+		}
+		int d = split.getDividerSize();
+		int usable = Math.max(1, h - d);
+		int loc = split.getDividerLocation();
+		double r = loc / (double) usable;
+		if (r < 0.05) {
+			r = 0.05;
+		} else if (r > 0.95) {
+			r = 0.95;
+		}
+		return r;
+	}
+
+	private void syncScatterPanelSizeToSpreadsheetCard() {
+		if (spreadsheetScatterPanel == null || spreadsheetCardPanel == null) {
+			return;
+		}
+		int h = spreadsheetCardPanel.getHeight();
+		if (h <= 0) {
+			return;
+		}
+		spreadsheetScatterPanel.setPreferredSize(new Dimension(Integer.MAX_VALUE, h));
+		spreadsheetScatterPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
+		spreadsheetScatterPanel.revalidate();
+	}
+
 	private boolean isHighlightedProspectorRow(Row r) {
 		if (r == null) {
 			return false;
@@ -939,6 +1059,9 @@ return EdoUi.User.MAIN_TEXT;
 
 		updateScrollerHeights();
 
+		EdoMiningSplitPaneUi.applyDividerTheme(miningOuterSplit);
+		EdoMiningSplitPaneUi.applyDividerTheme(miningInnerSplit);
+
 		revalidate();
 		repaint();
 	}
@@ -949,7 +1072,9 @@ return EdoUi.User.MAIN_TEXT;
 		updateScrollerHeight(materialsScroller, table);
 		updateScrollerHeight(cargoScroller, cargoTable);
 		updateScrollerHeight(spreadsheetScroller, spreadsheetTable);
-		if (spreadsheetScatterPanel != null && spreadsheetScroller != null) {
+		syncScatterPanelSizeToSpreadsheetCard();
+		if (spreadsheetScatterPanel != null && spreadsheetScroller != null && spreadsheetCardPanel != null
+				&& spreadsheetCardPanel.getHeight() <= 0) {
 			Dimension d = spreadsheetScroller.getPreferredSize();
 			spreadsheetScatterPanel.setPreferredSize(new Dimension(Integer.MAX_VALUE, d.height));
 			spreadsheetScatterPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, d.height));
@@ -967,10 +1092,13 @@ return EdoUi.User.MAIN_TEXT;
 			headerH = th.getPreferredSize().height;
 		}
 
-		int h = (tbl.getRowHeight() * VISIBLE_ROWS) + headerH;
+		int rowH = tbl.getRowHeight();
+		int h = (rowH * VISIBLE_ROWS) + headerH;
+		int minH = headerH + rowH * 3;
 
+		scroller.setMinimumSize(new Dimension(0, minH));
 		scroller.setPreferredSize(new Dimension(Integer.MAX_VALUE, h));
-		scroller.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
+		scroller.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		scroller.revalidate();
 	}
 
