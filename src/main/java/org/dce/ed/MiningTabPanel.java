@@ -3097,10 +3097,16 @@ String getName() {
 		private double gatherPhaseSpin;
 		private String gatherSkipRowKeyFrom;
 		private String gatherSkipRowKeyTo;
+		/** Commander whose gather animation is running (for mid-flight retarget). */
+		private String gatherAnimCommander = "";
 		private final List<OreParticle> gatherParticles = new ArrayList<>();
 		private final Random gatherRandom = new Random();
-		/** Fraction of gatherAnimPhase (0–1) spent extending the laser to the rock before it moves. */
-		private static final float GATHER_LASER_CONTACT_PHASE_END = 0.28f;
+		/** Fraction of gatherAnimPhase (0–1) for laser contact (lower = faster beam). */
+		private static final float GATHER_LASER_CONTACT_PHASE_END = 0.16f;
+		/** Phase advance per timer tick (higher = faster overall). */
+		private static final float GATHER_PHASE_DELTA = 1f / 36f;
+		/** Retarget only when end moves more than this (avoids reset spam on every setRows / layout jitter). */
+		private static final int GATHER_RETARGET_MIN_MOVE_SQ = 8 * 8;
 
 		ProspectorLogScatterPanel() {
 			// Normal Swing mouse events (non pass-through)
@@ -3149,6 +3155,36 @@ String getName() {
 		private static String rowKeyForAnim(ProspectorLogRow r) {
 			return r.getRun() + "|" + Objects.toString(r.getAsteroidId(), "") + "|" + Objects.toString(r.getTimestamp(), "") + "|"
 				+ Objects.toString(r.getMaterial(), "") + "|" + r.getPercent() + "|" + r.getDifference();
+		}
+
+		/** Squared distance <= radius^2 (integer px; avoids sqrt). */
+		private static boolean screenWithinRadiusSq(int px, int py, int cx, int cy, int radiusSq) {
+			int dx = px - cx;
+			int dy = py - cy;
+			return dx * dx + dy * dy <= radiusSq;
+		}
+
+		/** ~line-art asteroid footprint + rounding; keeps one rock visible during gather. */
+		private static final int GATHER_SUPPRESS_END_RADIUS_SQ = 22 * 22;
+		private static final int GATHER_SUPPRESS_START_RADIUS_SQ = 22 * 22;
+
+		/** Hide static line-art where the animated rock is drawn (avoids double asteroids). */
+		private boolean gatherSuppressStaticAsteroidAtPlotPixel(int px, int py) {
+			if (!gatherAnimActive) {
+				return false;
+			}
+			// End position: hide only during laser+move. During debris the animated rock is gone — show static
+			// at the data point so the rock does not vanish until particles finish (smooth handoff).
+			if (!gatherDebrisPhaseOnly && gatherMoveTo != null
+				&& screenWithinRadiusSq(px, py, gatherMoveTo.x, gatherMoveTo.y, GATHER_SUPPRESS_END_RADIUS_SQ)) {
+				return true;
+			}
+			// Start position: hidden only during laser+move; may show again during debris.
+			if (!gatherDebrisPhaseOnly && gatherMoveFrom != null
+				&& screenWithinRadiusSq(px, py, gatherMoveFrom.x, gatherMoveFrom.y, GATHER_SUPPRESS_START_RADIUS_SQ)) {
+				return true;
+			}
+			return false;
 		}
 
 		private static ProspectorLogRow findRowMatchingSnapshot(LeaderSnapshot s, List<ProspectorLogRow> toPlot) {
@@ -3314,12 +3350,12 @@ String getName() {
 				ProspectorLogRow rowNow = findRowMatchingSnapshot(now, toPlot);
 				String kFrom = rowPrev != null ? rowKeyForAnim(rowPrev) : "";
 				String kTo = rowNow != null ? rowKeyForAnim(rowNow) : "";
-				startGatherAnimation(from, to, col, kFrom, kTo);
+				startGatherAnimation(from, to, col, kFrom, kTo, cmdr);
 				return;
 			}
 		}
 
-		private void startGatherAnimation(Point from, Point to, Color asteroidColor, String skipKeyFrom, String skipKeyTo) {
+		private void startGatherAnimation(Point from, Point to, Color asteroidColor, String skipKeyFrom, String skipKeyTo, String animCommander) {
 			if (gatherAnimTimer == null) {
 				gatherAnimTimer = new javax.swing.Timer(30, e -> tickGatherAnimation());
 			}
@@ -3340,8 +3376,47 @@ String getName() {
 			gatherAsteroidColor = asteroidColor;
 			gatherSkipRowKeyFrom = skipKeyFrom != null ? skipKeyFrom : "";
 			gatherSkipRowKeyTo = skipKeyTo != null ? skipKeyTo : "";
+			gatherAnimCommander = animCommander != null ? animCommander : "";
 			gatherParticles.clear();
 			gatherAnimTimer.start();
+		}
+
+		/**
+		 * If new prospector rows move the leader while the gather is still in flight, aim the move at the new end.
+		 * During laser contact only {@code gatherMoveTo} updates; during move, the rock continues from its current pixel.
+		 */
+		private void retargetGatherAnimationFromNewData() {
+			if (!gatherAnimActive || gatherDebrisPhaseOnly || gatherAnimCommander.isEmpty()) {
+				return;
+			}
+			PlotGeom geom = computePlotGeom();
+			if (geom == null) {
+				return;
+			}
+			List<ProspectorLogRow> toPlot = filteredRows();
+			Map<String, LeaderSnapshot> leaders = computeLatestLeadersMap(toPlot);
+			LeaderSnapshot now = leaders.get(gatherAnimCommander);
+			if (now == null) {
+				return;
+			}
+			Point newEnd = geom.projectValues(now.pct, now.tons);
+			ProspectorLogRow rowNow = findRowMatchingSnapshot(now, toPlot);
+			String newToKey = rowNow != null ? rowKeyForAnim(rowNow) : "";
+			// Same leader row + ~same pixel: do nothing (prevents phase reset every refresh / sub-pixel layout).
+			if (gatherMoveTo != null
+				&& newToKey.equals(gatherSkipRowKeyTo)
+				&& screenWithinRadiusSq(newEnd.x, newEnd.y, gatherMoveTo.x, gatherMoveTo.y, GATHER_RETARGET_MIN_MOVE_SQ)) {
+				return;
+			}
+			gatherSkipRowKeyTo = newToKey;
+			Point cur = currentGatherAsteroidScreenPos();
+			boolean inMovePhase = gatherAnimPhase >= GATHER_LASER_CONTACT_PHASE_END;
+			gatherMoveTo.setLocation(newEnd);
+			if (inMovePhase) {
+				gatherMoveFrom.setLocation(cur);
+				gatherAnimPhase = GATHER_LASER_CONTACT_PHASE_END;
+			}
+			gatherLaserFrom = new Point(geom.plotX, geom.plotY + geom.plotH);
 		}
 
 		private void tickGatherAnimation() {
@@ -3362,7 +3437,7 @@ String getName() {
 				repaint();
 				return;
 			}
-			gatherAnimPhase += 1f / 50f;
+			gatherAnimPhase += GATHER_PHASE_DELTA;
 			gatherPhaseSpin += 0.14;
 			if (gatherPhaseSpin > Math.PI * 2) {
 				gatherPhaseSpin -= Math.PI * 2;
@@ -3384,8 +3459,7 @@ String getName() {
 			if (gatherAnimPhase >= 1f) {
 				gatherAnimPhase = 1f;
 				gatherDebrisPhaseOnly = true;
-				gatherSkipRowKeyFrom = "";
-				gatherSkipRowKeyTo = "";
+				// Keep gatherSkipRowKey* until endGatherAnimation — clearing here let static redraw during debris.
 			}
 			repaint();
 		}
@@ -3423,6 +3497,7 @@ String getName() {
 		private void endGatherAnimation() {
 			gatherAnimActive = false;
 			gatherDebrisPhaseOnly = false;
+			gatherAnimCommander = "";
 			gatherParticles.clear();
 			if (gatherAnimTimer != null) {
 				gatherAnimTimer.stop();
@@ -3562,6 +3637,9 @@ String getName() {
 
 		void setRows(List<ProspectorLogRow> rows) {
 			this.rows = (rows != null) ? new ArrayList<>(rows) : new ArrayList<>();
+			if (gatherAnimActive && !gatherDebrisPhaseOnly) {
+				retargetGatherAnimationFromNewData();
+			}
 			if (!gatherAnimActive) {
 				maybeStartGatherAnimationFromNewData();
 			}
@@ -3862,16 +3940,21 @@ String getName() {
 						double phase = (cmdr.hashCode() & 0xFFFF) * 0.001;
 						for (ProspectorLogRow row : e.getValue()) {
 							String rk = rowKeyForAnim(row);
-							if (gatherAnimActive && !gatherDebrisPhaseOnly) {
-								if (!gatherSkipRowKeyFrom.isEmpty() && rk.equals(gatherSkipRowKeyFrom)) {
+							if (gatherAnimActive) {
+								// End row: hide static only during laser+move (same window as pixel suppress).
+								if (!gatherDebrisPhaseOnly && !gatherSkipRowKeyTo.isEmpty() && rk.equals(gatherSkipRowKeyTo)) {
 									continue;
 								}
-								if (!gatherSkipRowKeyTo.isEmpty() && rk.equals(gatherSkipRowKeyTo)) {
+								// Start row: hide only during laser+move.
+								if (!gatherDebrisPhaseOnly && !gatherSkipRowKeyFrom.isEmpty() && rk.equals(gatherSkipRowKeyFrom)) {
 									continue;
 								}
 							}
 							for (PointInfo pi : pointInfos) {
 								if (pi.row == row) {
+									if (gatherSuppressStaticAsteroidAtPlotPixel(pi.x, pi.y)) {
+										break;
+									}
 									drawLineArtAsteroid(g2, pi.x, pi.y, markColor, asteroidSpinAngle, phase);
 									break;
 								}
