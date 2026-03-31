@@ -91,12 +91,6 @@ public final class OverlayPreferences {
     /** Vertical split: fraction of the lower pane for prospector (top of inner split). */
     private static final String KEY_MINING_PANEL_SPLIT_INNER = "mining.panel.splitInner";
 
-    // Mining value estimation (Mining tab)
-    private static final String KEY_MINING_EST_TONS_LOW = "mining.estimate.tons.low";
-    private static final String KEY_MINING_EST_TONS_MED = "mining.estimate.tons.medium";
-    private static final String KEY_MINING_EST_TONS_HIGH = "mining.estimate.tons.high";
-    private static final String KEY_MINING_EST_TONS_CORE = "mining.estimate.tons.core";
-    
     // Mining: low-limpet reminder
     private static final String KEY_MINING_LIMPET_REMINDER_ENABLED = "mining.limpetReminder.enabled";
     private static final String KEY_MINING_LIMPET_REMINDER_MODE = "mining.limpetReminder.mode"; // COUNT or PERCENT
@@ -1026,50 +1020,6 @@ public static Engine getSpeechEngine() {
         PREFS.putInt(KEY_MINING_LIMPET_REMINDER_THRESHOLD_PERCENT, v);
     }
 
-
-    /**
-     * Estimated total collectible tons for a prospected asteroid with Content=Low.
-     */
-    public static double getMiningEstimateTonsLow() {
-        return getDoubleClamped(KEY_MINING_EST_TONS_LOW, 8.0, 0.0, 200.0);
-    }
-
-    public static void setMiningEstimateTonsLow(double tons) {
-        putDoubleClamped(KEY_MINING_EST_TONS_LOW, tons, 0.0, 200.0);
-    }
-
-    /**
-     * Estimated total collectible tons for a prospected asteroid with Content=Medium.
-     */
-    public static double getMiningEstimateTonsMedium() {
-        return getDoubleClamped(KEY_MINING_EST_TONS_MED, 16.0, 0.0, 200.0);
-    }
-
-    public static void setMiningEstimateTonsMedium(double tons) {
-        putDoubleClamped(KEY_MINING_EST_TONS_MED, tons, 0.0, 200.0);
-    }
-
-    /**
-     * Estimated total collectible tons for a prospected asteroid with Content=High.
-     */
-    public static double getMiningEstimateTonsHigh() {
-        return getDoubleClamped(KEY_MINING_EST_TONS_HIGH, 25.0, 0.0, 200.0);
-    }
-
-    public static void setMiningEstimateTonsHigh(double tons) {
-        putDoubleClamped(KEY_MINING_EST_TONS_HIGH, tons, 0.0, 200.0);
-    }
-
-    /**
-     * Estimated tons yielded by a core (MotherlodeMaterial) asteroid.
-     */
-    public static double getMiningEstimateTonsCore() {
-        return getDoubleClamped(KEY_MINING_EST_TONS_CORE, 12.0, 0.0, 200.0);
-    }
-
-    public static void setMiningEstimateTonsCore(double tons) {
-        putDoubleClamped(KEY_MINING_EST_TONS_CORE, tons, 0.0, 200.0);
-    }
 
     private static double getDoubleClamped(String key, double def, double min, double max) {
         String s = PREFS.get(key, Double.toString(def));

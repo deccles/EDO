@@ -598,21 +598,6 @@ public class EliteOverlayTabbedPane extends JPanel {
 	}
 
 
-	private static double estimateTotalTons(String content) {
-		if (content == null) {
-			return OverlayPreferences.getMiningEstimateTonsMedium();
-		}
-		String c = content.trim().toLowerCase(Locale.US);
-		if (c.equals("high")) {
-			return OverlayPreferences.getMiningEstimateTonsHigh();
-		}
-		if (c.equals("low")) {
-			return OverlayPreferences.getMiningEstimateTonsLow();
-		}
-		return OverlayPreferences.getMiningEstimateTonsMedium();
-	}
-
-
 	private static Set<String> parseMaterialList(String csv) {
 		if (csv == null || csv.isBlank()) {
 			return Set.of();

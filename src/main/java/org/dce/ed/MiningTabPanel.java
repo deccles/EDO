@@ -92,6 +92,7 @@ import org.dce.ed.mining.GoogleSheetsBackend;
 import org.dce.ed.mining.ProspectorLoadResult;
 import org.dce.ed.mining.ProspectorLogBackend;
 import org.dce.ed.mining.ProspectorLogBackendFactory;
+import org.dce.ed.mining.ProspectorLogRegression;
 import org.dce.ed.mining.ProspectorLogRow;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.tts.PollyTtsCached;
@@ -2187,7 +2188,7 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 
 		List<Row> rows = new ArrayList<>();
 
-		double totalTons = estimateTotalTons(content);
+		String commander = OverlayPreferences.getMiningLogCommanderName();
 		for (MaterialProportion mp : event.getMaterials()) {
 			if (mp == null || mp.getName() == null) {
 				continue;
@@ -2197,7 +2198,8 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 			String shownName = toUiName(rawName);
 
 			int avg = lookupAvgSell(rawName, shownName);
-			double tons = (mp.getProportion() / 100.0) * totalTons;
+			double tons = ProspectorLogRegression.estimateTonsForMaterialPercent(
+				mp.getProportion(), commander, lastGoodSpreadsheetRows);
 			double value = tons * avg;
 
 			rows.add(new Row(shownName, mp.getProportion(), avg, tons, value));
@@ -2207,7 +2209,7 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 			String shownName = toUiName(motherlode);
 
 			int avg = lookupAvgSell(motherlode, shownName);
-			double tons = OverlayPreferences.getMiningEstimateTonsCore();
+			double tons = ProspectorLogRegression.estimateCoreTons(commander, lastGoodSpreadsheetRows);
 			double value = tons * avg;
 
 			rows.add(new Row(shownName + " (Core)", Double.NaN, avg, tons, value, true));
@@ -2391,20 +2393,6 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 		return matcher.lookupAvgSell(journalName, uiName);
 	}
 
-
-	 private static double estimateTotalTons(String content) {
-		 if (content == null) {
-			 return OverlayPreferences.getMiningEstimateTonsMedium();
-		 }
-		 String c = content.trim().toLowerCase(Locale.US);
-		 if (c.equals("high")) {
-			 return OverlayPreferences.getMiningEstimateTonsHigh();
-		 }
-		 if (c.equals("low")) {
-			 return OverlayPreferences.getMiningEstimateTonsLow();
-		 }
-		 return OverlayPreferences.getMiningEstimateTonsMedium();
-	 }
 
 	 private static final class Row {
 		 private final String name;
@@ -4632,58 +4620,8 @@ String getName() {
 		}
 
 		private static Regression computeRegression(List<ProspectorLogRow> rows) {
-			if (rows == null || rows.size() < 2) {
-				return new Regression(false, 0.0, 0.0, 0, Double.NaN);
-			}
-			int n = 0;
-			double sumX = 0.0;
-			double sumY = 0.0;
-			double sumXX = 0.0;
-			double sumXY = 0.0;
-			for (ProspectorLogRow r : rows) {
-				if (r == null) {
-					continue;
-				}
-				double x = r.getPercent();
-				double y = r.getDifference();
-				if (Double.isNaN(x) || Double.isNaN(y)) {
-					continue;
-				}
-				n++;
-				sumX += x;
-				sumY += y;
-				sumXX += x * x;
-				sumXY += x * y;
-			}
-			if (n < 2) {
-				return new Regression(false, 0.0, 0.0, n, Double.NaN);
-			}
-			double denom = n * sumXX - sumX * sumX;
-			if (Math.abs(denom) < 1e-9) {
-				return new Regression(false, 0.0, 0.0, n, Double.NaN);
-			}
-			double slope = (n * sumXY - sumX * sumY) / denom;
-			double intercept = (sumY - slope * sumX) / n;
-			double yMean = sumY / n;
-			double ssTot = 0.0;
-			double ssRes = 0.0;
-			for (ProspectorLogRow r : rows) {
-				if (r == null) {
-					continue;
-				}
-				double x = r.getPercent();
-				double y = r.getDifference();
-				if (Double.isNaN(x) || Double.isNaN(y)) {
-					continue;
-				}
-				double yHat = slope * x + intercept;
-				double d = y - yMean;
-				ssTot += d * d;
-				double e = y - yHat;
-				ssRes += e * e;
-			}
-			double rSquared = (ssTot < 1e-12) ? 1.0 : (1.0 - ssRes / ssTot);
-			return new Regression(true, slope, intercept, n, rSquared);
+			ProspectorLogRegression.Result r = ProspectorLogRegression.compute(rows);
+			return new Regression(r.valid, r.slope, r.intercept, r.n, r.rSquared);
 		}
 
 		private static final class Regression {

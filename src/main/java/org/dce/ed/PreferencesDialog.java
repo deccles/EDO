@@ -116,12 +116,6 @@ public class PreferencesDialog extends JDialog {
 	private JRadioButton miningLowLimpetReminderPercentRadio;
 	private JSpinner miningLowLimpetReminderPercentSpinner;
 
-	// Mining tab: value estimation (used by Mining tab only)
-	private JSpinner miningTonsLowSpinner;
-	private JSpinner miningTonsMediumSpinner;
-	private JSpinner miningTonsHighSpinner;
-	private JSpinner miningTonsCoreSpinner;
-
 	private JCheckBox overlayTabRouteVisibleCheckBox;
 	private JCheckBox overlayTabSystemVisibleCheckBox;
 	private JCheckBox overlayTabBiologyVisibleCheckBox;
@@ -960,66 +954,6 @@ public class PreferencesDialog extends JDialog {
 		limpetWrap.add(limpetPanel, BorderLayout.WEST);
 
 		outer.add(limpetWrap);
-		outer.add(Box.createVerticalStrut(10));
-
-		// -----------------------------------------------------------------
-		// Value estimation box
-		// -----------------------------------------------------------------
-		JPanel estBox = new JPanel(new GridBagLayout());
-		estBox.setOpaque(false);
-		estBox.setBorder(
-				BorderFactory.createTitledBorder(
-						BorderFactory.createLineBorder(EdoUi.Internal.GRAY_120),
-						"Mining tab value estimation (tons)"
-						)
-				);
-
-
-		GridBagConstraints ebc = new GridBagConstraints();
-		ebc.gridx = 0;
-		ebc.gridy = 0;
-		ebc.anchor = GridBagConstraints.WEST;
-		ebc.insets = new Insets(6, 8, 6, 8);
-
-		JLabel lowTonsLabel = new JLabel("Content=Low total tons:");
-		estBox.add(lowTonsLabel, ebc);
-
-		ebc.gridx = 1;
-		miningTonsLowSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsLow(), 0.0, 200.0, 1.0));
-		((JSpinner.DefaultEditor) miningTonsLowSpinner.getEditor()).getTextField().setColumns(6);
-		estBox.add(miningTonsLowSpinner, ebc);
-
-		ebc.gridx = 0;
-		ebc.gridy++;
-		JLabel medTonsLabel = new JLabel("Content=Medium total tons:");
-		estBox.add(medTonsLabel, ebc);
-
-		ebc.gridx = 1;
-		miningTonsMediumSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsMedium(), 0.0, 200.0, 1.0));
-		((JSpinner.DefaultEditor) miningTonsMediumSpinner.getEditor()).getTextField().setColumns(6);
-		estBox.add(miningTonsMediumSpinner, ebc);
-
-		ebc.gridx = 0;
-		ebc.gridy++;
-		JLabel highTonsLabel = new JLabel("Content=High total tons:");
-		estBox.add(highTonsLabel, ebc);
-
-		ebc.gridx = 1;
-		miningTonsHighSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsHigh(), 0.0, 200.0, 1.0));
-		((JSpinner.DefaultEditor) miningTonsHighSpinner.getEditor()).getTextField().setColumns(6);
-		estBox.add(miningTonsHighSpinner, ebc);
-
-		ebc.gridx = 0;
-		ebc.gridy++;
-		JLabel coreTonsLabel = new JLabel("Core total tons:");
-		estBox.add(coreTonsLabel, ebc);
-
-		ebc.gridx = 1;
-		miningTonsCoreSpinner = new JSpinner(new SpinnerNumberModel(OverlayPreferences.getMiningEstimateTonsCore(), 0.0, 200.0, 1.0));
-		((JSpinner.DefaultEditor) miningTonsCoreSpinner.getEditor()).getTextField().setColumns(6);
-		estBox.add(miningTonsCoreSpinner, ebc);
-
-		outer.add(estBox);
 
 		panel.add(outer, BorderLayout.NORTH);
 		return panel;
@@ -1606,39 +1540,6 @@ public class PreferencesDialog extends JDialog {
             try {
                 int v = ((Number) miningLowLimpetReminderPercentSpinner.getValue()).intValue();
                 OverlayPreferences.setMiningLowLimpetReminderThresholdPercent(v);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-
-        if (miningTonsLowSpinner != null) {
-            try {
-                double v = ((Number) miningTonsLowSpinner.getValue()).doubleValue();
-                OverlayPreferences.setMiningEstimateTonsLow(v);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-        if (miningTonsMediumSpinner != null) {
-            try {
-                double v = ((Number) miningTonsMediumSpinner.getValue()).doubleValue();
-                OverlayPreferences.setMiningEstimateTonsMedium(v);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-        if (miningTonsHighSpinner != null) {
-            try {
-                double v = ((Number) miningTonsHighSpinner.getValue()).doubleValue();
-                OverlayPreferences.setMiningEstimateTonsHigh(v);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-        if (miningTonsCoreSpinner != null) {
-            try {
-                double v = ((Number) miningTonsCoreSpinner.getValue()).doubleValue();
-                OverlayPreferences.setMiningEstimateTonsCore(v);
             } catch (Exception e) {
                 // ignore
             }
