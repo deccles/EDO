@@ -2,6 +2,7 @@ package org.dce.ed;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Window;
 import java.awt.event.WindowAdapter;
@@ -28,8 +29,6 @@ import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.OverlayBackgroundPanel;
-import org.dce.ed.OverlayPreferences.MiningLimpetReminderMode;
-import org.dce.ed.logreader.event.LoadoutEvent;
 
 /**
  * Decorated window (min/max/resize) where ONLY the background fades.
@@ -87,6 +86,8 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 		setLayout(new BorderLayout());
+		// Match OverlayFrame so mode switches do not fight different minimum sizes.
+		setMinimumSize(new Dimension(260, 200));
 
 		this.menuBar = createMenuBar();
 		setJMenuBar(menuBar);
@@ -227,7 +228,6 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 			String right = lastRightStatusText != null ? lastRightStatusText.trim() : "";
 			String full = right + (limpet ? (right.isEmpty() ? "" : "  |  ") + "Low Limpet Warning!" : "");
 			statusLabel.setText(full);
-			// Highlight low-limpet warning in red, otherwise use the normal menu foreground.
 			if (limpet) {
 				statusLabel.setForeground(EdoUi.User.ERROR);
 			} else {
@@ -243,10 +243,6 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		}
 	}
 
-	private static Color opaquePlate(Color c) {
-		return new Color(c.getRed(), c.getGreen(), c.getBlue(), 255);
-	}
-
 	private boolean shouldShowLowLimpetWarning() {
 		EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
 		boolean docked = tp != null && tp.isCurrentlyDocked();
@@ -254,6 +250,10 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 				docked,
 				lastCargoSnapshot
 		);
+	}
+
+	private static Color opaquePlate(Color c) {
+		return new Color(c.getRed(), c.getGreen(), c.getBlue(), 255);
 	}
 
 	private JMenuBar createMenuBar() {

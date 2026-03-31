@@ -1,6 +1,7 @@
 package org.dce.ed;
 
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.IllegalComponentStateException;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -227,13 +228,13 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     	java.awt.Window fromWindow = this.passThroughMode ? passThroughFrame : decoratedDialog;
     	java.awt.Window toWindow = enablePassThrough ? passThroughFrame : decoratedDialog;
 
-    	// Prefer getLocationOnScreen()+size over getBounds(): on Windows/HiDPI they can disagree slightly,
-    	// which shows up as a vertical gap vs the screen edge after mode switch.
-    	Rectangle outerResolved = captureWindowOuterRect(fromWindow);
-    	if (outerResolved == null) {
-    		outerResolved = new Rectangle(fromWindow.getBounds());
+    	Rectangle captured = captureWindowOuterRect(fromWindow);
+    	if (captured == null) {
+    		captured = new Rectangle(fromWindow.getBounds());
     	}
-    	final Rectangle outerBounds = outerResolved;
+    	// Always take outer size from the window we are leaving. Merging with a stored size could keep an
+    	// inflated getBounds() from the other host (pass-through often reports slightly larger on Windows).
+    	final Rectangle outerBounds = new Rectangle(captured);
     	final Point sourceWindowTopLeft = new Point(outerBounds.x, outerBounds.y);
 
     	// Horizontal: align shared content. Vertical: pin to source window top (content-based dy is unreliable
@@ -261,7 +262,7 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     		passThroughFrame.toFront();
     		passThroughFrame.requestFocus();
     		fromWindow.setVisible(false);
-    		scheduleStabilizeWindowBounds(passThroughFrame, outerBounds, contentScreenBefore, sourceWindowTopLeft, true);
+    		scheduleStabilizeWindowBounds(passThroughFrame, outerBounds, contentScreenBefore, sourceWindowTopLeft);
     	} else {
     		// Prepare decorated dialog fully while hidden, then show once.
     		passThroughFrame.setPassThroughEnabled(false);
@@ -279,10 +280,14 @@ public class EliteDangerousOverlay implements NativeKeyListener {
                 decoratedDialog.toFront();
                 decoratedDialog.requestFocus();
                 fromWindow.setVisible(false);
-                stabilizeOverlayWindowBounds(decoratedDialog, outerBounds, contentScreenBefore, sourceWindowTopLeft);
+                Rectangle applied = stabilizeOverlayWindowBounds(
+                        decoratedDialog, outerBounds, contentScreenBefore, sourceWindowTopLeft);
                 javax.swing.SwingUtilities.invokeLater(() -> {
-                	stabilizeOverlayWindowBounds(decoratedDialog, outerBounds, contentScreenBefore, sourceWindowTopLeft);
-                	decoratedDialog.hideTransitionShield();
+                    reapplyFixedOverlayBounds(decoratedDialog, applied);
+                    Rectangle afterContent = matchContentPanelSizeOnce(decoratedDialog, contentScreenBefore);
+                    Rectangle finalRect = afterContent != null ? afterContent : applied;
+                    reapplyFixedOverlayBounds(decoratedDialog, finalRect);
+                    decoratedDialog.hideTransitionShield();
                 });
     		});
     	}
@@ -300,8 +305,9 @@ public class EliteDangerousOverlay implements NativeKeyListener {
     }
 
     /**
-     * Outer window bounds in screen coordinates. Prefer this over {@link Window#getBounds()} alone when
-     * swapping hosts, to reduce HiDPI / Win32 inconsistencies between modes.
+     * Outer window bounds for mode switching. Position from {@link Window#getLocationOnScreen()}; width and
+     * height from {@link Window#getBounds()} so they match {@link Window#setBounds(int, int, int, int)} semantics
+     * (getWidth/getHeight can disagree slightly on some Windows DPI paths).
      */
     private static Rectangle captureWindowOuterRect(Window w) {
         if (w == null || !w.isShowing()) {
@@ -309,7 +315,8 @@ public class EliteDangerousOverlay implements NativeKeyListener {
         }
         try {
             Point loc = w.getLocationOnScreen();
-            return new Rectangle(loc.x, loc.y, w.getWidth(), w.getHeight());
+            Rectangle b = w.getBounds();
+            return new Rectangle(loc.x, loc.y, b.width, b.height);
         } catch (IllegalComponentStateException e) {
             return null;
         }
@@ -336,57 +343,128 @@ public class EliteDangerousOverlay implements NativeKeyListener {
      * matches its pre-switch horizontal position; vertical position uses {@code sourceWindowTopLeft.y} so
      * the window stays flush with the same screen edge as before the switch (decorated vs undecorated chrome
      * makes content-based vertical delta unreliable).
+     *
+     * @return the final bounds applied (caller may re-apply the same rectangle later without recomputing).
      */
-    private void stabilizeOverlayWindowBounds(
+    private Rectangle stabilizeOverlayWindowBounds(
             Window w,
             Rectangle outerBounds,
             Rectangle contentBefore,
             Point sourceWindowTopLeft) {
         if (w == null || outerBounds == null) {
-            return;
+            return null;
         }
         w.setBounds(outerBounds);
-        if (contentBefore == null || contentPanel == null) {
+        int x = outerBounds.x;
+        int y = outerBounds.y;
+        if (contentBefore != null && contentPanel != null) {
+            try {
+                if (contentPanel.isShowing()) {
+                    Point p = contentPanel.getLocationOnScreen();
+                    int dx = contentBefore.x - p.x;
+                    x = w.getX() + dx;
+                    y = (sourceWindowTopLeft != null) ? sourceWindowTopLeft.y : w.getY() + (contentBefore.y - p.y);
+                }
+            } catch (IllegalComponentStateException ignored) {
+            }
+        }
+        int targetWidth = outerBounds.width;
+        int targetHeight = outerBounds.height;
+        w.setBounds(x, y, targetWidth, targetHeight);
+        Rectangle applied = new Rectangle(x, y, targetWidth, targetHeight);
+        enforceIntendedOuterSize(w, applied.x, applied.y, applied.width, applied.height);
+        return applied;
+    }
+
+    /** Re-applies a fixed rectangle without remeasuring content (avoids feedback loops / visible pulsing). */
+    private static void reapplyFixedOverlayBounds(Window w, Rectangle r) {
+        if (w == null || r == null) {
             return;
         }
+        w.setBounds(r);
+        enforceIntendedOuterSize(w, r.x, r.y, r.width, r.height);
+    }
+
+    /**
+     * After reparenting, the two hosts reserve different space for chrome (OS title/menu vs custom title bar).
+     * Matching outer bounds alone therefore leaves the shared content panel a different size. This runs
+     * <strong>once</strong> per toggle: grow or shrink the outer window so the content panel matches the
+     * pre-switch width/height from {@code contentBefore}. Not repeated on timers (avoids pulsing).
+     */
+    private Rectangle matchContentPanelSizeOnce(Window w, Rectangle contentBefore) {
+        if (w == null || contentBefore == null || contentPanel == null) {
+            return null;
+        }
+        if (!contentPanel.isShowing()) {
+            return null;
+        }
         try {
-            if (!contentPanel.isShowing()) {
-                return;
+            int cw = contentPanel.getWidth();
+            int ch = contentPanel.getHeight();
+            if (cw < 2 || ch < 2) {
+                return null;
             }
-            Point p = contentPanel.getLocationOnScreen();
-            int dx = contentBefore.x - p.x;
-            int x = w.getX() + dx;
-            int y = (sourceWindowTopLeft != null) ? sourceWindowTopLeft.y : w.getY() + (contentBefore.y - p.y);
-            w.setLocation(x, y);
-            w.setSize(outerBounds.width, outerBounds.height);
-        } catch (IllegalComponentStateException ignored) {
+            int dw = contentBefore.width - cw;
+            int dh = contentBefore.height - ch;
+            if (dw == 0 && dh == 0) {
+                return new Rectangle(w.getBounds());
+            }
+            int nw = w.getWidth() + dw;
+            int nh = w.getHeight() + dh;
+            Dimension min = w.getMinimumSize();
+            nw = Math.max(nw, min.width);
+            nh = Math.max(nh, min.height);
+            int x = w.getX();
+            int y = w.getY();
+            w.setBounds(x, y, nw, nh);
+            enforceIntendedOuterSize(w, x, y, nw, nh);
+            return new Rectangle(x, y, nw, nh);
+        } catch (IllegalComponentStateException e) {
+            return new Rectangle(w.getBounds());
         }
     }
 
     /**
-     * Pass-through host: title bar height and Win32 layered-window layout often settle after the first paint.
-     * Extra delayed retries fix residual vertical drift when switching from the decorated window.
+     * Re-applies size if the window manager reported a larger frame than we requested (common for layered
+     * undecorated windows on Windows).
+     */
+    private static void enforceIntendedOuterSize(Window w, int x, int y, int width, int height) {
+        if (w == null) {
+            return;
+        }
+        if (w.getWidth() != width || w.getHeight() != height) {
+            w.setBounds(x, y, width, height);
+        }
+    }
+
+    /**
+     * One compute pass on the EDT, then optional fixed re-applies (same pixels) for layered-window settle.
+     * Retries must not call {@link #stabilizeOverlayWindowBounds} again — remeasuring content after each
+     * {@code setBounds} caused width/height feedback and visible pulsing.
      */
     private void scheduleStabilizeWindowBounds(
             Window w,
             Rectangle outerBounds,
             Rectangle contentBefore,
-            Point sourceWindowTopLeft,
-            boolean delayedRetries) {
-        Runnable once = () -> stabilizeOverlayWindowBounds(w, outerBounds, contentBefore, sourceWindowTopLeft);
-        SwingUtilities.invokeLater(once);
-        SwingUtilities.invokeLater(() -> SwingUtilities.invokeLater(once));
-        if (!delayedRetries) {
-            return;
-        }
-        for (int ms : new int[] { 50, 150, 300, 500 }) {
-            Timer t = new Timer(ms, e -> {
-                ((Timer) e.getSource()).stop();
-                once.run();
+            Point sourceWindowTopLeft) {
+        SwingUtilities.invokeLater(() -> {
+            Rectangle applied = stabilizeOverlayWindowBounds(w, outerBounds, contentBefore, sourceWindowTopLeft);
+            if (applied == null) {
+                return;
+            }
+            SwingUtilities.invokeLater(() -> {
+                reapplyFixedOverlayBounds(w, applied);
+                Rectangle afterContent = matchContentPanelSizeOnce(w, contentBefore);
+                Rectangle finalRect = afterContent != null ? afterContent : applied;
+                reapplyFixedOverlayBounds(w, finalRect);
+                Timer t = new Timer(120, e -> {
+                    ((Timer) e.getSource()).stop();
+                    reapplyFixedOverlayBounds(w, finalRect);
+                });
+                t.setRepeats(false);
+                t.start();
             });
-            t.setRepeats(false);
-            t.start();
-        }
+        });
     }
 
     //
