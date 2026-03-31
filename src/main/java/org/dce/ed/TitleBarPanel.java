@@ -18,11 +18,9 @@ import java.awt.geom.AffineTransform;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import org.dce.ed.ui.EdoUi;
-import org.dce.ed.util.GithubMsiUpdater;
 
 /**
  * Custom "title bar" for the undecorated overlay frame.
@@ -39,8 +37,6 @@ public class TitleBarPanel extends JPanel {
     private final CloseButton closeButton;
     private final SettingsButton settingsButton;
     private final JLabel titleLabel;
-    private final JLabel leftStatusLabel;
-    private final JLabel rightStatusLabel;
 
     public TitleBarPanel(OverlayFrame frame, String title) {
         this.frame = frame;
@@ -100,45 +96,12 @@ public class TitleBarPanel extends JPanel {
             }
         });
 
-        leftStatusLabel = new JLabel("");
-        leftStatusLabel.setForeground(Color.RED);
-        leftStatusLabel.setFont(leftStatusLabel.getFont().deriveFont(Font.BOLD, 13f));
-        leftStatusLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
-        leftStatusLabel.setHorizontalAlignment(SwingConstants.LEFT);
-        leftStatusLabel.setVisible(false);
-
-        rightStatusLabel = new JLabel("");
-        rightStatusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
-        rightStatusLabel.setFont(rightStatusLabel.getFont().deriveFont(Font.PLAIN, 13f));
-        rightStatusLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
-        rightStatusLabel.setHorizontalAlignment(SwingConstants.RIGHT);
-        rightStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-        rightStatusLabel.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (!SwingUtilities.isLeftMouseButton(e)) {
-                    return;
-                }
-                String txt = rightStatusLabel.getText();
-                if (txt != null && txt.contains("New version")) {
-                    GithubMsiUpdater.checkAndUpdate(frame);
-                }
-            }
-        });
-
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
         rightPanel.setOpaque(false);
         rightPanel.add(settingsButton);
         rightPanel.add(closeButton);
 
         add(leftPanel, BorderLayout.WEST);
-        JPanel centerPanel = new JPanel(new BorderLayout());
-        centerPanel.setOpaque(false);
-        centerPanel.add(leftStatusLabel, BorderLayout.WEST);
-        centerPanel.add(rightStatusLabel, BorderLayout.EAST);
-
-        // Put status in the center so it can expand.
-        add(centerPanel, BorderLayout.CENTER);
         add(rightPanel, BorderLayout.EAST);
 
         // Tall enough that nothing gets clipped even with DPI scaling
@@ -234,42 +197,6 @@ public class TitleBarPanel extends JPanel {
 
         final String finalText = text;
         SwingUtilities.invokeLater(() -> titleLabel.setText(finalText));
-    }
-
-    public void setLeftStatusText(String text) {
-        if (text == null) {
-            text = "";
-        }
-
-        final String finalText = text;
-        SwingUtilities.invokeLater(() -> {
-            leftStatusLabel.setText(finalText);
-            leftStatusLabel.setVisible(!finalText.isBlank());
-        });
-    }
-
-    public void setRightStatusText(String text) {
-        if (text == null) {
-            text = "";
-        }
-
-        final String finalText = text;
-        Runnable r = () -> {
-            rightStatusLabel.setText(finalText);
-            if (!finalText.isBlank() && finalText.contains("New version")) {
-                rightStatusLabel.setForeground(EdoUi.User.SUCCESS);
-                rightStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            } else {
-                rightStatusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
-                rightStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-            }
-        };
-
-        if (SwingUtilities.isEventDispatchThread()) {
-            r.run();
-        } else {
-            SwingUtilities.invokeLater(r);
-        }
     }
 
     /**

@@ -28,6 +28,9 @@ import java.util.prefs.Preferences;
 
 import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JMenuBar;
+import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.Timer;
@@ -102,11 +105,11 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private HWND hwnd;
     private boolean passThroughEnabled;
 
- // For top title-bar status (passthrough overlay mode)
     private volatile CargoMonitor.Snapshot lastCargoSnapshot;
 
-    
     private final TitleBarPanel titleBar;
+    private final JMenuBar passThroughMenuBar;
+    private final JLabel passThroughStatusLabel;
     private final OverlayContentPanel contentPanel;
 	private final OverlayBackgroundPanel backgroundPanel;
 
@@ -145,15 +148,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         this.rightStatusListener = listener;
     }
 
-    private void setRightStatusTextOnTitleBar(String text) {
-        if (titleBar != null) titleBar.setRightStatusText(text);
-    }
-
     private void publishRightStatusText(String text) {
-        // Always update the overlay frame title bar.
-        setRightStatusTextOnTitleBar(text);
-
-        // Optionally also mirror into whichever other window is active.
         Consumer<String> extra = rightStatusListener;
         if (extra != null) {
             try {
@@ -161,6 +156,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
             } catch (Exception ignored) {
             }
         }
+        refreshPassThroughUnifiedStatus();
     }
 
     public void refreshRightStatusDisplay() {
@@ -272,9 +268,17 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
             }
         });
 
-        // Custom title bar (draggable, close button)
+        // Custom title bar (draggable, close button) + same menu/status strip as decorated mode
         titleBar = new TitleBarPanel(this, "Elite Dangerous Overlay");
-        add(titleBar, BorderLayout.NORTH);
+        OverlayMenuStatusBar.Result passThroughMenu = OverlayMenuStatusBar.build(this, EliteDangerousOverlay.clientKey);
+        passThroughMenuBar = passThroughMenu.menuBar;
+        passThroughStatusLabel = passThroughMenu.statusLabel;
+
+        JPanel northStack = new JPanel(new BorderLayout(0, 0));
+        northStack.setOpaque(false);
+        northStack.add(titleBar, BorderLayout.NORTH);
+        northStack.add(passThroughMenuBar, BorderLayout.SOUTH);
+        backgroundPanel.add(northStack, BorderLayout.NORTH);
 
         // Cross-cutting error reporting hook (used by prospector pipeline).
         ExceptionReporting.setReporter(this::reportExceptionToTitleBar);
@@ -333,7 +337,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
                 : context;
         exceptionLeftStatusText = "ERROR: " + safeContext;
         exceptionLeftStatusUntil = Instant.now().plusSeconds(10);
-        updateLeftStatusLabel();
+        refreshPassThroughUnifiedStatus();
     }
 
     private void installSessionPersistence() {
@@ -714,36 +718,64 @@ private void installExoCreditsTracker() {
 private void installLowLimpetStatusUpdater() {
     EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
     if (tp != null) {
-        tp.addDockedStateListener(docked -> updateLeftStatusLabel());
-        tp.addLoadoutChangeListener(this::updateLeftStatusLabel);
+        tp.addDockedStateListener(docked -> refreshPassThroughUnifiedStatus());
+        tp.addLoadoutChangeListener(this::refreshPassThroughUnifiedStatus);
     }
 
     CargoMonitor.getInstance().addListener(snap -> {
         lastCargoSnapshot = snap;
-        updateLeftStatusLabel();
+        refreshPassThroughUnifiedStatus();
     });
 
     lastCargoSnapshot = CargoMonitor.getInstance().getSnapshot();
-    updateLeftStatusLabel();
+    refreshPassThroughUnifiedStatus();
 }
 
-private void updateLeftStatusLabel() {
-    if (titleBar == null) {
+/**
+ * Same combined status string as {@link DecoratedOverlayDialog#updateStatusLabel()}, plus transient
+ * exception text when {@link #reportExceptionToTitleBar} is active.
+ */
+private void refreshPassThroughUnifiedStatus() {
+    if (passThroughStatusLabel == null) {
         return;
     }
 
     Runnable r = () -> {
         EliteOverlayTabbedPane tp = (contentPanel == null) ? null : contentPanel.getTabbedPane();
         boolean docked = tp != null && tp.isCurrentlyDocked();
-        boolean show = EliteOverlayTabbedPane.shouldShowLowLimpetWarning(
-                docked,
-                lastCargoSnapshot
-        );
+        boolean limpet = EliteOverlayTabbedPane.shouldShowLowLimpetWarning(docked, lastCargoSnapshot);
         Instant until = exceptionLeftStatusUntil;
         String err = exceptionLeftStatusText;
         boolean showErr = err != null && until != null && Instant.now().isBefore(until);
 
-        titleBar.setLeftStatusText(showErr ? err : (show ? "Low Limpet Warning!" : ""));
+        String right = getRightStatusText();
+        if (right != null) {
+            right = right.trim();
+        } else {
+            right = "";
+        }
+
+        String full;
+        if (showErr) {
+            full = err + (right.isEmpty() ? "" : "  |  " + right);
+        } else if (limpet) {
+            full = right + (right.isEmpty() ? "" : "  |  ") + "Low Limpet Warning!";
+        } else {
+            full = right;
+        }
+
+        passThroughStatusLabel.setText(full);
+        if (limpet || showErr) {
+            passThroughStatusLabel.setForeground(EdoUi.User.ERROR);
+            passThroughStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+        } else if (full.contains("New version")) {
+            passThroughStatusLabel.setForeground(EdoUi.User.SUCCESS);
+            passThroughStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        } else {
+            passThroughStatusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
+            passThroughStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+        }
+        passThroughStatusLabel.setVisible(!full.isEmpty());
     };
 
     if (SwingUtilities.isEventDispatchThread()) {
@@ -851,6 +883,10 @@ private void updateLeftStatusLabel() {
         UIManager.put("TitlePane.background", EdoUi.User.BACKGROUND);
         UIManager.put("TitlePane.foreground", EdoUi.User.MAIN_TEXT);
 
+        if (passThroughMenuBar != null) {
+            OverlayMenuStatusBar.refreshMenuBarTheme(passThroughMenuBar);
+        }
+
         if (contentPanel != null) {
             contentPanel.rebuildTabbedPane();
             installSessionPersistence();
@@ -913,6 +949,10 @@ private void updateLeftStatusLabel() {
             contentPanel.applyOverlayBackground(bg, treatAsTransparent);
         }
 
+        if (passThroughMenuBar != null) {
+            OverlayMenuStatusBar.refreshMenuBarTheme(passThroughMenuBar);
+        }
+
         revalidate();
         repaint();
     }
@@ -933,7 +973,7 @@ private void updateLeftStatusLabel() {
         }
 
         User32.INSTANCE.SetWindowLong(hwnd, WinUser.GWL_EXSTYLE, exStyle);
-        
+
         if (enable) {
             getRootPane().setBorder(null);
         } else {
@@ -1237,6 +1277,7 @@ private void updateLeftStatusLabel() {
             crosshairOverlay.setCrosshairPoint(null);
             crosshairOverlay.setVisible(false);
         }
+
     }
 
     private static class CrosshairOverlay extends JComponent {

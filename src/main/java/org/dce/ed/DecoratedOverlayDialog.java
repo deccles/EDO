@@ -2,24 +2,19 @@ package org.dce.ed;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Window;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
-import javax.swing.Box;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JMenu;
 import javax.swing.JMenuBar;
-import javax.swing.JMenuItem;
-import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
-import javax.swing.border.EmptyBorder;
-
 import org.dce.ed.util.AppIconUtil;
 
 import com.sun.jna.Library;
@@ -42,10 +37,6 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	private static final long serialVersionUID = 1L;
 
 	private static final String APP_ICON_RESOURCE = "/org/dce/ed/edsm/locate_icon.png";
-
-	// Menu bar uses Colors → Background; popups stay slightly darker for contrast.
-	private static final Color MENU_POPUP_BG = EdoUi.Internal.DARK_14;
-	private static final Color MENU_POPUP_FG = EdoUi.Internal.MENU_FG_LIGHT;
 
 	private final OverlayContentPanel contentPanel;
 	private final String clientKey;
@@ -230,8 +221,13 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 			statusLabel.setText(full);
 			if (limpet) {
 				statusLabel.setForeground(EdoUi.User.ERROR);
+				statusLabel.setCursor(Cursor.getDefaultCursor());
+			} else if (full.contains("New version")) {
+				statusLabel.setForeground(EdoUi.User.SUCCESS);
+				statusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			} else {
 				statusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
+				statusLabel.setCursor(Cursor.getDefaultCursor());
 			}
 			statusLabel.setVisible(!full.isEmpty());
 		};
@@ -252,113 +248,10 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		);
 	}
 
-	private static Color opaquePlate(Color c) {
-		return new Color(c.getRed(), c.getGreen(), c.getBlue(), 255);
-	}
-
 	private JMenuBar createMenuBar() {
-		JMenuBar bar = new JMenuBar();
-		bar.setOpaque(true);
-		bar.setBackground(opaquePlate(EdoUi.User.BACKGROUND));
-		bar.setBorder(new EmptyBorder(2, 6, 2, 6));
-
-		JMenu overlayMenu = new JMenu("Menu");
-		overlayMenu.setForeground(EdoUi.Internal.MENU_ACCENT);
-
-		JMenuItem prefs = new JMenuItem("Preferences...");
-		styleMenuItem(prefs);
-		prefs.addActionListener(e -> {
-			PreferencesDialog dialog = new PreferencesDialog(this, clientKey);
-			dialog.setVisible(true);
-		});
-		overlayMenu.add(prefs);
-
-		JMenu toolsMenu = new JMenu("Tools");
-		toolsMenu.setForeground(EdoUi.Internal.MENU_ACCENT);
-		addSortedToolsMenuItems(toolsMenu);
-		overlayMenu.add(toolsMenu);
-
-		JPopupMenu popup = overlayMenu.getPopupMenu();
-		popup.setOpaque(true);
-		popup.setBackground(MENU_POPUP_BG);
-		popup.setBorder(new EmptyBorder(4, 4, 4, 4));
-
-		statusLabel = new JLabel("");
-		statusLabel.setOpaque(false);
-		statusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
-		statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
-
-		bar.add(Box.createHorizontalGlue());
-		bar.add(statusLabel);
-		bar.add(Box.createHorizontalStrut(10));
-		bar.add(overlayMenu);
-		return bar;
-	}
-
-	private void styleMenuItem(JMenuItem item) {
-		item.setOpaque(true);
-		item.setBackground(MENU_POPUP_BG);
-		item.setForeground(MENU_POPUP_FG);
-	}
-
-	private void styleMenuTree(JMenuItem node) {
-		if (node == null) {
-			return;
-		}
-		styleMenuItem(node);
-		if (node instanceof JMenu) {
-			JMenu sub = (JMenu) node;
-			JPopupMenu subPopup = sub.getPopupMenu();
-			if (subPopup != null) {
-				subPopup.setOpaque(true);
-				subPopup.setBackground(MENU_POPUP_BG);
-			}
-			for (int i = 0; i < sub.getItemCount(); i++) {
-				styleMenuTree(sub.getItem(i));
-			}
-		}
-	}
-
-	private void addSortedToolsMenuItems(JMenu toolsMenu) {
-		JMenuItem backfill = new JMenuItem(OverlayToolsLaunchers.backfillMiningRunTimesMenuLabel());
-		styleMenuItem(backfill);
-		backfill.addActionListener(e -> OverlayToolsLaunchers.backfillMiningRunTimes(this));
-		toolsMenu.add(backfill);
-
-		JMenuItem updates = new JMenuItem("Check for Updates");
-		styleMenuItem(updates);
-		updates.addActionListener(e -> OverlayToolsLaunchers.checkForUpdates(this));
-		toolsMenu.add(updates);
-
-		JMenuItem exoDbg = new JMenuItem("Exo Prediction Debugger");
-		styleMenuItem(exoDbg);
-		exoDbg.addActionListener(e -> OverlayToolsLaunchers.launchExoPredictionDebugger(this));
-		toolsMenu.add(exoDbg);
-
-		JMenuItem fixRuns = new JMenuItem("Fix mining runs in Google Sheet");
-		styleMenuItem(fixRuns);
-		fixRuns.addActionListener(e -> OverlayToolsLaunchers.fixMiningRunsInGoogleSheet(this));
-		toolsMenu.add(fixRuns);
-
-		JMenuItem journal = new JMenuItem("Journal Monitor");
-		styleMenuItem(journal);
-		journal.addActionListener(e -> OverlayToolsLaunchers.launchJournalMonitor(this));
-		toolsMenu.add(journal);
-
-		JMenuItem edsm = new JMenuItem("Run EDSM Query Tools");
-		styleMenuItem(edsm);
-		edsm.addActionListener(e -> OverlayToolsLaunchers.launchEdsmQueryTools(this));
-		toolsMenu.add(edsm);
-
-		JMenuItem sqlite = new JMenuItem("SQLite cache browser…");
-		styleMenuItem(sqlite);
-		sqlite.addActionListener(e -> OverlayToolsLaunchers.launchSqliteCacheBrowser(this));
-		toolsMenu.add(sqlite);
-
-		JMenuItem console = new JMenuItem("Show console");
-		styleMenuItem(console);
-		console.addActionListener(e -> OverlayToolsLaunchers.showConsole());
-		toolsMenu.add(console);
+		OverlayMenuStatusBar.Result r = OverlayMenuStatusBar.build(this, clientKey);
+		statusLabel = r.statusLabel;
+		return r.menuBar;
 	}
 
 	private void applyDarkTitleBarIfSupported() {
@@ -423,18 +316,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	 * the accent must be pushed again into the menu bar.
 	 */
 	private void refreshMenuBarAccentColors() {
-		if (menuBar == null) {
-			return;
-		}
-		menuBar.setBackground(opaquePlate(EdoUi.User.BACKGROUND));
-		Color accent = EdoUi.Internal.MENU_ACCENT;
-		menuBar.setForeground(accent);
-		for (int i = 0; i < menuBar.getMenuCount(); i++) {
-			JMenu m = menuBar.getMenu(i);
-			if (m != null) {
-				m.setForeground(accent);
-			}
-		}
+		OverlayMenuStatusBar.refreshMenuBarTheme(menuBar);
 	}
 
 	@Override
@@ -496,25 +378,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		getContentPane().setBackground(base);
 
 		if (menuBar != null) {
-			menuBar.setOpaque(true);
 			refreshMenuBarAccentColors();
-
-			for (int i = 0; i < menuBar.getMenuCount(); i++) {
-				JMenu m = menuBar.getMenu(i);
-				if (m != null) {
-
-					JPopupMenu popup = m.getPopupMenu();
-					if (popup != null) {
-						popup.setOpaque(true);
-						popup.setBackground(MENU_POPUP_BG);
-					}
-
-					int itemCount = m.getItemCount();
-					for (int j = 0; j < itemCount; j++) {
-						styleMenuTree(m.getItem(j));
-					}
-				}
-			}
 		}
 
 		revalidate();

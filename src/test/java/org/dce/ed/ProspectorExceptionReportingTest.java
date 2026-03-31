@@ -3,8 +3,6 @@ package org.dce.ed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.Field;
-import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -21,12 +19,13 @@ class ProspectorExceptionReportingTest {
 
     @Test
     void prospectorUpdateException_surfacesInTitleBarLeftStatus() throws Exception {
-        TitleBarPanel titleBar = new TitleBarPanel(null, "Test");
+        JLabel errorLabel = new JLabel();
 
         CountDownLatch reported = new CountDownLatch(1);
         ExceptionReporting.setReporter((t, context) -> {
-            // Mimic the real UI behavior: "red alert" in the left status label.
-            titleBar.setLeftStatusText("ERROR: " + context);
+            // Mimic the real UI behavior: transient ERROR text merged into the unified status strip.
+            errorLabel.setText("ERROR: " + context);
+            errorLabel.setVisible(true);
             reported.countDown();
         });
 
@@ -53,19 +52,13 @@ class ProspectorExceptionReportingTest {
 
             assertTrue(reported.await(2, TimeUnit.SECONDS), "Expected exception reporter to be invoked");
 
-            // Flush pending EDT updates from TitleBarPanel#setLeftStatusText.
             SwingUtilities.invokeAndWait(() -> {
             });
 
-            Field f = TitleBarPanel.class.getDeclaredField("leftStatusLabel");
-            f.setAccessible(true);
-            JLabel label = (JLabel) f.get(titleBar);
-
-            assertTrue(label.isVisible(), "ERROR label should be visible");
-            assertEquals("ERROR: Prospector update", label.getText());
+            assertTrue(errorLabel.isVisible(), "ERROR label should be visible");
+            assertEquals("ERROR: Prospector update", errorLabel.getText());
         } finally {
             ExceptionReporting.setReporter((t, context) -> {});
         }
     }
 }
-
