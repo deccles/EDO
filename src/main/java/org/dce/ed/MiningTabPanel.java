@@ -3136,6 +3136,29 @@ String getName() {
 				this.row = row;
 			}
 		}
+
+		/** Screen-space trend segment + regression stats for hover tooltip. */
+		private static final class TrendHoverState {
+			final String commanderLabel;
+			final Regression reg;
+			final int sx1;
+			final int sy1;
+			final int sx2;
+			final int sy2;
+			final int anchorX;
+			final int anchorY;
+
+			TrendHoverState(String commanderLabel, Regression reg, int sx1, int sy1, int sx2, int sy2, int anchorX, int anchorY) {
+				this.commanderLabel = commanderLabel != null ? commanderLabel : "";
+				this.reg = reg;
+				this.sx1 = sx1;
+				this.sy1 = sy1;
+				this.sx2 = sx2;
+				this.sy2 = sy2;
+				this.anchorX = anchorX;
+				this.anchorY = anchorY;
+			}
+		}
 		private static final int PAD_LEFT = 42;
 		private static final int PAD_BOTTOM = 32;
 		private static final int PAD_RIGHT = 16;
@@ -3159,6 +3182,8 @@ String getName() {
 		private String selectedCommander = "";
 		private List<PointInfo> pointInfos = new ArrayList<>();
 		private ProspectorLogRow hoverRow;
+		/** When set, mouse is near a trend line (and not on a point). */
+		private TrendHoverState hoverTrend;
 		private List<RunSummary> runSummaries = new ArrayList<>();
 		private final javax.swing.Timer hoverPollTimer;
 		private final javax.swing.Timer asteroidSpinTimer;
@@ -4186,45 +4211,18 @@ String getName() {
 					if (!reg.valid) {
 						continue;
 					}
-					double x1 = minPct;
-					double x2 = maxPct;
-					double y1 = reg.slope * x1 + reg.intercept;
-					double y2 = reg.slope * x2 + reg.intercept;
-					// Clamp to plotted Y range
-					y1 = Math.max(minAct, Math.min(maxAct, y1));
-					y2 = Math.max(minAct, Math.min(maxAct, y2));
-					double nx1 = (maxPct > minPct) ? (x1 - minPct) / (maxPct - minPct) : 0.5;
-					double nx2 = (maxPct > minPct) ? (x2 - minPct) / (maxPct - minPct) : 0.5;
-					double ny1 = (maxAct > minAct) ? 1.0 - (y1 - minAct) / (maxAct - minAct) : 0.5;
-					double ny2 = (maxAct > minAct) ? 1.0 - (y2 - minAct) / (maxAct - minAct) : 0.5;
-					int sx1 = plotX + (int) (nx1 * plotW);
-					int sy1 = plotY + (int) (ny1 * plotH);
-					int sx2 = plotX + (int) (nx2 * plotW);
-					int sy2 = plotY + (int) (ny2 * plotH);
+					int[] seg = screenEndpointsForTrend(geom, reg);
 					Color c = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
 					g2.setColor(c);
-					g2.drawLine(sx1, sy1, sx2, sy2);
+					g2.drawLine(seg[0], seg[1], seg[2], seg[3]);
 				}
 			} else if (filterMode == FilterMode.BY_COMMANDER && selectedCommander != null && !selectedCommander.isEmpty()) {
 				Regression reg = computeRegression(toPlot);
 				if (reg.valid) {
-					double x1 = minPct;
-					double x2 = maxPct;
-					double y1 = reg.slope * x1 + reg.intercept;
-					double y2 = reg.slope * x2 + reg.intercept;
-					y1 = Math.max(minAct, Math.min(maxAct, y1));
-					y2 = Math.max(minAct, Math.min(maxAct, y2));
-					double nx1 = (maxPct > minPct) ? (x1 - minPct) / (maxPct - minPct) : 0.5;
-					double nx2 = (maxPct > minPct) ? (x2 - minPct) / (maxPct - minPct) : 0.5;
-					double ny1 = (maxAct > minAct) ? 1.0 - (y1 - minAct) / (maxAct - minAct) : 0.5;
-					double ny2 = (maxAct > minAct) ? 1.0 - (y2 - minAct) / (maxAct - minAct) : 0.5;
-					int sx1 = plotX + (int) (nx1 * plotW);
-					int sy1 = plotY + (int) (ny1 * plotH);
-					int sx2 = plotX + (int) (nx2 * plotW);
-					int sy2 = plotY + (int) (ny2 * plotH);
+					int[] seg = screenEndpointsForTrend(geom, reg);
 					Color c = commanderColor.getOrDefault(selectedCommander, EdoUi.User.VALUABLE);
 					g2.setColor(c);
-					g2.drawLine(sx1, sy1, sx2, sy2);
+					g2.drawLine(seg[0], seg[1], seg[2], seg[3]);
 				}
 			}
 			g2.setStroke(oldStroke);
@@ -4402,36 +4400,93 @@ String getName() {
 					}
 				}
 			}
+
+			// Trend line hover (same style as point tooltip); points take priority over trend
+			if (hoverRow == null && hoverTrend != null && hoverTrend.reg != null && hoverTrend.reg.valid) {
+				Regression tr = hoverTrend.reg;
+				String cmdLabel = hoverTrend.commanderLabel.isEmpty() ? "-" : hoverTrend.commanderLabel;
+				String eq = String.format(Locale.US, "tons = %.8f * pct %+.6f", tr.slope, tr.intercept);
+				String nR2 = String.format(Locale.US, "n=%d", tr.n);
+				if (!Double.isNaN(tr.rSquared)) {
+					nR2 += String.format(Locale.US, "  R²=%.4f", tr.rSquared);
+				}
+				String range = String.format(Locale.US, "pct axis: %.3f … %.3f", minPct, maxPct);
+				String copy = String.format(Locale.US, "slope=%.10f  intercept=%.10f", tr.slope, tr.intercept);
+				String[] tlines = { "Trend (linear fit)", "Commander: " + cmdLabel, eq, nR2, range, copy };
+				g2.setFont(g2.getFont().deriveFont(10f));
+				FontMetrics tfm = g2.getFontMetrics();
+				int maxWidth = 0;
+				for (String s : tlines) {
+					maxWidth = Math.max(maxWidth, tfm.stringWidth(s));
+				}
+				int tlineHeight = tfm.getHeight();
+				int boxPadding = 4;
+				int boxW = maxWidth + boxPadding * 2;
+				int boxH = tlineHeight * tlines.length + boxPadding * 2;
+				int ax = hoverTrend.anchorX;
+				int ay = hoverTrend.anchorY;
+				int boxX = ax + 10;
+				int boxY = ay - boxH - 8;
+				if (boxX + boxW > plotX + plotW) {
+					boxX = plotX + plotW - boxW - 2;
+				}
+				if (boxX < plotX) {
+					boxX = plotX + 2;
+				}
+				if (boxY < plotY) {
+					boxY = ay + 10;
+				}
+				if (boxY + boxH > plotY + plotH) {
+					boxY = plotY + plotH - boxH - 2;
+				}
+				g2.setColor(new Color(0, 0, 0, 200));
+				g2.fillRect(boxX, boxY, boxW, boxH);
+				g2.setColor(EdoUi.User.MAIN_TEXT);
+				g2.drawRect(boxX, boxY, boxW, boxH);
+				int textX = boxX + boxPadding;
+				int textY = boxY + boxPadding + tfm.getAscent();
+				for (String s : tlines) {
+					g2.drawString(s, textX, textY);
+					textY += tlineHeight;
+				}
+			}
 			drawGunPlatforms(g2, geom, toPlot, commanderColor);
 			drawGatherAnimationOverlay(g2);
 			g2.dispose();
 		}
 
 		private void handleMouseMoved(int mx, int my) {
-			if (pointInfos.isEmpty()) {
+			PlotGeom geom = computePlotGeom();
+			List<ProspectorLogRow> toPlot = filteredRows();
+			if (geom == null || toPlot.isEmpty()) {
 				hoverRow = null;
+				hoverTrend = null;
 				repaint();
 				return;
 			}
 			final double hitRadius = 6.0;
 			PointInfo closest = null;
 			double closestDistSq = hitRadius * hitRadius;
-			for (PointInfo pi : pointInfos) {
-				double dx = mx - pi.x;
-				double dy = my - pi.y;
-				double distSq = dx * dx + dy * dy;
-				if (distSq <= closestDistSq) {
-					closestDistSq = distSq;
-					closest = pi;
+			if (!pointInfos.isEmpty()) {
+				for (PointInfo pi : pointInfos) {
+					double dx = mx - pi.x;
+					double dy = my - pi.y;
+					double distSq = dx * dx + dy * dy;
+					if (distSq <= closestDistSq) {
+						closestDistSq = distSq;
+						closest = pi;
+					}
 				}
 			}
 			if (closest != null) {
 				hoverRow = closest.row;
+				hoverTrend = null;
 				repaint();
-			} else {
-				hoverRow = null;
-				repaint();
+				return;
 			}
+			hoverRow = null;
+			hoverTrend = findTrendHover(mx, my, geom, toPlot);
+			repaint();
 		}
 
 		private void pollGlobalMouse() {
@@ -4456,8 +4511,9 @@ String getName() {
 				getHeight()
 			);
 			if (!bounds.contains(mouseOnScreen)) {
-				if (hoverRow != null) {
+				if (hoverRow != null || hoverTrend != null) {
 					hoverRow = null;
+					hoverTrend = null;
 					repaint();
 				}
 				return;
@@ -4467,9 +4523,117 @@ String getName() {
 			handleMouseMoved(mx, my);
 		}
 
+		/** Same endpoints as drawn in {@link #paintComponent(Graphics)} (Y clamped to plot range). */
+		private static int[] screenEndpointsForTrend(PlotGeom geom, Regression reg) {
+			double minPct = geom.minPct;
+			double maxPct = geom.maxPct;
+			double minAct = geom.minAct;
+			double maxAct = geom.maxAct;
+			int plotX = geom.plotX;
+			int plotY = geom.plotY;
+			int plotW = geom.plotW;
+			int plotH = geom.plotH;
+			double x1 = minPct;
+			double x2 = maxPct;
+			double y1 = reg.slope * x1 + reg.intercept;
+			double y2 = reg.slope * x2 + reg.intercept;
+			y1 = Math.max(minAct, Math.min(maxAct, y1));
+			y2 = Math.max(minAct, Math.min(maxAct, y2));
+			double nx1 = (maxPct > minPct) ? (x1 - minPct) / (maxPct - minPct) : 0.5;
+			double nx2 = (maxPct > minPct) ? (x2 - minPct) / (maxPct - minPct) : 0.5;
+			double ny1 = (maxAct > minAct) ? 1.0 - (y1 - minAct) / (maxAct - minAct) : 0.5;
+			double ny2 = (maxAct > minAct) ? 1.0 - (y2 - minAct) / (maxAct - minAct) : 0.5;
+			int sx1 = plotX + (int) (nx1 * plotW);
+			int sy1 = plotY + (int) (ny1 * plotH);
+			int sx2 = plotX + (int) (nx2 * plotW);
+			int sy2 = plotY + (int) (ny2 * plotH);
+			return new int[] { sx1, sy1, sx2, sy2 };
+		}
+
+		private static double pointToSegmentDistSq(double px, double py, double x1, double y1, double x2, double y2) {
+			double vx = x2 - x1;
+			double vy = y2 - y1;
+			double wx = px - x1;
+			double wy = py - y1;
+			double c2 = vx * vx + vy * vy;
+			double t = c2 < 1e-12 ? 0.0 : (vx * wx + vy * wy) / c2;
+			if (t <= 0.0) {
+				double dx = px - x1;
+				double dy = py - y1;
+				return dx * dx + dy * dy;
+			}
+			if (t >= 1.0) {
+				double dx = px - x2;
+				double dy = py - y2;
+				return dx * dx + dy * dy;
+			}
+			double projX = x1 + t * vx;
+			double projY = y1 + t * vy;
+			double dx = px - projX;
+			double dy = py - projY;
+			return dx * dx + dy * dy;
+		}
+
+		private static void closestPointOnSegment(double px, double py, double x1, double y1, double x2, double y2, double[] outXY) {
+			double vx = x2 - x1;
+			double vy = y2 - y1;
+			double wx = px - x1;
+			double wy = py - y1;
+			double c2 = vx * vx + vy * vy;
+			double t = c2 < 1e-12 ? 0.0 : (vx * wx + vy * wy) / c2;
+			t = Math.max(0.0, Math.min(1.0, t));
+			outXY[0] = x1 + t * vx;
+			outXY[1] = y1 + t * vy;
+		}
+
+		private TrendHoverState findTrendHover(int mx, int my, PlotGeom geom, List<ProspectorLogRow> toPlot) {
+			final double hitTol = 10.0;
+			final double hitTolSq = hitTol * hitTol;
+			double bestDistSq = Double.POSITIVE_INFINITY;
+			TrendHoverState best = null;
+			double[] proj = new double[2];
+			if (filterMode == FilterMode.ALL) {
+				List<String> commanderOrder = toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList();
+				for (String cmdr : commanderOrder) {
+					List<ProspectorLogRow> rowsForCommander = toPlot.stream()
+						.filter(r -> java.util.Objects.equals(cmdr, r.getCommanderName()))
+						.toList();
+					Regression reg = computeRegression(rowsForCommander);
+					if (!reg.valid) {
+						continue;
+					}
+					int[] seg = screenEndpointsForTrend(geom, reg);
+					double dsq = pointToSegmentDistSq(mx, my, seg[0], seg[1], seg[2], seg[3]);
+					if (dsq < bestDistSq) {
+						closestPointOnSegment(mx, my, seg[0], seg[1], seg[2], seg[3], proj);
+						String label = (cmdr == null || cmdr.isEmpty()) ? "-" : cmdr;
+						best = new TrendHoverState(label, reg, seg[0], seg[1], seg[2], seg[3],
+							(int) Math.round(proj[0]), (int) Math.round(proj[1]));
+						bestDistSq = dsq;
+					}
+				}
+			} else if (filterMode == FilterMode.BY_COMMANDER && selectedCommander != null && !selectedCommander.isEmpty()) {
+				Regression reg = computeRegression(toPlot);
+				if (reg.valid) {
+					int[] seg = screenEndpointsForTrend(geom, reg);
+					double dsq = pointToSegmentDistSq(mx, my, seg[0], seg[1], seg[2], seg[3]);
+					if (dsq < bestDistSq) {
+						closestPointOnSegment(mx, my, seg[0], seg[1], seg[2], seg[3], proj);
+						best = new TrendHoverState(selectedCommander, reg, seg[0], seg[1], seg[2], seg[3],
+							(int) Math.round(proj[0]), (int) Math.round(proj[1]));
+						bestDistSq = dsq;
+					}
+				}
+			}
+			if (best != null && bestDistSq <= hitTolSq) {
+				return best;
+			}
+			return null;
+		}
+
 		private static Regression computeRegression(List<ProspectorLogRow> rows) {
 			if (rows == null || rows.size() < 2) {
-				return new Regression(false, 0.0, 0.0);
+				return new Regression(false, 0.0, 0.0, 0, Double.NaN);
 			}
 			int n = 0;
 			double sumX = 0.0;
@@ -4492,26 +4656,49 @@ String getName() {
 				sumXY += x * y;
 			}
 			if (n < 2) {
-				return new Regression(false, 0.0, 0.0);
+				return new Regression(false, 0.0, 0.0, n, Double.NaN);
 			}
 			double denom = n * sumXX - sumX * sumX;
 			if (Math.abs(denom) < 1e-9) {
-				return new Regression(false, 0.0, 0.0);
+				return new Regression(false, 0.0, 0.0, n, Double.NaN);
 			}
 			double slope = (n * sumXY - sumX * sumY) / denom;
 			double intercept = (sumY - slope * sumX) / n;
-			return new Regression(true, slope, intercept);
+			double yMean = sumY / n;
+			double ssTot = 0.0;
+			double ssRes = 0.0;
+			for (ProspectorLogRow r : rows) {
+				if (r == null) {
+					continue;
+				}
+				double x = r.getPercent();
+				double y = r.getDifference();
+				if (Double.isNaN(x) || Double.isNaN(y)) {
+					continue;
+				}
+				double yHat = slope * x + intercept;
+				double d = y - yMean;
+				ssTot += d * d;
+				double e = y - yHat;
+				ssRes += e * e;
+			}
+			double rSquared = (ssTot < 1e-12) ? 1.0 : (1.0 - ssRes / ssTot);
+			return new Regression(true, slope, intercept, n, rSquared);
 		}
 
 		private static final class Regression {
 			final boolean valid;
 			final double slope;
 			final double intercept;
+			final int n;
+			final double rSquared;
 
-			Regression(boolean valid, double slope, double intercept) {
+			Regression(boolean valid, double slope, double intercept, int n, double rSquared) {
 				this.valid = valid;
 				this.slope = slope;
 				this.intercept = intercept;
+				this.n = n;
+				this.rSquared = rSquared;
 			}
 		}
 	}
