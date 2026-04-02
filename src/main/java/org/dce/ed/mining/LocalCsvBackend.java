@@ -249,27 +249,60 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                 String header = reader.readLine();
                 if (header == null) return;
                 lines.add(header);
-                ZoneId zone = ZoneId.systemDefault();
-                String endStr = endTime.atZone(zone).format(TIMESTAMP_FORMAT);
-                String cmdr = commander != null ? commander.trim() : "";
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    lines.add(line);
+                }
+            }
+            ZoneId zone = ZoneId.systemDefault();
+            String endStr = endTime.atZone(zone).format(TIMESTAMP_FORMAT);
+            String cmdr = commander != null ? commander.trim() : "";
+            int updateLineIndex = -1;
+            for (int li = 1; li < lines.size(); li++) {
+                String line = lines.get(li);
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+                List<String> cols = parseCsvLine(line);
+                if (cols.size() < 14) {
+                    continue;
+                }
+                int rowRun = parseInt(cols.get(0).trim(), 0);
+                String rowCommander = cols.get(11).trim();
+                String rowStart = cols.get(12).trim();
+                String asteroid = cols.get(1).trim();
+                if (rowRun == run && rowCommander.equals(cmdr) && !rowStart.isEmpty()
+                        && "A".equalsIgnoreCase(asteroid)) {
+                    updateLineIndex = li;
+                    break;
+                }
+            }
+            if (updateLineIndex < 0) {
+                for (int li = 1; li < lines.size(); li++) {
+                    String line = lines.get(li);
                     if (line.trim().isEmpty()) {
-                        lines.add(line);
                         continue;
                     }
                     List<String> cols = parseCsvLine(line);
-                    if (cols.size() >= 14) {
-                        int rowRun = parseInt(cols.get(0).trim(), 0);
-                        String rowCommander = cols.get(11).trim();
-                        String rowStart = cols.get(12).trim();
-                        if (rowRun == run && rowCommander.equals(cmdr) && !rowStart.isEmpty()) {
-                            cols.set(13, endStr);
-                            line = buildCsvLine14(cols);
-                        }
+                    if (cols.size() < 14) {
+                        continue;
                     }
-                    lines.add(line);
+                    int rowRun = parseInt(cols.get(0).trim(), 0);
+                    String rowCommander = cols.get(11).trim();
+                    String rowStart = cols.get(12).trim();
+                    if (rowRun == run && rowCommander.equals(cmdr) && !rowStart.isEmpty()) {
+                        updateLineIndex = li;
+                        break;
+                    }
                 }
+            }
+            if (updateLineIndex >= 0) {
+                List<String> cols = parseCsvLine(lines.get(updateLineIndex));
+                while (cols.size() < 14) {
+                    cols.add("");
+                }
+                cols.set(13, endStr);
+                lines.set(updateLineIndex, buildCsvLine14(cols));
             }
             try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING)) {
                 for (String l : lines) {

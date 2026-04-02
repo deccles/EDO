@@ -1,6 +1,7 @@
 package org.dce.ed.mining;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -13,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Unit tests for {@link LocalCsvBackend}: write then read, missing file, empty file.
+ * Unit tests for {@link LocalCsvBackend}: write then read, missing file, empty file,
+ * and {@linkplain LocalCsvBackend#updateRunEndTime(String, int, Instant) run end} placement (must match
+ * {@link ProspectorMiningLogPolicy} / Google Sheets behavior: one canonical row only).
  */
 class LocalCsvBackendTest {
 
@@ -70,5 +73,29 @@ class LocalCsvBackendTest {
         assertEquals(2, loaded.get(2).getRun());
         assertEquals("", loaded.get(0).getFullBodyName());
         assertEquals("cmdr1@ex.com", loaded.get(0).getCommanderName());
+    }
+
+    @Test
+    void updateRunEndTime_writesEndOnlyOnCanonicalRow_preferAsteroidA(@TempDir Path dir) throws Exception {
+        Path csv = dir.resolve("prospector.csv");
+        String header = "run,asteroid,timestamp,material,percent,before amount,after amount,actual,core,body,duds,commander,start time,end time\n";
+        // Two materials on A (both with start) + B without start — only first A row should get end time.
+        String rA1 = "19,A,4/2/2026 15:19:04,Bromellite,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,4/2/2026 15:19:04,\n";
+        String rA2 = "19,A,4/2/2026 15:19:10,Tritium,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,4/2/2026 15:19:04,\n";
+        String rB = "19,B,4/2/2026 15:25:00,Bromellite,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,,\n";
+        Files.writeString(csv, header + rA1 + rA2 + rB, StandardCharsets.UTF_8);
+
+        LocalCsvBackend backend = new LocalCsvBackend(csv);
+        Instant end = Instant.parse("2026-04-02T20:40:27Z");
+        backend.updateRunEndTime("Villunus", 19, end);
+
+        List<ProspectorLogRow> loaded = backend.loadRows();
+        assertEquals(3, loaded.size());
+        assertEquals("Bromellite", loaded.get(0).getMaterial());
+        assertEquals("Tritium", loaded.get(1).getMaterial());
+        assertEquals("Bromellite", loaded.get(2).getMaterial());
+        assertEquals(end, loaded.get(0).getRunEndTime());
+        assertNull(loaded.get(1).getRunEndTime());
+        assertNull(loaded.get(2).getRunEndTime());
     }
 }

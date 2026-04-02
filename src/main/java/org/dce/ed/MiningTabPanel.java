@@ -36,11 +36,11 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
-import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -90,6 +90,7 @@ import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.mining.GoogleSheetsBackend;
 import org.dce.ed.mining.ProspectorLoadResult;
+import org.dce.ed.mining.MiningRunNumberResolver;
 import org.dce.ed.mining.ProspectorLogBackend;
 import org.dce.ed.mining.ProspectorLogBackendFactory;
 import org.dce.ed.mining.ProspectorLogRegression;
@@ -1445,9 +1446,14 @@ return EdoUi.User.MAIN_TEXT;
 			String coreType = "";
 			int duds = dudCounter;
 
-			// First batch of this run: set run start on every row we write (all are same run/asteroid A)
-			// so every sheet row for this run (e.g. 24 A Platinum, 24 A Painite) has it; otherwise
-			// only the first material would get it and the row the user sees may be the one without.
+			// Run start time (sheet column "Start time"):
+			// - Only the *first successful cargo batch of this run* sets runStart on each row in that batch
+			//   (e.g. both 24 A Platinum and 24 A Painite get the same undock/start instant) so no material line
+			//   is missing the trip start in the UI. Later asteroids in the same run use null here.
+			// - Google Sheets upserts must NOT overwrite a non-blank start cell; that policy lives in
+			//   ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow (+ unit tests).
+			// - Run *end* is written only on dock, on a single canonical row; see ProspectorMiningLogPolicy /
+			//   MiningRunNumberResolver class docs and mining package tests.
 			Instant runStart = !wroteRowsThisRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
 			Instant runEnd = null;
 			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
@@ -1620,95 +1626,16 @@ return EdoUi.User.MAIN_TEXT;
 	}
 
 	/**
-	 * Compute the run number for a new set of log rows, based on existing sheet data.
-	 * Runs are grouped by commander and (system, body); we continue the last run for this
-	 * commander if the most recent row has the same system/body, otherwise we start a new run.
-	 * @param forceNewRun if true, always return lastRunForCommander+1 (e.g. after FSD away and back).
+	 * Compute the next run number for new log rows. Invariants and edge cases are documented and tested on
+	 * {@link MiningRunNumberResolver}; do not duplicate that logic here.
 	 */
 	private int computeRunNumberForWrite(String commander, String system, String body, boolean forceNewRun) {
-		int lastRunGlobal = 0;
-		int lastRunForCommander = 0;
-		int lastRunForCommanderAtLocation = 0;
-		int activeRunForCommander = 0;
-		Instant latestTsForCommander = null;
-		Instant latestTsForCommanderAtLocation = null;
 		try {
 			List<ProspectorLogRow> existing = prospectorBackendSupplier.get().loadRows();
-			if (existing != null && !existing.isEmpty()) {
-				for (ProspectorLogRow r : existing) {
-					if (r == null) {
-						continue;
-					}
-					int rRun = r.getRun();
-					if (rRun > lastRunGlobal) {
-						lastRunGlobal = rRun;
-					}
-					String rowCommander = r.getCommanderName();
-					if (rowCommander == null || rowCommander.isBlank()) {
-						rowCommander = "-";
-					}
-					if (!rowCommander.equals(commander)) {
-						continue;
-					}
-					if (rRun > lastRunForCommander) {
-						lastRunForCommander = rRun;
-					}
-					Instant ts = r.getTimestamp();
-					if (ts == null) {
-						continue;
-					}
-					// Track any in-progress run for this commander (start set, no end).
-					if (r.getRunStartTime() != null && r.getRunEndTime() == null) {
-						if (rRun > activeRunForCommander) {
-							activeRunForCommander = rRun;
-						}
-					}
-					// Determine row system/body for comparison by splitting fullBodyName.
-					String fb = r.getFullBodyName();
-					String rowSystem = "";
-					String rowBody = "";
-					if (fb != null && !fb.isBlank()) {
-						String[] parts = fb.split(">");
-						if (parts.length == 2) {
-							rowSystem = parts[0].trim();
-							rowBody = parts[1].trim();
-						} else {
-							rowBody = fb.trim();
-						}
-					}
-					boolean sameLocation = java.util.Objects.equals(rowSystem, system) && java.util.Objects.equals(rowBody, body);
-					if (sameLocation) {
-						if (latestTsForCommanderAtLocation == null || ts.isAfter(latestTsForCommanderAtLocation)) {
-							latestTsForCommanderAtLocation = ts;
-							lastRunForCommanderAtLocation = rRun;
-						}
-					}
-					if (latestTsForCommander == null || ts.isAfter(latestTsForCommander)) {
-						latestTsForCommander = ts;
-					}
-				}
-			}
+			return MiningRunNumberResolver.compute(commander, system, body, forceNewRun, existing);
 		} catch (Exception ignored) {
-			// fall through to defaults below
-		}
-		if (lastRunGlobal == 0) {
 			return 1;
 		}
-		// If this commander already has an active run (start set, no end), always continue it.
-		// This guarantees at most one active run per commander at a time, regardless of location.
-		if (activeRunForCommander > 0) {
-			return activeRunForCommander;
-		}
-		// After leaving the ring and returning, start a new run.
-		if (forceNewRun) {
-			return lastRunGlobal + 1;
-		}
-		// If we have any rows for this commander at this exact system/body, continue that run.
-		if (lastRunForCommanderAtLocation > 0) {
-			return lastRunForCommanderAtLocation;
-		}
-		// Otherwise start a new globally unique run.
-		return lastRunGlobal + 1;
 	}
 
 	/** Format asteroid index as A, B, ..., Z, AA, AB, ... (package-private for tests). */
@@ -1963,7 +1890,7 @@ return EdoUi.User.MAIN_TEXT;
 			// Add 0.5 only when we have material, to approximate amount still in refinery (avoids showing 0.5 "before" when inventory was 0)
 			double beforeAdjusted = Double.isNaN(beforeTons) ? 0.0 : (beforeTons > 0 ? beforeTons + 0.5 : beforeTons);
 			double afterAdjusted = Double.isNaN(afterTons) ? 0.0 : (afterTons > 0 ? afterTons + 0.5 : afterTons);
-			// First batch of this run: set run start on every row so all run/asteroid rows have it.
+			// Same run-start semantics as the cargo-driven path (see comment above new ProspectorLogRow in onCargoChanged).
 			Instant runStart = !wroteRowsThisRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
 			Instant runEnd = null;
 			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
@@ -3954,7 +3881,10 @@ String getName() {
 			if (geom != null) {
 				syncGunPlatformCenters(pcs, geom);
 				String ac = animCommander != null ? animCommander : "";
-				if (!ac.isEmpty()) {
+				// Do not snap X to home here — that teleports the platform to the idle slot at every gather
+				// start and ignores its current position (e.g. still near the last rock or partway home).
+				// Motion is always via lerp in tickGatherAnimation from whatever X we have now.
+				if (!ac.isEmpty() && !gunPlatformCenterXByCommander.containsKey(ac)) {
 					gunPlatformCenterXByCommander.put(ac, homeXForCommander(geom, ac, pcs));
 				}
 				gatherLaserFrom = new Point(0, 0);

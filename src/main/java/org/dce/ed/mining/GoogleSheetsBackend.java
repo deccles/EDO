@@ -31,7 +31,14 @@ import com.google.api.services.sheets.v4.model.ValueRange;
 
 /**
  * Prospector log backend that writes to and reads from a Google Sheet.
- * Column order: Run, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Body, Commander (A:I).
+ * <p>
+ * Layout is the 15-column model (run through end time). Invariants for <strong>run start on upsert</strong> and
+ * <strong>which row receives run end on dock</strong> are centralized in {@link ProspectorMiningLogPolicy} with
+ * unit tests — keep those rules out of ad-hoc conditionals here.
+ * </p>
+ * <p>
+ * Run <em>number</em> selection for new rows is {@link MiningRunNumberResolver} (also tested).
+ * </p>
  * Uses OAuth 2.0; requires client ID/secret and refresh token (see GoogleSheetsAuth and setup instructions).
  */
 public final class GoogleSheetsBackend implements ProspectorLogBackend {
@@ -253,13 +260,10 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         row.set(11, body);
                         row.set(12, commander);
                         ensureRowSize(row, 15);
-                        // Never overwrite an existing start time: cargo upserts on a "continued" run still send
-                        // a fresh lastUndockTime and would corrupt the canonical run start.
-                        if (r.getRunStartTime() != null) {
-                            String existingStart = row.size() > 13 ? str(row.get(13)) : "";
-                            if (existingStart.isBlank()) {
-                                row.set(13, r.getRunStartTime().atZone(zone).format(fmt));
-                            }
+                        // See ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow (+ tests).
+                        String existingStart = row.size() > 13 ? str(row.get(13)) : "";
+                        if (ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow(existingStart, r.getRunStartTime())) {
+                            row.set(13, r.getRunStartTime().atZone(zone).format(fmt));
                         }
                         if (r.getRunEndTime() != null) {
                             row.set(14, r.getRunEndTime().atZone(zone).format(fmt));
@@ -583,24 +587,12 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
             String endStr = endTime.atZone(zone).format(fmt);
             String cmdr = commander != null ? commander : "";
-            // Every row for this run+commander must get an end time. Otherwise loadRows still sees
-            // (start set, end empty) on sibling materials / later asteroids and computeRunNumberForWrite
-            // treats the run as still open forever (matches LocalCsvBackend behavior).
-            boolean any = false;
-            for (int i = 1; i < values.size(); i++) {
-                List<Object> row = values.get(i);
-                if (row == null || row.size() < 13) {
-                    continue;
-                }
-                int rowRun = parseInt(row.get(0), 0);
-                String rowCommander = str(row.get(12));
-                if (rowRun == run && java.util.Objects.equals(rowCommander, cmdr)) {
-                    ensureRowSize(row, 15);
-                    row.set(14, endStr);
-                    any = true;
-                }
-            }
-            if (any) {
+            // Single canonical row only — see ProspectorMiningLogPolicy.findDataRowIndexForCanonicalRunEnd (+ tests).
+            int rowIndex = ProspectorMiningLogPolicy.findDataRowIndexForCanonicalRunEnd(values, run, cmdr);
+            if (rowIndex >= 0) {
+                List<Object> row = values.get(rowIndex);
+                ensureRowSize(row, 15);
+                row.set(14, endStr);
                 ValueRange bodyRange = new ValueRange().setValues(values);
                 sheets.spreadsheets().values()
                         .update(spreadsheetId, rangeA1O(), bodyRange)
