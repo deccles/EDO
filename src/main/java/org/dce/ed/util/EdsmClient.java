@@ -610,6 +610,13 @@ public class EdsmClient {
                 }
             }
 
+            if (remote.terraformingState != null && !remote.terraformingState.isBlank()) {
+                info.setTerraformState(remote.terraformingState);
+            }
+            if (remote.earthMasses != null && remote.earthMasses.doubleValue() > 0) {
+                info.setMassEm(remote.earthMasses);
+            }
+
             // Parent star: parents[].Star contains the star id (same numeric id as in the list)
             if ((info.getParentStar() == null || info.getParentStar().isEmpty())
                     && remote.parents != null
@@ -638,6 +645,18 @@ public class EdsmClient {
                             || pc.contains("ammonia world")
                             || tf.contains("terraformable");
             info.setHighValue(highValue);
+            if (highValue) {
+                long cr = ExplorationBodyCredits.achievableExplorationTotalCredits(info);
+                if (cr > 0) {
+                    info.setValuableBodyExplorationCredits(Long.valueOf(cr));
+                } else {
+                    Long fb = ValuableBodyExplorationEstimate.estimateCredits(remote.subType, remote.terraformingState);
+                    info.setValuableBodyExplorationCredits(fb != null ? fb
+                            : Long.valueOf(ValuableBodyExplorationEstimate.TERRAFORMABLE_FALLBACK));
+                }
+            } else {
+                info.setValuableBodyExplorationCredits(null);
+            }
 
             if (remote.type != null && remote.type.equalsIgnoreCase("Star")) {
                 info.setRingSummaryLines(null);

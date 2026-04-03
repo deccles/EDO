@@ -23,6 +23,8 @@ import org.dce.ed.state.BodyInfo;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.util.RingSummaryFormatter;
+import org.dce.ed.util.ExplorationBodyCredits;
+import org.dce.ed.util.ValuableBodyExplorationEstimate;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -294,6 +296,9 @@ public final class SystemCache implements SystemStore {
             info.setHasBio(cb.hasBio);
             info.setHasGeo(cb.hasGeo);
             info.setHighValue(cb.highValue);
+            info.setValuableBodyExplorationCredits(cb.valuableBodyExplorationCredits);
+            info.setTerraformState(cb.terraformState);
+            info.setMassEm(cb.massEm);
             info.setAtmoOrType(cb.atmoOrType);
             info.setPlanetClass(cb.planetClass);
             info.setAtmosphere(cb.atmosphere);
@@ -505,6 +510,13 @@ public final class SystemCache implements SystemStore {
                 }
             }
 
+            if (remote.terraformingState != null && !remote.terraformingState.isBlank()) {
+                info.setTerraformState(remote.terraformingState);
+            }
+            if (remote.earthMasses != null && remote.earthMasses.doubleValue() > 0) {
+                info.setMassEm(remote.earthMasses);
+            }
+
             if ((info.getDistanceLs() <= 0 || Double.isNaN(info.getDistanceLs()))
                     && remote.distanceToArrival != null) {
                 info.setDistanceLs(remote.distanceToArrival);
@@ -537,6 +549,18 @@ public final class SystemCache implements SystemStore {
                             || pc.contains("ammonia world")
                             || tf.contains("terraformable");
             info.setHighValue(highValue);
+            if (highValue) {
+                long cr = ExplorationBodyCredits.achievableExplorationTotalCredits(info);
+                if (cr > 0) {
+                    info.setValuableBodyExplorationCredits(Long.valueOf(cr));
+                } else {
+                    Long fb = ValuableBodyExplorationEstimate.estimateCredits(remote.subType, remote.terraformingState);
+                    info.setValuableBodyExplorationCredits(fb != null ? fb
+                            : Long.valueOf(ValuableBodyExplorationEstimate.TERRAFORMABLE_FALLBACK));
+                }
+            } else {
+                info.setValuableBodyExplorationCredits(null);
+            }
 
             if (remote.type != null && remote.type.equalsIgnoreCase("Star")) {
                 info.setRingSummaryLines(null);
@@ -628,6 +652,9 @@ public final class SystemCache implements SystemStore {
             cb.hasBio = b.hasBio();
             cb.hasGeo = b.hasGeo();
             cb.highValue = b.isHighValue();
+            cb.valuableBodyExplorationCredits = b.getValuableBodyExplorationCredits();
+            cb.terraformState = b.getTerraformState();
+            cb.massEm = b.getMassEm();
             cb.atmoOrType = b.getAtmoOrType();
             cb.planetClass = b.getPlanetClass();
             cb.atmosphere = b.getAtmosphere();
@@ -700,6 +727,15 @@ public final class SystemCache implements SystemStore {
                 if (cb.surfaceTempK == null && prev.surfaceTempK != null) {
                     cb.surfaceTempK = prev.surfaceTempK;
                 }
+                if (cb.valuableBodyExplorationCredits == null && prev.valuableBodyExplorationCredits != null) {
+                    cb.valuableBodyExplorationCredits = prev.valuableBodyExplorationCredits;
+                }
+                if ((cb.terraformState == null || cb.terraformState.isBlank()) && prev.terraformState != null && !prev.terraformState.isBlank()) {
+                    cb.terraformState = prev.terraformState;
+                }
+                if (cb.massEm == null && prev.massEm != null) {
+                    cb.massEm = prev.massEm;
+                }
             }
 
             cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
@@ -755,6 +791,13 @@ public final class SystemCache implements SystemStore {
                 cb.observedBioDisplayNames = new java.util.HashSet<>(b.getObservedBioDisplayNames());
             } else {
                 cb.observedBioDisplayNames = null;
+            }
+
+            if (b.isHighValue()) {
+                long cr = ExplorationBodyCredits.achievableExplorationTotalCredits(b);
+                if (cr > 0) {
+                    cb.valuableBodyExplorationCredits = Long.valueOf(cr);
+                }
             }
 
             list.add(cb);

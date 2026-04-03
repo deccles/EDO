@@ -79,6 +79,8 @@ public final class ScanEvent extends EliteLogEvent {
     private final String atmosphere;
     private final Map<String, Double> atmosphereComposition;
 private final String terraformState;
+    /** Earth masses ({@code MassEM}); planets/moons only. */
+    private final Double massEm;
     private final Double surfaceGravity;
     private final Double surfaceTemperature;
     private final Double orbitalPeriod;
@@ -104,6 +106,7 @@ private final String terraformState;
                      String planetClass,
                      String atmosphere,
                      String terraformState,
+                     Double massEm,
                      Double surfaceGravity,
                      Double surfacePressure,
                      Double surfaceTemperature,
@@ -128,6 +131,7 @@ private final String terraformState;
         this.planetClass = planetClass;
         this.atmosphere = atmosphere;
         this.terraformState = terraformState;
+        this.massEm = massEm;
         this.surfaceGravity = surfaceGravity;
         this.surfacePressure = surfacePressure;
         this.surfaceTemperature = surfaceTemperature;
@@ -178,6 +182,10 @@ private final String terraformState;
 
     public String getTerraformState() {
         return terraformState;
+    }
+
+    public Double getMassEm() {
+        return massEm;
     }
 
     public Double getSurfaceGravity() {

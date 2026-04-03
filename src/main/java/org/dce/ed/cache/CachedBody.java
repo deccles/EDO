@@ -24,8 +24,14 @@ public class CachedBody {
     public boolean hasBio;
     public boolean hasGeo;
     public boolean highValue;
+    /** Typical exploration payout hint when {@link #highValue}; see {@code ValuableBodyExplorationEstimate}. */
+    public Long valuableBodyExplorationCredits;
 
     public String planetClass;
+    /** Journal / EDSM terraform state (e.g. Terraformable). */
+    public String terraformState;
+    /** Earth masses (journal MassEM / EDSM earthMasses). */
+    public Double massEm;
     public String atmosphere;
     public String atmoOrType;
 

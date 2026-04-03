@@ -33,6 +33,8 @@ import org.dce.ed.util.RingSummaryFormatter;
 import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
+import org.dce.ed.util.ExplorationBodyCredits;
+import org.dce.ed.util.ValuableBodyExplorationEstimate;
 
 /**
  * Consumes Elite Dangerous journal events and mutates a SystemState.
@@ -312,7 +314,10 @@ public class SystemEventProcessor {
         }
 
         info.setAtmoOrType(chooseAtmoOrType(e));
-        info.setHighValue(isHighValue(e));
+        boolean highValueBody = isHighValue(e);
+        info.setHighValue(highValueBody);
+        info.setTerraformState(e.getTerraformState());
+        info.setMassEm(e.getMassEm());
 
         info.setPlanetClass(e.getPlanetClass());
         info.setAtmosphere(e.getAtmosphere());
@@ -372,6 +377,19 @@ public class SystemEventProcessor {
                 info.setParentStar(parentStar.getBodyName());
                 info.setStarType(parentStar.getStarType());
             }
+        }
+
+        if (highValueBody) {
+            long cr = ExplorationBodyCredits.achievableExplorationTotalCredits(info);
+            if (cr > 0) {
+                info.setValuableBodyExplorationCredits(Long.valueOf(cr));
+            } else {
+                Long fb = ValuableBodyExplorationEstimate.estimateCredits(info.getPlanetClass(), info.getTerraformState());
+                info.setValuableBodyExplorationCredits(fb != null ? fb
+                        : Long.valueOf(ValuableBodyExplorationEstimate.TERRAFORMABLE_FALLBACK));
+            }
+        } else {
+            info.setValuableBodyExplorationCredits(null);
         }
 
         // Use the stable key, never e.getBodyId() when it is -1.

@@ -154,6 +154,8 @@ public class BodyInfo {
 	private boolean hasGeo;
 
 	private boolean highValue;
+	/** Cached exploration total for high-value bodies; UI recomputes via {@link org.dce.ed.util.ExplorationBodyCredits} when possible. */
+	private Long valuableBodyExplorationCredits;
 	private boolean landable;
 	private String name;
 
@@ -168,6 +170,12 @@ public class BodyInfo {
 	private int parentStarBodyId = -1;
 
 	private String planetClass;
+
+	/** Journal {@code TerraformState} (e.g. Terraformable); used for exploration k and WW terraform tier. */
+	private String terraformState;
+
+	/** Journal {@code MassEM} (Earth masses); used for exploration credit estimates. */
+	private Double massEm;
 
 	// Derived biological prediction data
 	private List<BioCandidate> predictions;
@@ -412,6 +420,14 @@ public class BodyInfo {
 		return planetClass;
 	}
 
+	public String getTerraformState() {
+		return terraformState;
+	}
+
+	public Double getMassEm() {
+		return massEm;
+	}
+
 	public List<ExobiologyData.BioCandidate> getPredictions() {
 		return predictions;
 	}
@@ -530,6 +546,10 @@ public class BodyInfo {
 
 	public boolean isHighValue() {
 		return highValue;
+	}
+
+	public Long getValuableBodyExplorationCredits() {
+		return valuableBodyExplorationCredits;
 	}
 
 	/**
@@ -760,6 +780,11 @@ public class BodyInfo {
 	public void setHighValue(boolean highValue) {
 		this.highValue = highValue;
 	}
+
+	public void setValuableBodyExplorationCredits(Long valuableBodyExplorationCredits) {
+		this.valuableBodyExplorationCredits = valuableBodyExplorationCredits;
+	}
+
 	public void setLandable(boolean landable) {
 		this.landable = landable;
 	}
@@ -803,6 +828,14 @@ public class BodyInfo {
 
 	public void setPlanetClass(String planetClass) {
 		this.planetClass = planetClass;
+	}
+
+	public void setTerraformState(String terraformState) {
+		this.terraformState = terraformState;
+	}
+
+	public void setMassEm(Double massEm) {
+		this.massEm = massEm;
 	}
 
 	public void setPredictions(ArrayList<BioCandidate> predictions) {

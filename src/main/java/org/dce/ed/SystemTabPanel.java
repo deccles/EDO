@@ -10,10 +10,12 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.QuadCurve2D;
@@ -61,6 +63,8 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.state.BodyInfo;
+import org.dce.ed.util.ExplorationBodyCredits;
+import org.dce.ed.util.ValuableBodyExplorationEstimate;
 import org.dce.ed.state.SystemEventProcessor;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
@@ -84,6 +88,8 @@ public class SystemTabPanel extends JPanel {
     private Icon bioDollarIcon = new DollarIcon(16, 16);
     private Icon bioGeoIcon = new RingedPlanetIcon(16, 16);
     private Icon landSneakerIcon = new SneakerIcon(16, 10);
+    /** Earth-like marble cue for high exploration-value bodies (ELW / WW / AW / terraformable). */
+    private Icon valuableEarthBodyIcon = new CachedIcon(new EarthLikeBodyIcon(16, 16));
 
     // NEW: semi-transparent orange for separators, similar to RouteTabPanel
     // NEW: shared ED font (similar to Route tab)
@@ -324,7 +330,7 @@ public class SystemTabPanel extends JPanel {
                                                            boolean hasFocus,
                                                            int row,
                                                            int column) {
-                Component c = super.getTableCellRendererComponent(table,
+                JLabel label = (JLabel) super.getTableCellRendererComponent(table,
                                                                   value,
                                                                   isSelected,
                                                                   hasFocus,
@@ -336,22 +342,31 @@ public class SystemTabPanel extends JPanel {
                 Row r = tableModel.getRowAt(row);
                 boolean isBioRow = r != null && r.detail && !r.destinationRow && !r.isRingDetail()
                         && (r.bioText != null || r.bioValue != null);
+                boolean valuableBody = r != null && !r.detail && r.body != null && r.body.isHighValue();
+
+                if (valuableBody) {
+                    label.setIcon(valuableEarthBodyIcon);
+                    label.setHorizontalTextPosition(SwingConstants.LEFT);
+                    label.setIconTextGap(4);
+                } else {
+                    label.setIcon(null);
+                    label.setHorizontalTextPosition(SwingConstants.TRAILING);
+                    label.setIconTextGap(4);
+                }
 
                 if (isSelected) {
-                    c.setForeground(Color.BLACK);
+                    label.setForeground(Color.BLACK);
                 } else if (r != null && r.detail && r.isRingDetail()) {
-                    c.setForeground(EdoUi.Internal.GRAY_180);
+                    label.setForeground(EdoUi.Internal.GRAY_180);
                 } else if (isBioRow) {
-                    c.setForeground(EdoUi.Internal.GRAY_180);
+                    label.setForeground(EdoUi.Internal.GRAY_180);
                 } else {
-                    c.setForeground(EdoUi.User.MAIN_TEXT);
+                    label.setForeground(EdoUi.User.MAIN_TEXT);
                 }
 
-                if (c instanceof JComponent) {
-                    ((JComponent) c).setOpaque(false);
-                }
-                c.setBackground(EdoUi.Internal.TRANSPARENT);
-                return c;
+                label.setOpaque(false);
+                label.setBackground(EdoUi.Internal.TRANSPARENT);
+                return label;
             }
         };
         DefaultTableCellRenderer landRenderer = new DefaultTableCellRenderer() {
@@ -1731,6 +1746,73 @@ public class SystemTabPanel extends JPanel {
         }
     }
 
+    /** Small blue-green “marble” for terraformable / ELW-class valuable worlds. */
+    private static final class EarthLikeBodyIcon implements Icon {
+        private final int w;
+        private final int h;
+
+        EarthLikeBodyIcon(int w, int h) {
+            this.w = w;
+            this.h = h;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return w;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return h;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                double ix = x + 1.0;
+                double iy = y + 1.0;
+                double iw = Math.max(8.0, w - 2.0);
+                double ih = Math.max(8.0, h - 2.0);
+                double cx = ix + iw * 0.5;
+                double cy = iy + ih * 0.5;
+                double d = Math.min(iw, ih) * 0.92;
+                double px = cx - d * 0.5;
+                double py = cy - d * 0.5;
+
+                java.awt.geom.Ellipse2D sphere = new java.awt.geom.Ellipse2D.Double(px, py, d, d);
+                float[] dist = { 0f, 0.55f, 1f };
+                Color[] colors = {
+                        new Color(120, 200, 255),
+                        new Color(45, 140, 200),
+                        new Color(20, 70, 120)
+                };
+                g2.setPaint(new java.awt.RadialGradientPaint(
+                        (float) (px + d * 0.33),
+                        (float) (py + d * 0.30),
+                        (float) (d * 0.58),
+                        dist,
+                        colors));
+                g2.fill(sphere);
+
+                g2.setColor(new Color(72, 160, 95, 200));
+                g2.fill(new java.awt.geom.Ellipse2D.Double(px + d * 0.18, py + d * 0.42, d * 0.35, d * 0.22));
+                g2.setColor(new Color(110, 140, 70, 190));
+                g2.fill(new java.awt.geom.Ellipse2D.Double(px + d * 0.48, py + d * 0.22, d * 0.28, d * 0.20));
+
+                g2.setColor(EdoUi.withAlpha(Color.WHITE, 200));
+                g2.fill(new java.awt.geom.Ellipse2D.Double(px + d * 0.22, py + d * 0.20, d * 0.14, d * 0.10));
+
+                g2.setColor(EdoUi.Internal.BLACK_ALPHA_180);
+                g2.setStroke(new BasicStroke(Math.max(0.75f, (float) (w * 0.05f)), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.draw(sphere);
+            } finally {
+                g2.dispose();
+            }
+        }
+    }
+
     private static final class SneakerIcon implements Icon {
         private final int w;
         private final int h;
@@ -1939,6 +2021,32 @@ static class Row {
         }
         SystemBodiesTable(SystemBodiesTableModel model) {
             super(model);
+        }
+
+        @Override
+        public String getToolTipText(MouseEvent event) {
+            Point p = event.getPoint();
+            int viewRow = rowAtPoint(p);
+            int col = columnAtPoint(p);
+            if (viewRow < 0 || col < 0) {
+                return super.getToolTipText(event);
+            }
+            if (col == 3) {
+                Row r = tableModel.getRowAt(viewRow);
+                if (r != null && !r.detail && r.body != null && r.body.isHighValue()) {
+                    String html = ExplorationBodyCredits.formatExplorationTooltipHtml(r.body);
+                    if (html != null) {
+                        return html;
+                    }
+                    return "<html><body style='font-size:11px;text-align:left'>High-value world.<br/>"
+                            + "A detailed scan (journal MassEM) refines the payout estimate.</body></html>";
+                }
+                if (r != null && r.detail && !r.destinationRow && !r.isRingDetail()
+                        && r.bioValue != null && !r.bioValue.isBlank()) {
+                    return "<html><body style='font-size:11px'>Exobiology value (approximate payout tier).</body></html>";
+                }
+            }
+            return super.getToolTipText(event);
         }
 
         @Override
@@ -2272,9 +2380,13 @@ static class Row {
                     if (b.hasGeo()) return "Geo";
                     return "";
                 case 3:
-                    // Keep "High" marker for the main body row;
-                    // detail rows carry the M Cr values.
-                    return b.isHighValue() ? "High" : "";
+                    // Main body row: typical exploration payout (FSS+DSS) for ELW/WW/AW/terraformable.
+                    // Detail rows carry exobiology M Cr values.
+                    if (b.isHighValue()) {
+                        long cr = ValuableBodyExplorationEstimate.resolveCreditsForDisplay(b);
+                        return ValuableBodyExplorationEstimate.formatCredits(cr);
+                    }
+                    return "";
                 case 4:
                     return b.isLandable() ? "Yes" : "";
                 case 5:
@@ -2410,6 +2522,23 @@ static class Row {
             keep.setHasGeo(true);
         }
 
+        if (drop.isHighValue()) {
+            keep.setHighValue(true);
+        }
+        Long kCr = keep.getValuableBodyExplorationCredits();
+        Long dCr = drop.getValuableBodyExplorationCredits();
+        if (dCr != null && (kCr == null || dCr.longValue() > kCr.longValue())) {
+            keep.setValuableBodyExplorationCredits(dCr);
+        }
+
+        if ((keep.getTerraformState() == null || keep.getTerraformState().isBlank())
+                && drop.getTerraformState() != null && !drop.getTerraformState().isBlank()) {
+            keep.setTerraformState(drop.getTerraformState());
+        }
+        if (keep.getMassEm() == null && drop.getMassEm() != null) {
+            keep.setMassEm(drop.getMassEm());
+        }
+
         if (keep.getNumberOfBioSignals() == null && drop.getNumberOfBioSignals() != null) {
             keep.setNumberOfBioSignals(drop.getNumberOfBioSignals());
         }
@@ -2529,6 +2658,8 @@ static class Row {
         bioLeafIcon = new CachedIcon(new LeafIcon(leafSize, leafSize));
         bioDollarIcon = new CachedIcon(new DollarIcon(dollarSize, dollarSize));
         bioGeoIcon = new CachedIcon(new RingedPlanetIcon(geoSize, geoSize));
+        int earthSize = Math.max(14, Math.round(fontSize * 1.35f));
+        valuableEarthBodyIcon = new CachedIcon(new EarthLikeBodyIcon(earthSize, earthSize));
         // Not wrapped in CachedIcon: sneaker color comes from theme prefs and must repaint when it changes.
         landSneakerIcon = new SneakerIcon(sneakerW, sneakerH);
     }

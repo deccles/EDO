@@ -792,6 +792,9 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
         String planetClass = getString(obj, "PlanetClass");
         String atmosphere = getString(obj, "Atmosphere");
         String terraformState = getString(obj, "TerraformState");
+        Double massEm = obj.has("MassEM") && !obj.get("MassEM").isJsonNull()
+                ? Double.valueOf(obj.get("MassEM").getAsDouble())
+                : null;
         Map<String, Double> atmoComp = parseAtmosphereComposition(obj);
 
         Double surfaceGravity = obj.has("SurfaceGravity")
@@ -829,6 +832,7 @@ private LocationEvent parseLocation(Instant ts, JsonObject obj) {
                 planetClass,
                 atmosphere,
                 terraformState,
+                massEm,
                 surfaceGravity,
                 surfacePressure,
                 surfaceTemp,

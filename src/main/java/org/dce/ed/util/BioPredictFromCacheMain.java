@@ -756,6 +756,9 @@ public final class BioPredictFromCacheMain {
         info.setHasBio(cb.hasBio);
         info.setHasGeo(cb.hasGeo);
         info.setHighValue(cb.highValue);
+        info.setValuableBodyExplorationCredits(cb.valuableBodyExplorationCredits);
+        info.setTerraformState(cb.terraformState);
+        info.setMassEm(cb.massEm);
 
         info.setAtmoOrType(cb.atmoOrType);
         info.setPlanetClass(cb.planetClass);
