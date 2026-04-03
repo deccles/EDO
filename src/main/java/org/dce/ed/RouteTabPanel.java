@@ -25,6 +25,9 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.concurrent.ConcurrentHashMap;
 
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+
 import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -64,6 +67,7 @@ import org.dce.ed.ui.EdoUi;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.EdoUi.User;
 import org.dce.ed.util.EdsmClient;
+import org.dce.ed.route.FuelScoopStarClass;
 import org.dce.ed.route.RouteEntry;
 import org.dce.ed.route.RouteGeometry;
 import org.dce.ed.route.RouteJournalApplyOutcome;
@@ -103,6 +107,9 @@ public class RouteTabPanel extends JPanel {
 			new StatusCircleIcon(EdoUi.STATUS_GRAY, "!");
 	private static final Icon ICON_UNKNOWN =
 			new StatusCircleIcon(EdoUi.STATUS_GRAY, "?");
+	/** Monochrome green fuel gauge for scoopable stars (Class column). */
+	private static final Color FUEL_GAUGE_GREEN = new Color(0x90, 0xC3, 0x8A);
+	private static final Icon ICON_FUEL_SCOOP = new FuelGaugeIcon(FUEL_GAUGE_GREEN);
 	// Column indexes
 	private static final int COL_MARKER    = 0;
 	private static final int COL_INDEX    = 1;
@@ -326,6 +333,7 @@ public class RouteTabPanel extends JPanel {
 		table.getColumnModel().getColumn(COL_MARKER).setPreferredWidth(20);
 		// System column needs indentation support for synthetic destination-body rows.
 		table.getColumnModel().getColumn(COL_SYSTEM).setCellRenderer(new SystemNameRenderer());
+		table.getColumnModel().getColumn(COL_CLASS).setCellRenderer(new StarClassRenderer());
 
 		// Status column uses a special renderer for the check / ? glyphs
 		table.getColumnModel()
@@ -384,7 +392,7 @@ public class RouteTabPanel extends JPanel {
 		TableColumnModel columns = table.getColumnModel();
 		columns.getColumn(COL_INDEX).setPreferredWidth(40);   // #
 		columns.getColumn(COL_SYSTEM).setPreferredWidth(260); // system name
-		columns.getColumn(COL_CLASS).setPreferredWidth(40);   // class
+		columns.getColumn(COL_CLASS).setPreferredWidth(routeClassColumnPreferredWidthPx()); // class + gauge
 		columns.getColumn(COL_STATUS).setPreferredWidth(40);  // check/? status
 		columns.getColumn(COL_DISTANCE).setPreferredWidth(60); // Ly
 		routeScrollPane = new JScrollPane(table);
@@ -1761,6 +1769,62 @@ public class RouteTabPanel extends JPanel {
 			}
 		}
 	}
+	private class StarClassRenderer extends DefaultTableCellRenderer {
+		private static final long serialVersionUID = 1L;
+		StarClassRenderer() {
+			setOpaque(false);
+			setHorizontalAlignment(SwingConstants.LEADING);
+		}
+		@Override
+		public Component getTableCellRendererComponent(JTable table,
+				Object value,
+				boolean isSelected,
+				boolean hasFocus,
+				int row,
+				int column) {
+			JLabel l = (JLabel) super.getTableCellRendererComponent(table,
+					value,
+					false,
+					false,
+					row,
+					column);
+			l.setOpaque(false);
+			l.setBackground(EdoUi.Internal.TRANSPARENT);
+			l.setForeground(EdoUi.User.MAIN_TEXT);
+			l.setIcon(null);
+			RouteEntry e = null;
+			try {
+				e = tableModel.getEntries(row);
+			} catch (Exception ex) {
+				e = null;
+			}
+			if (e != null && e.isBodyRow) {
+				l.setText("");
+				return l;
+			}
+			String text = value != null ? value.toString() : "";
+			l.setText(text);
+			if (e != null && FuelScoopStarClass.isFuelScoopable(e.starClass)) {
+				l.setIcon(ICON_FUEL_SCOOP);
+				l.setIconTextGap(4);
+			}
+			l.setBorder(new EmptyBorder(3, 4, 3, 4));
+			return l;
+		}
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+					RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+					RenderingHints.VALUE_ANTIALIAS_ON);
+			super.paintComponent(g2);
+			g2.setColor(EdoUi.ED_ORANGE_TRANS);
+			int y = getHeight() - 1;
+			g2.drawLine(0, y, getWidth(), y);
+			g2.dispose();
+		}
+	}
 	private class SystemNameRenderer extends DefaultTableCellRenderer {
 		private static final long serialVersionUID = 1L;
 		@Override
@@ -1876,6 +1940,86 @@ public class RouteTabPanel extends JPanel {
 			g2.fillPolygon(xs, ys, 3);
 		}
 	}
+	/** Same nominal size as {@link StatusCircleIcon} (Class column aligns with status column). */
+	private static int fuelGaugeIconSizePx() {
+		return OverlayPreferences.getUiFontSize();
+	}
+
+	private static int routeClassColumnPreferredWidthPx() {
+		return Math.max(40, fuelGaugeIconSizePx() + 22);
+	}
+
+	/**
+	 * Fuel gauge: rim, ticks, hub, and needle in one green; needle pivots at bottom-center.
+	 * Size scales with {@link OverlayPreferences#getUiFontSize()}.
+	 */
+	private static final class FuelGaugeIcon implements Icon {
+		private final Color green;
+		FuelGaugeIcon(Color green) {
+			this.green = green;
+		}
+		@Override
+		public int getIconWidth() {
+			return fuelGaugeIconSizePx();
+		}
+		@Override
+		public int getIconHeight() {
+			return fuelGaugeIconSizePx();
+		}
+		@Override
+		public void paintIcon(Component c, Graphics g, int x, int y) {
+			int sz = fuelGaugeIconSizePx();
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				float cx = x + sz / 2f;
+				float cy = y + sz / 2f;
+				float margin = Math.max(0.65f, sz * 0.042f);
+				float outerR = sz / 2f - margin;
+				float rimW = Math.max(0.75f, sz * 0.048f);
+				float tickW = Math.max(0.7f, sz * 0.048f);
+				float needleW = Math.max(0.9f, sz * 0.058f);
+				g2.setColor(green);
+				g2.setStroke(new BasicStroke(rimW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g2.draw(new Ellipse2D.Float(cx - outerR, cy - outerR, 2 * outerR, 2 * outerR));
+				float pad = Math.max(0.85f, sz * 0.05f);
+				float rTickOut = outerR - pad;
+				float rTickInFull = outerR * 0.36f;
+				// Half the radial span of the original tick marks
+				float rTickIn = rTickOut - (rTickOut - rTickInFull) * 0.5f;
+				g2.setStroke(new BasicStroke(tickW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				for (int k = 0; k < 5; k++) {
+					double ang = Math.PI + k * (Math.PI / 4);
+					float x1 = (float) (cx + rTickIn * Math.cos(ang));
+					float y1 = (float) (cy + rTickIn * Math.sin(ang));
+					float x2 = (float) (cx + rTickOut * Math.cos(ang));
+					float y2 = (float) (cy + rTickOut * Math.sin(ang));
+					g2.draw(new Line2D.Float(x1, y1, x2, y2));
+				}
+				// Pivot hub at bottom-center; needle angled up-left of the old 45° (tip nudged left & up).
+				float px = cx;
+				float py = cy + outerR * 0.62f;
+				float pivotR = Math.max(0.65f, sz * 0.085f);
+				double nAng = Math.toRadians(-52);
+				float nx = (float) Math.cos(nAng);
+				float ny = (float) Math.sin(nAng);
+				float needleLen = outerR * 0.78f;
+				float tipX = px + needleLen * nx - sz * 0.035f;
+				float tipY = py + needleLen * ny - sz * 0.04f;
+				// Stem on hub circle toward needle; slight inward bias at small sizes so AA doesn’t look offset
+				float stemScale = pivotR - Math.min(0.55f, needleW * 0.45f)
+						- Math.max(0f, (28 - sz) * 0.028f);
+				stemScale = Math.max(pivotR * 0.78f, stemScale);
+				float stemX = px + stemScale * nx;
+				float stemY = py + stemScale * ny;
+				g2.fill(new Ellipse2D.Float(px - pivotR, py - pivotR, 2 * pivotR, 2 * pivotR));
+				g2.setStroke(new BasicStroke(needleW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g2.draw(new Line2D.Float(stemX, stemY, tipX, tipY));
+			} finally {
+				g2.dispose();
+			}
+		}
+	}
 	private static class OutlineTriangleIcon implements Icon {
 		private final Color color;
 		private final int w;
@@ -1926,6 +2070,11 @@ public class RouteTabPanel extends JPanel {
 			if (table.getTableHeader() != null) {
 				table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 			}
+			TableColumnModel tcm = table.getColumnModel();
+			if (tcm.getColumnCount() > COL_CLASS) {
+				tcm.getColumn(COL_CLASS).setPreferredWidth(routeClassColumnPreferredWidthPx());
+			}
+			table.revalidate();
 		}
 		repaint();
 	}

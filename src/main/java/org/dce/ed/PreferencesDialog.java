@@ -1137,8 +1137,8 @@ public class PreferencesDialog extends JDialog {
 		OverlayPreferences.setUiSneakerRgb(originalUiSneakerRgb);
 		OverlayPreferences.applyThemeToEdoUi();
 
-		// Revert font
-		f.applyUiFontPreview(originalUiFont);
+		// Revert font (clear preview overrides so icon sizing matches saved prefs)
+		f.revertUiFontLivePreview(originalUiFont);
 
 		// Revert overlay fill, then rebuild so tabbed pane inherits the restored background.
 		boolean pt = f.isPassThroughEnabled();

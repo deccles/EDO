@@ -1,6 +1,7 @@
 package org.dce.ed;
 
 import java.awt.Color;
+import java.awt.Font;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -34,6 +35,13 @@ public final class OverlayPreferences {
     private static final String KEY_UI_FONT_NAME = "ui.font.name";
     private static final String KEY_UI_FONT_SIZE = "ui.font.size";
 
+    /**
+     * While the preferences dialog previews a font, {@link #getUiFontName()}, {@link #getUiFontSize()},
+     * and {@link #getUiFont()} reflect the spinner/combo selection so icons and derived sizes track the preview.
+     * Cleared by {@link #clearUiFontLivePreview()} (cancel / revert) or at the start of a committed apply.
+     */
+    private static volatile String uiFontNameLivePreview = null;
+    private static volatile Integer uiFontSizeLivePreview = null;
 
     // --- UI theme colors ---
     private static final String KEY_UI_MAIN_TEXT_RGB = "ui.colors.mainTextRgb"; // 0xRRGGBB
@@ -879,6 +887,9 @@ public static Engine getSpeechEngine() {
      * Default matches SystemTabPanel's historical font choice.
      */
     public static String getUiFontName() {
+        if (uiFontNameLivePreview != null && !uiFontNameLivePreview.isBlank()) {
+            return uiFontNameLivePreview;
+        }
         return PREFS.get(KEY_UI_FONT_NAME, "Segoe UI");
     }
 
@@ -894,28 +905,53 @@ public static Engine getSpeechEngine() {
      * Default matches SystemTabPanel's historical font size.
      */
     public static int getUiFontSize() {
+        if (uiFontSizeLivePreview != null) {
+            return clampUiFontSize(uiFontSizeLivePreview.intValue());
+        }
         try {
             int sz = Integer.parseInt(PREFS.get(KEY_UI_FONT_SIZE, "17"));
-            if (sz < 8) {
-                sz = 8;
-            }
-            if (sz > 72) {
-                sz = 72;
-            }
-            return sz;
+            return clampUiFontSize(sz);
         } catch (Exception e) {
             return 17;
         }
     }
 
-    public static void setUiFontSize(int size) {
+    private static int clampUiFontSize(int size) {
         if (size < 8) {
-            size = 8;
+            return 8;
         }
         if (size > 72) {
-            size = 72;
+            return 72;
         }
-        PREFS.put(KEY_UI_FONT_SIZE, Integer.toString(size));
+        return size;
+    }
+
+    /**
+     * Preferences dialog: apply spinner/combo font as the effective UI font for reads until cleared.
+     */
+    public static void setUiFontLivePreview(Font font) {
+        if (font == null) {
+            clearUiFontLivePreview();
+            return;
+        }
+        String name = font.getFamily();
+        if (name == null || name.isBlank() || "Dialog".equals(name)) {
+            name = font.getName();
+        }
+        if (name != null) {
+            name = name.trim();
+        }
+        uiFontNameLivePreview = (name != null && !name.isBlank()) ? name : null;
+        uiFontSizeLivePreview = Integer.valueOf(clampUiFontSize(font.getSize()));
+    }
+
+    public static void clearUiFontLivePreview() {
+        uiFontNameLivePreview = null;
+        uiFontSizeLivePreview = null;
+    }
+
+    public static void setUiFontSize(int size) {
+        PREFS.put(KEY_UI_FONT_SIZE, Integer.toString(clampUiFontSize(size)));
     }
 
     /**

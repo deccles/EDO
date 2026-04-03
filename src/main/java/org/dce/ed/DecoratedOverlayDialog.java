@@ -290,6 +290,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 	@Override
 	public void applyUiFontPreferences() {
+		OverlayPreferences.clearUiFontLivePreview();
 		contentPanel.applyUiFontPreferences();
 		revalidate();
 		repaint();
@@ -324,7 +325,18 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		if (font == null) {
 			return;
 		}
+		OverlayPreferences.setUiFontLivePreview(font);
 		contentPanel.applyUiFont(font);
+		revalidate();
+		repaint();
+	}
+
+	@Override
+	public void revertUiFontLivePreview(Font savedFont) {
+		OverlayPreferences.clearUiFontLivePreview();
+		if (savedFont != null) {
+			contentPanel.applyUiFont(savedFont);
+		}
 		revalidate();
 		repaint();
 	}

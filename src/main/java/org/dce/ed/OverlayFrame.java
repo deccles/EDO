@@ -858,6 +858,7 @@ private void refreshPassThroughUnifiedStatus() {
     }
 
     public void applyUiFontPreferences() {
+        OverlayPreferences.clearUiFontLivePreview();
         contentPanel.applyUiFontPreferences();
         revalidate();
         repaint();
@@ -887,7 +888,18 @@ private void refreshPassThroughUnifiedStatus() {
         if (font == null) {
             return;
         }
+        OverlayPreferences.setUiFontLivePreview(font);
         contentPanel.applyUiFont(font);
+        revalidate();
+        repaint();
+    }
+
+    @Override
+    public void revertUiFontLivePreview(java.awt.Font savedFont) {
+        OverlayPreferences.clearUiFontLivePreview();
+        if (savedFont != null) {
+            contentPanel.applyUiFont(savedFont);
+        }
         revalidate();
         repaint();
     }

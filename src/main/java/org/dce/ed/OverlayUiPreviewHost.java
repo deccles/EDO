@@ -14,6 +14,9 @@ public interface OverlayUiPreviewHost {
 
     void applyUiFontPreview(Font font);
 
+    /** Clear live font preview state and apply {@code savedFont} (used when preferences are cancelled). */
+    void revertUiFontLivePreview(Font savedFont);
+
     void applyOverlayBackgroundFromPreferences(boolean passThroughMode);
 
     void applyOverlayBackgroundPreview(boolean passThroughMode, int rgb, int transparencyPercent);
