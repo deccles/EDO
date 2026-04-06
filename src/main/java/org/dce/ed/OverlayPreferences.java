@@ -89,6 +89,8 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_GOOGLE_CLIENT_ID = "mining.googleSheets.clientId";
     private static final String KEY_MINING_GOOGLE_CLIENT_SECRET = "mining.googleSheets.clientSecret";
     private static final String KEY_MINING_GOOGLE_REFRESH_TOKEN = "mining.googleSheets.refreshToken";
+    /** 0 = legacy single-sheet layout; 1 = per-commander worksheet layout (migration done). */
+    private static final String KEY_MINING_GOOGLE_SHEETS_LAYOUT_VERSION = "mining.googleSheets.layoutVersion";
     // Deprecated: mining run counter is now derived from sheet data (commander + system/body).
     private static final String KEY_MINING_LOG_RUN_COUNTER = "mining.log.runCounter";
     private static final String KEY_MINING_LOG_COMMANDER_NAME = "mining.log.commanderName";
@@ -677,6 +679,17 @@ public static Engine getSpeechEngine() {
 
     public static void setMiningGoogleSheetsRefreshToken(String refreshToken) {
         PREFS.put(KEY_MINING_GOOGLE_REFRESH_TOKEN, refreshToken != null ? refreshToken.trim() : "");
+    }
+
+    /**
+     * Google Sheets prospector layout generation: 0 = legacy (mixed commanders on first sheet), 1 = per-commander tabs.
+     */
+    public static int getMiningGoogleSheetsLayoutVersion() {
+        return PREFS.getInt(KEY_MINING_GOOGLE_SHEETS_LAYOUT_VERSION, 0);
+    }
+
+    public static void setMiningGoogleSheetsLayoutVersion(int version) {
+        PREFS.putInt(KEY_MINING_GOOGLE_SHEETS_LAYOUT_VERSION, Math.max(0, version));
     }
 
     /**

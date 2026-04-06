@@ -2,7 +2,10 @@ package org.dce.ed;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Objects;
@@ -15,6 +18,7 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 import org.dce.ed.logreader.EliteEventType;
@@ -25,6 +29,7 @@ import org.dce.ed.logreader.event.CarrierLocationEvent;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.session.FleetCarrierSessionMapper;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.SystemNameAutocomplete;
 import org.dce.ed.util.SpanshClient;
 
@@ -52,6 +57,8 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 	private final JTextField destinationField;
 	private final JButton calculateButton;
 	private final JButton importButton;
+	private final JButton copyNextDestinationButton;
+	private final Timer copyNextDestinationRefreshTimer;
 
 	public FleetCarrierTabPanel(BooleanSupplier passThroughEnabledSupplier) {
 		super(passThroughEnabledSupplier);
@@ -99,6 +106,14 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		importButton.setOpaque(!OverlayPreferences.overlayChromeRequestsTransparency());
 		importButton.setBackground(EdoUi.Internal.DARK_ALPHA_220);
 
+		copyNextDestinationButton = new JButton("Copy next destination");
+		copyNextDestinationButton.setFocusable(false);
+		copyNextDestinationButton.setOpaque(false);
+		copyNextDestinationButton.setForeground(EdoUi.User.MAIN_TEXT);
+		copyNextDestinationButton.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 3));
+		copyNextDestinationButton.setToolTipText("Copy the next route system name to the clipboard (same as Route/Nearby copy)");
+		copyNextDestinationButton.addActionListener(e -> copyNextRouteDestinationToClipboard());
+
 		importButton.addActionListener(e -> {
 			JFileChooser chooser = new JFileChooser();
 			chooser.setDialogTitle("Import Spansh fleet-carrier route (JSON or CSV)");
@@ -117,8 +132,14 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		statusWrap.setOpaque(false);
 		statusWrap.add(statusLabel, BorderLayout.CENTER);
 
+		JPanel bottomEast = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+		bottomEast.setOpaque(false);
+		bottomEast.setBackground(EdoUi.Internal.TRANSPARENT);
+		bottomEast.add(copyNextDestinationButton);
+
 		bottomBar.add(importButton, BorderLayout.WEST);
 		bottomBar.add(statusWrap, BorderLayout.CENTER);
+		bottomBar.add(bottomEast, BorderLayout.EAST);
 
 		JPanel fetchRow = new JPanel(new BorderLayout(8, 0));
 		fetchRow.setOpaque(false);
@@ -135,6 +156,34 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 
 		add(southOuter, BorderLayout.SOUTH);
 		applyOverlayBackground(EdoUi.Internal.TRANSPARENT, OverlayPreferences.overlayChromeRequestsTransparency());
+
+		copyNextDestinationRefreshTimer = new Timer(1_000, e -> updateCopyNextDestinationButton());
+		copyNextDestinationRefreshTimer.setRepeats(true);
+		copyNextDestinationRefreshTimer.start();
+		updateCopyNextDestinationButton();
+	}
+
+	private void updateCopyNextDestinationButton() {
+		String next = RouteTabPanel.nextRouteDestinationSystemName(routeSession);
+		copyNextDestinationButton.setEnabled(next != null && !next.isBlank());
+	}
+
+	private void copyNextRouteDestinationToClipboard() {
+		String next = RouteTabPanel.nextRouteDestinationSystemName(routeSession);
+		if (next == null || next.isBlank()) {
+			return;
+		}
+		StringSelection selection = new StringSelection(next);
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
+		SystemTableHoverCopyManager.showCopiedToast(destinationField, next);
+	}
+
+	@Override
+	public void applyUiFont(Font font) {
+		super.applyUiFont(font);
+		if (copyNextDestinationButton != null && font != null) {
+			copyNextDestinationButton.setFont(font.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 3));
+		}
 	}
 
 	private void fetchRouteFromSpansh() {
@@ -317,6 +366,9 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		calculateButton.setOpaque(!opaque ? false : true);
 		calculateButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
 		calculateButton.setForeground(EdoUi.User.MAIN_TEXT);
+		copyNextDestinationButton.setOpaque(!opaque ? false : true);
+		copyNextDestinationButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
+		copyNextDestinationButton.setForeground(EdoUi.User.MAIN_TEXT);
 		destinationField.setOpaque(opaque);
 		if (opaque) {
 			destinationField.setBackground(EdoUi.Internal.GRAY_180);

@@ -35,6 +35,10 @@ class ProspectorExceptionReportingTest {
             OverlayPreferences.setProspectorMaterialsCsv("platinum");
             OverlayPreferences.setProspectorMinProportionPercent(1.0);
             OverlayPreferences.setProspectorMinAvgValueCrPerTon(0);
+            // Avoid Google Sheets I/O on the EDT during syncAsteroidCounterFromBackendForCurrentLocation
+            // (would delay buildProspectorAnnouncement and this test's latch).
+            OverlayPreferences.setMiningLogBackend("local");
+            OverlayPreferences.setMiningGoogleSheetsUrl("");
 
             EliteOverlayTabbedPane tabs = new EliteOverlayTabbedPane(() -> false);
 

@@ -200,6 +200,9 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                     if (cols.size() < 9) continue;
                     try {
                         int run = Integer.parseInt(cols.get(0).trim());
+                        if (run < 1) {
+                            continue;
+                        }
                         if (cols.size() >= 12) {
                             String asteroidId = cols.get(1).trim();
                             Instant ts = parseTimestamp(cols.get(2).trim());

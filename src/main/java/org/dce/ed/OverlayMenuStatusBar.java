@@ -56,13 +56,7 @@ public final class OverlayMenuStatusBar {
 
         JMenuItem prefs = new JMenuItem("Preferences...");
         styleMenuItem(prefs);
-        prefs.addActionListener(e -> {
-            PreferencesDialog dialog = new PreferencesDialog(parent, clientKey);
-            if (parent instanceof java.awt.Component) {
-                dialog.setLocationRelativeTo((java.awt.Component) parent);
-            }
-            dialog.setVisible(true);
-        });
+        prefs.addActionListener(e -> PreferencesDialog.show(parent, clientKey));
         overlayMenu.add(prefs);
 
         JMenu toolsMenu = new JMenu("Tools");

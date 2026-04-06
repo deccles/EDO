@@ -34,11 +34,16 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 import org.dce.ed.mining.GoogleSheetsAuth;
+import org.dce.ed.mining.GoogleSheetsBackend;
+import org.dce.ed.mining.ProspectorWriteResult;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.tts.VoicePackManager;
 
@@ -46,6 +51,22 @@ import org.dce.ed.tts.VoicePackManager;
  * Preferences dialog for the overlay.
  */
 public class PreferencesDialog extends JDialog {
+
+	/**
+	 * Shows preferences, or brings the existing modeless window to the front if one is already open.
+	 * Avoids multiple dialogs whose OK would overwrite newer mining (Sheets) settings with stale UI.
+	 */
+	public static void show(Window owner, String clientKey) {
+		for (Window w : Window.getWindows()) {
+			if (w instanceof PreferencesDialog && w.isDisplayable()) {
+				w.toFront();
+				return;
+			}
+		}
+		PreferencesDialog d = new PreferencesDialog(owner, clientKey);
+		d.setLocationRelativeTo(owner);
+		d.setVisible(true);
+	}
 
 	public final String clientKey;
 
@@ -108,6 +129,7 @@ public class PreferencesDialog extends JDialog {
 	private JTextField miningGoogleClientSecretField;
 	private JButton miningGoogleConnectButton;
 	private JButton miningGoogleSetupHelpButton;
+	private JButton miningGoogleMigrateLegacyButton;
 
 	// Mining tab: limpet reminder
 	private JCheckBox miningLowLimpetReminderEnabledCheckBox;
@@ -826,6 +848,32 @@ public class PreferencesDialog extends JDialog {
 		miningGoogleConnectButton.addActionListener(e -> connectToGoogleAndStoreToken());
 		googleButtonsRow.add(miningGoogleConnectButton);
 		logBackendBox.add(googleButtonsRow, gbcLog);
+		gbcLog.gridy++;
+		JPanel migrateRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+		migrateRow.setOpaque(false);
+		miningGoogleMigrateLegacyButton = new JButton("Migrate first sheet to per-commander tabs…");
+		miningGoogleMigrateLegacyButton.setToolTipText(
+				"Splits a legacy mixed-commander first worksheet into CMDR … tabs (one per commander). Use if automatic migration failed or you restored an old sheet.");
+		miningGoogleMigrateLegacyButton.addActionListener(e -> runMiningSheetLegacyMigration());
+		migrateRow.add(miningGoogleMigrateLegacyButton);
+		logBackendBox.add(migrateRow, gbcLog);
+		updateMiningGoogleMigrateLegacyButtonEnabled();
+		miningGoogleSheetsUrlField.getDocument().addDocumentListener(new DocumentListener() {
+			@Override
+			public void insertUpdate(DocumentEvent e) {
+				updateMiningGoogleMigrateLegacyButtonEnabled();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent e) {
+				updateMiningGoogleMigrateLegacyButtonEnabled();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent e) {
+				updateMiningGoogleMigrateLegacyButtonEnabled();
+			}
+		});
 		miningLogBackendGoogleRadio.addActionListener(ev -> {
 			boolean on = miningLogBackendGoogleRadio.isSelected();
 			miningGoogleSheetsUrlField.setEnabled(on);
@@ -833,6 +881,7 @@ public class PreferencesDialog extends JDialog {
 			miningGoogleClientSecretField.setEnabled(on);
 			miningGoogleConnectButton.setEnabled(on);
 			miningGoogleSetupHelpButton.setEnabled(on);
+			updateMiningGoogleMigrateLegacyButtonEnabled();
 		});
 		miningLogBackendLocalRadio.addActionListener(ev -> {
 			boolean on = miningLogBackendGoogleRadio.isSelected();
@@ -841,6 +890,7 @@ public class PreferencesDialog extends JDialog {
 			miningGoogleClientSecretField.setEnabled(on);
 			miningGoogleConnectButton.setEnabled(on);
 			miningGoogleSetupHelpButton.setEnabled(on);
+			updateMiningGoogleMigrateLegacyButtonEnabled();
 		});
 
 		outer.add(logBackendBox);
@@ -1343,6 +1393,7 @@ public class PreferencesDialog extends JDialog {
 				+ "6. Application type: \"Desktop app\". Name it (e.g. \"EDO Overlay\") and click Create.\n"
 				+ "7. Copy the Client ID and Client Secret from the credentials page into the fields above.\n"
 				+ "8. Paste your Google Sheet edit URL (from the browser) into the URL field. The sheet should have a header row: Run, Body, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Email Address (or the app will append it).\n"
+				+ "   Mining data is read only from worksheets whose names start with \"CMDR \" (letters CMDR + space) followed by the commander name, e.g. CMDR Villunus. Other tabs in the same file are ignored.\n"
 				+ "9. Click \"Connect to Google\". A browser will open; sign in and allow access. The refresh token is stored so you only need to do this once.\n\n"
 				+ "No cost: creating a project and using the Sheets API within normal quotas is free.";
 		JTextArea area = new JTextArea(msg, 22, 60);
@@ -1365,6 +1416,81 @@ public class PreferencesDialog extends JDialog {
 		} else {
 			JOptionPane.showMessageDialog(this, "Could not complete sign-in. Check Client ID and Secret, and try again.", "Connection failed", JOptionPane.ERROR_MESSAGE);
 		}
+	}
+
+	private void updateMiningGoogleMigrateLegacyButtonEnabled() {
+		if (miningGoogleMigrateLegacyButton == null) {
+			return;
+		}
+		boolean google = miningLogBackendGoogleRadio != null && miningLogBackendGoogleRadio.isSelected();
+		String url = miningGoogleSheetsUrlField != null ? miningGoogleSheetsUrlField.getText().trim() : "";
+		miningGoogleMigrateLegacyButton.setEnabled(google && !url.isEmpty());
+	}
+
+	private void runMiningSheetLegacyMigration() {
+		String url = miningGoogleSheetsUrlField != null ? miningGoogleSheetsUrlField.getText().trim() : "";
+		if (url.isEmpty()) {
+			JOptionPane.showMessageDialog(this, "Enter the Google Sheets URL first.", "Mining sheet", JOptionPane.WARNING_MESSAGE);
+			return;
+		}
+		int confirm = JOptionPane.showConfirmDialog(this,
+				"This reads the first worksheet, creates one tab per commander with runs renumbered 1…n per tab, "
+						+ "and replaces the first sheet with a short migration note.\n\n"
+						+ "Tip: make a copy in Google Drive first if you want a backup.\n\n"
+						+ "Continue?",
+				"Migrate mining sheet",
+				JOptionPane.OK_CANCEL_OPTION,
+				JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.OK_OPTION) {
+			return;
+		}
+		miningGoogleMigrateLegacyButton.setEnabled(false);
+		SwingWorker<ProspectorWriteResult, Void> worker = new SwingWorker<>() {
+			@Override
+			protected ProspectorWriteResult doInBackground() {
+				return new GoogleSheetsBackend(url).migrateLegacySheetToCommanderTabs();
+			}
+
+			@Override
+			protected void done() {
+				updateMiningGoogleMigrateLegacyButtonEnabled();
+				try {
+					ProspectorWriteResult r = get();
+					if (r != null && r.isOk()) {
+						JOptionPane.showMessageDialog(PreferencesDialog.this,
+								"Migration finished. Commander tabs should hold your rows; the first sheet shows a migration note.\n\n"
+										+ "Tip: keep a Drive copy of the spreadsheet if you want a backup.",
+								"Mining sheet",
+								JOptionPane.INFORMATION_MESSAGE);
+						OverlayFrame of = OverlayFrame.overlayFrame;
+						if (of != null) {
+							of.clearMiningSheetsStatusError();
+						}
+					} else {
+						String msg = r != null ? r.getMessage() : "Unknown error";
+						JOptionPane.showMessageDialog(PreferencesDialog.this,
+								"Migration failed:\n" + msg,
+								"Mining sheet",
+								JOptionPane.ERROR_MESSAGE);
+						OverlayFrame of = OverlayFrame.overlayFrame;
+						if (of != null) {
+							of.setMiningSheetsStatusError("Mining sheet migration: " + msg);
+						}
+					}
+				} catch (Exception ex) {
+					String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+					JOptionPane.showMessageDialog(PreferencesDialog.this,
+							"Migration failed:\n" + msg,
+							"Mining sheet",
+							JOptionPane.ERROR_MESSAGE);
+					OverlayFrame of = OverlayFrame.overlayFrame;
+					if (of != null) {
+						of.setMiningSheetsStatusError("Mining sheet migration: " + msg);
+					}
+				}
+			}
+		};
+		worker.execute();
 	}
 
     private void applyAndSavePreferences() {

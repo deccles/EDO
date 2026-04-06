@@ -75,7 +75,7 @@ class MiningRunNumberResolverTest {
     }
 
     @Test
-    void latestRunAtLocation_isClosed_startsNewGlobalRun() {
+    void latestRunAtLocation_isClosed_startsNextRunForCommander() {
         Instant t = Instant.parse("2026-04-02T16:00:00Z");
         Instant start = Instant.parse("2026-04-02T15:00:00Z");
         Instant end = Instant.parse("2026-04-02T15:30:00Z");
@@ -88,11 +88,24 @@ class MiningRunNumberResolverTest {
         Instant t = Instant.parse("2026-04-02T15:00:00Z");
         List<ProspectorLogRow> rows = List.of(
                 new ProspectorLogRow(18, "E", LOC, t, "X", 10, 0, 1, 1, "UkeBard", "", 0, t, null));
-        assertEquals(19, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
+        // Per-commander numbering: no rows for Villunus → next run is 1 (UkeBard's 18 does not apply).
+        assertEquals(1, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
     }
 
     @Test
-    void forceNewRun_allocatesNextGlobalWhenNothingActive() {
+    void twoCommanders_highRunNumbers_nextRunUsesOwnCommanderMax() {
+        Instant t = Instant.parse("2026-04-02T15:00:00Z");
+        Instant start = Instant.parse("2026-04-02T14:00:00Z");
+        Instant end = Instant.parse("2026-04-02T15:30:00Z");
+        List<ProspectorLogRow> rows = List.of(
+                mat(50, "A", t, start, end),
+                new ProspectorLogRow(3, "A", LOC, t, "X", 10, 0, 1, 1, "UkeBard", "", 0, start, end));
+        assertEquals(51, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
+        assertEquals(4, MiningRunNumberResolver.compute("UkeBard", SYS, BODY, false, rows));
+    }
+
+    @Test
+    void forceNewRun_allocatesNextForCommanderWhenNothingActive() {
         Instant t = Instant.parse("2026-04-02T15:00:00Z");
         Instant start = Instant.parse("2026-04-02T14:00:00Z");
         Instant end = Instant.parse("2026-04-02T15:30:00Z");

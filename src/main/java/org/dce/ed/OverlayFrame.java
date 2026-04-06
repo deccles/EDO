@@ -53,6 +53,7 @@ import org.dce.ed.util.FirstBonusHelper;
 import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
+import org.dce.ed.mining.GoogleSheetsBackend;
 
 import com.google.gson.JsonObject;
 import com.sun.jna.Native;
@@ -135,6 +136,9 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     /** Available update version for status bar; null when none. */
     private volatile String updateAvailableVersion;
 
+    /** Persistent mining / Google Sheets error line (red) until cleared on success. */
+    private volatile String miningSheetsStatusError;
+
     /**
      * Optional additional right-hand status sink.
      * The OverlayFrame title bar is always updated; this lets the decorated window mirror it.
@@ -163,6 +167,19 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     public void setUpdateAvailableVersion(String latestVersion) {
         this.updateAvailableVersion = (latestVersion != null && !latestVersion.isBlank()) ? latestVersion : null;
         refreshRightStatusDisplay();
+    }
+
+    /**
+     * Show a persistent mining / Google Sheets error in the pass-through status bar (red) until cleared.
+     */
+    public void setMiningSheetsStatusError(String message) {
+        miningSheetsStatusError = (message != null && !message.isBlank()) ? message.trim() : null;
+        refreshPassThroughUnifiedStatus();
+    }
+
+    public void clearMiningSheetsStatusError() {
+        miningSheetsStatusError = null;
+        refreshPassThroughUnifiedStatus();
     }
 
     public String getRightStatusText() {
@@ -256,6 +273,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
                 // If we toggled pass-through before first show, applyPassThrough was a no-op (hwnd was null).
                 tryAcquireHwnd();
                 applyPassThrough(passThroughEnabled);
+                SwingUtilities.invokeLater(() -> GoogleSheetsBackend.scheduleFirstLaunchMigration(OverlayFrame.this));
             }
 
             @Override
@@ -736,6 +754,9 @@ private void refreshPassThroughUnifiedStatus() {
         String err = exceptionLeftStatusText;
         boolean showErr = err != null && until != null && Instant.now().isBefore(until);
 
+        String miningErr = miningSheetsStatusError;
+        boolean showMiningErr = miningErr != null && !miningErr.isBlank();
+
         String right = getRightStatusText();
         if (right != null) {
             right = right.trim();
@@ -746,6 +767,8 @@ private void refreshPassThroughUnifiedStatus() {
         String full;
         if (showErr) {
             full = err + (right.isEmpty() ? "" : "  |  " + right);
+        } else if (showMiningErr) {
+            full = miningErr + (right.isEmpty() ? "" : "  |  " + right);
         } else if (limpet) {
             full = right + (right.isEmpty() ? "" : "  |  ") + "Low Limpet Warning!";
         } else {
@@ -753,7 +776,7 @@ private void refreshPassThroughUnifiedStatus() {
         }
 
         passThroughStatusLabel.setText(full);
-        if (limpet || showErr) {
+        if (limpet || showErr || showMiningErr) {
             passThroughStatusLabel.setForeground(EdoUi.User.ERROR);
             passThroughStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
         } else if (full.contains("New version")) {

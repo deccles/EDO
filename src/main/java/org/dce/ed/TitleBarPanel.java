@@ -79,9 +79,7 @@ public class TitleBarPanel extends JPanel {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (SwingUtilities.isLeftMouseButton(e)) {
-                    PreferencesDialog dialog = new PreferencesDialog(frame, EliteDangerousOverlay.clientKey);
-                    dialog.setLocationRelativeTo(frame);
-                    dialog.setVisible(true);
+                    PreferencesDialog.show(frame, EliteDangerousOverlay.clientKey);
                 }
             }
 

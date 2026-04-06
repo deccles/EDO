@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -88,6 +89,7 @@ import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.logreader.event.SupercruiseExitEvent;
 import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
+import org.dce.ed.OverlayFrame;
 import org.dce.ed.mining.GoogleSheetsBackend;
 import org.dce.ed.mining.ProspectorLoadResult;
 import org.dce.ed.mining.MiningRunNumberResolver;
@@ -97,6 +99,7 @@ import org.dce.ed.mining.ProspectorLogRegression;
 import org.dce.ed.mining.MiningLeaderSnapshot;
 import org.dce.ed.mining.MiningScatterAsteroidModel;
 import org.dce.ed.mining.ProspectorLogRow;
+import org.dce.ed.mining.ProspectorWriteResult;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
@@ -139,6 +142,8 @@ public class MiningTabPanel extends JPanel {
 	private final JScrollPane cargoScroller;
 
 	private final JLabel spreadsheetLabel;
+	/** Explains whether the prospector table reads local CSV or Google Sheets (from preferences). */
+	private final JLabel prospectorLogSourceLabel;
 	private final JTable spreadsheetTable;
 	private final ProspectorLogTableModel spreadsheetModel;
 	private java.util.List<ProspectorLogRow> lastGoodSpreadsheetRows = java.util.Collections.emptyList();
@@ -148,8 +153,13 @@ public class MiningTabPanel extends JPanel {
 	private final JPanel spreadsheetCardPanel;
 	private final JToggleButton prospectorLogTableViewBtn;
 	private final JToggleButton prospectorLogScatterViewBtn;
-	private static final int SPREADSHEET_REFRESH_MS = 6_000;
+	/** Poll interval for Google Sheets prospector log (spreadsheet metadata + one batch values read per tick). */
+	private static final int SPREADSHEET_REFRESH_MS = 30_000;
 	private final Timer spreadsheetRefreshTimer;
+	/** Coalesce overlapping refresh requests so timer + journal handlers cannot stack parallel Sheet loads. */
+	private final Object spreadsheetRefreshLock = new Object();
+	private boolean spreadsheetRefreshWorkerRunning;
+	private boolean spreadsheetRefreshPending;
 	private final JSplitPane miningOuterSplit;
 	private final JSplitPane miningInnerSplit;
 	private SystemTableHoverCopyManager miningSystemCopyManager;
@@ -223,9 +233,50 @@ private final JLayer<JTable> cargoLayer;
 
 	private static final int VISIBLE_ROWS = 10;
 
+	/**
+	 * When set (tests), mining sheet status is sent here instead of {@link OverlayFrame#overlayFrame}.
+	 */
+	private static volatile Consumer<String> miningSheetsStatusErrorSinkForTests;
+	private static volatile Runnable miningSheetsStatusClearSinkForTests;
+
 	// Row colors for mining tables.
 	private static final Color CORE_COLOR = EdoUi.User.CORE_BLUE;
 	private static final Color NON_CORE_GREEN = EdoUi.User.SUCCESS;
+
+	/** For tests: capture mining/Sheets status bar updates without a real {@link OverlayFrame}. */
+	public static void setMiningSheetsStatusSinksForTests(Consumer<String> onError, Runnable onClear) {
+		miningSheetsStatusErrorSinkForTests = onError;
+		miningSheetsStatusClearSinkForTests = onClear;
+	}
+
+	public static void clearMiningSheetsStatusSinksForTests() {
+		miningSheetsStatusErrorSinkForTests = null;
+		miningSheetsStatusClearSinkForTests = null;
+	}
+
+	private static void applyMiningSheetsStatusError(String message) {
+		Consumer<String> sink = miningSheetsStatusErrorSinkForTests;
+		if (sink != null) {
+			sink.accept(message != null ? message : "");
+			return;
+		}
+		OverlayFrame frame = OverlayFrame.overlayFrame;
+		if (frame != null) {
+			frame.setMiningSheetsStatusError(message);
+		}
+	}
+
+	private static void applyMiningSheetsStatusClear() {
+		Runnable clear = miningSheetsStatusClearSinkForTests;
+		if (clear != null) {
+			clear.run();
+			return;
+		}
+		OverlayFrame frame = OverlayFrame.overlayFrame;
+		if (frame != null) {
+			frame.clearMiningSheetsStatusError();
+		}
+	}
 
 	public MiningTabPanel(GalacticAveragePrices prices) {
 		this(prices, null);
@@ -599,15 +650,15 @@ private final JLayer<JTable> cargoLayer;
 					jc.setOpaque(false);
 				}
 				if (c instanceof JLabel lbl) {
-					// Right-justify numeric prospector columns: Percentage (4), Tons (7), Duds (9)
-					if (column == 4 || column == 7 || column == 9) {
+					// Right-justify numeric prospector columns: Percentage (5), Tons (8), Duds (10)
+					if (column == 5 || column == 8 || column == 10) {
 						lbl.setHorizontalAlignment(SwingConstants.RIGHT);
 					} else {
 						lbl.setHorizontalAlignment(SwingConstants.LEFT);
 					}
-					// Add a bit of space before Commander column so Duds/System/Body and Commander don't touch.
-					if (column == 12) {
-						lbl.setBorder(new EmptyBorder(0, 6, 0, 0));
+					// Space after Commander (column 0) so it does not touch Run.
+					if (column == 0) {
+						lbl.setBorder(new EmptyBorder(0, 0, 0, 6));
 					}
 				}
 				c.setBackground(EdoUi.Internal.TRANSPARENT);
@@ -648,8 +699,8 @@ private final JLayer<JTable> cargoLayer;
 			spreadHeaderViewport.setBorder(null);
 		}
 		configureOverlayScroller(spreadsheetScroller);
-		// Install system-name copy behavior on the System column (model index 10).
-		miningSystemCopyManager = new SystemTableHoverCopyManager(spreadsheetTable, 10, isDockedSupplier);
+		// Install system-name copy behavior on the System column (model index 11).
+		miningSystemCopyManager = new SystemTableHoverCopyManager(spreadsheetTable, 11, isDockedSupplier);
 		miningSystemCopyManager.start();
 		spreadsheetTable.addMouseListener(new java.awt.event.MouseAdapter() {
 			@Override
@@ -663,7 +714,7 @@ private final JLayer<JTable> cargoLayer;
 					return;
 				}
 				int modelCol = spreadsheetTable.convertColumnIndexToModel(viewCol);
-				if (modelCol != 10) {
+				if (modelCol != 11) {
 					return;
 				}
 				miningSystemCopyManager.copySystemNameAtViewRow(viewRow);
@@ -717,6 +768,13 @@ private final JLayer<JTable> cargoLayer;
 		Dimension spreadPref = spreadsheetLabel.getPreferredSize();
 		spreadsheetLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, spreadPref.height));
 
+		prospectorLogSourceLabel = new JLabel();
+		prospectorLogSourceLabel.setOpaque(false);
+		prospectorLogSourceLabel.setBackground(EdoUi.Internal.TRANSPARENT);
+		prospectorLogSourceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		prospectorLogSourceLabel.setFont(base.deriveFont(Font.PLAIN, Math.max(10, OverlayPreferences.getUiFontSize() - 1)));
+		updateProspectorLogSourceLabelText();
+
 		// Leave about 10 rows for each table (preferred sizes; split panes allocate extra space).
 		updateScrollerHeights();
 
@@ -752,6 +810,8 @@ private final JLayer<JTable> cargoLayer;
 		logSpreadsheetNorth.setOpaque(false);
 		logSpreadsheetNorth.setLayout(new BoxLayout(logSpreadsheetNorth, BoxLayout.Y_AXIS));
 		logSpreadsheetNorth.add(spreadsheetLabel);
+		logSpreadsheetNorth.add(Box.createVerticalStrut(2));
+		logSpreadsheetNorth.add(prospectorLogSourceLabel);
 		logSpreadsheetNorth.add(Box.createVerticalStrut(2));
 		logSpreadsheetNorth.add(spreadsheetToolbar);
 		logSpreadsheetNorth.add(Box.createVerticalStrut(2));
@@ -901,12 +961,12 @@ private final JLayer<JTable> cargoLayer;
 		cm.getColumn(4).setPreferredWidth(95);
 	}
 
-	/** Hide Before Amount (5), After Amount (6), Body (9) in the prospector log table; data still in model. */
+	/** Hide Before Amount (6), After Amount (7), Body (12) in the prospector log table; data still in model. */
 	private static void applyProspectorLogColumnVisibility(JTable tbl) {
 		if (tbl == null) return;
 		TableColumnModel cm = tbl.getColumnModel();
-		if (cm == null || cm.getColumnCount() < 10) return;
-		for (int i : new int[] { 5, 6, 9 }) {
+		if (cm == null || cm.getColumnCount() < 13) return;
+		for (int i : new int[] { 6, 7, 12 }) {
 			TableColumn col = cm.getColumn(i);
 			col.setMinWidth(0);
 			col.setMaxWidth(0);
@@ -1030,6 +1090,7 @@ return EdoUi.User.MAIN_TEXT;
 		prospectorLabel.setFont(headerFont);
 		inventoryLabel.setFont(headerFont);
 		spreadsheetLabel.setFont(headerFont);
+		prospectorLogSourceLabel.setFont(base.deriveFont(Font.PLAIN, Math.max(10, OverlayPreferences.getUiFontSize() - 1)));
 
 		uiFont = font;
 
@@ -1390,7 +1451,7 @@ return EdoUi.User.MAIN_TEXT;
 		int run = activeRun;
 		if (!wroteRowsThisRun && run > 0) {
 			try {
-				List<ProspectorLogRow> existing = prospectorBackendSupplier.get().loadRows();
+				List<ProspectorLogRow> existing = loadRowsForRunResolution();
 				int maxIdx = maxAsteroidIndexForRun(existing, run);
 				if (maxIdx >= 0) {
 					// Resume same run (e.g. overlay restarted mid-trip): continue lettering from the log.
@@ -1460,18 +1521,30 @@ return EdoUi.User.MAIN_TEXT;
 		}
 
 		if (!rows.isEmpty()) {
-			try {
-				ProspectorLogBackend backend = prospectorBackendSupplier.get();
-				if (backend instanceof GoogleSheetsBackend sheetsBackend) {
-					sheetsBackend.upsertRows(rows);
-				} else {
-					backend.appendRows(rows);
+			ProspectorLogBackend backend = prospectorBackendSupplier.get();
+			boolean ok;
+			if (backend instanceof GoogleSheetsBackend sheetsBackend) {
+				ProspectorWriteResult wr = sheetsBackend.upsertRowsResult(rows);
+				ok = wr.isOk();
+				if (!ok) {
+					applyMiningSheetsStatusError(wr.getMessage());
 				}
+			} else {
+				try {
+					backend.appendRows(rows);
+					ok = true;
+				} catch (Exception ex) {
+					ok = false;
+					String m = ex.getMessage();
+					applyMiningSheetsStatusError(m != null && !m.isBlank() ? m : "Mining log write failed.");
+				}
+			}
+			if (ok) {
+				applyMiningSheetsStatusClear();
 				refreshSpreadsheetFromBackend();
 				wroteRowsThisRun = true;
 				haveActiveAsteroid = true;
 				loggedCargoSinceLastProspector = true;
-			} catch (Exception ignored) {
 			}
 		}
 
@@ -1587,11 +1660,28 @@ return EdoUi.User.MAIN_TEXT;
 		if (wroteRowsThisRun && activeRun > 0) {
 			String commander = OverlayPreferences.getMiningLogCommanderName();
 			if (commander != null && !commander.isBlank()) {
-				try {
-					prospectorBackendSupplier.get().updateRunEndTime(commander, activeRun, Instant.now());
-				} catch (Exception ignored) {
+				ProspectorLogBackend backend = prospectorBackendSupplier.get();
+				boolean ok;
+				if (backend instanceof GoogleSheetsBackend gs) {
+					ProspectorWriteResult wr = gs.updateRunEndTimeResult(commander, activeRun, Instant.now());
+					ok = wr.isOk();
+					if (!ok) {
+						applyMiningSheetsStatusError(wr.getMessage());
+					}
+				} else {
+					try {
+						backend.updateRunEndTime(commander, activeRun, Instant.now());
+						ok = true;
+					} catch (Exception ex) {
+						ok = false;
+						String m = ex.getMessage();
+						applyMiningSheetsStatusError(m != null && !m.isBlank() ? m : "Could not write run end time.");
+					}
 				}
-				refreshSpreadsheetFromBackend();
+				if (ok) {
+					applyMiningSheetsStatusClear();
+					refreshSpreadsheetFromBackend();
+				}
 			}
 		}
 		lastUndockTime = null;
@@ -1631,10 +1721,29 @@ return EdoUi.User.MAIN_TEXT;
 	 */
 	private int computeRunNumberForWrite(String commander, String system, String body, boolean forceNewRun) {
 		try {
-			List<ProspectorLogRow> existing = prospectorBackendSupplier.get().loadRows();
+			List<ProspectorLogRow> existing = loadRowsForRunResolution();
 			return MiningRunNumberResolver.compute(commander, system, body, forceNewRun, existing);
 		} catch (Exception ignored) {
 			return 1;
+		}
+	}
+
+	/**
+	 * Rows used for run allocation and asteroid resume: commander-scoped tab for Google Sheets, full log for CSV.
+	 */
+	private List<ProspectorLogRow> loadRowsForRunResolution() {
+		try {
+			ProspectorLogBackend backend = prospectorBackendSupplier.get();
+			if (backend instanceof GoogleSheetsBackend gs) {
+				String cmd = OverlayPreferences.getMiningLogCommanderName();
+				if (cmd == null || cmd.isBlank()) {
+					cmd = "-";
+				}
+				return gs.loadRowsWithStatusForCommander(cmd).getRows();
+			}
+			return backend.loadRows();
+		} catch (Exception e) {
+			return List.of();
 		}
 	}
 
@@ -1706,7 +1815,7 @@ return EdoUi.User.MAIN_TEXT;
 				: (lastNonEmptyBodyName != null ? lastNonEmptyBodyName : "");
 		int run = computeRunNumberForWrite(commander, sys, body, forceNewRun);
 		try {
-			List<ProspectorLogRow> existing = prospectorBackendSupplier.get().loadRows();
+			List<ProspectorLogRow> existing = loadRowsForRunResolution();
 			int maxIdx = maxAsteroidIndexForRun(existing, run);
 			if (maxIdx >= 0) {
 				asteroidIdCounter = maxIdx;
@@ -1902,24 +2011,58 @@ return EdoUi.User.MAIN_TEXT;
 			asteroidIdCounter++;
 			dudCounter = 0;
 		}
-		try {
-			ProspectorLogBackend backend = prospectorBackendSupplier.get();
-			if (backend instanceof GoogleSheetsBackend sheetsBackend) {
-				sheetsBackend.upsertRows(rows);
-			} else {
-				backend.appendRows(rows);
+		ProspectorLogBackend backend = prospectorBackendSupplier.get();
+		boolean ok;
+		if (backend instanceof GoogleSheetsBackend sheetsBackend) {
+			ProspectorWriteResult wr = sheetsBackend.upsertRowsResult(rows);
+			ok = wr.isOk();
+			if (!ok) {
+				applyMiningSheetsStatusError(wr.getMessage());
 			}
+		} else {
+			try {
+				backend.appendRows(rows);
+				ok = true;
+			} catch (Exception e) {
+				ok = false;
+				String m = e.getMessage();
+				applyMiningSheetsStatusError(m != null && !m.isBlank() ? m : "Mining log write failed.");
+			}
+		}
+		if (ok) {
+			applyMiningSheetsStatusClear();
 			refreshSpreadsheetFromBackend();
 			wroteRowsThisRun = true;
 			return true;
-		} catch (Exception e) {
-			// don't break UI on log failure
-			return false;
+		}
+		return false;
+	}
+
+	private void updateProspectorLogSourceLabelText() {
+		if (prospectorLogSourceLabel == null) {
+			return;
+		}
+		String backend = OverlayPreferences.getMiningLogBackend();
+		String url = OverlayPreferences.getMiningGoogleSheetsUrl();
+		if ("google".equals(backend) && url != null && !url.isBlank()) {
+			prospectorLogSourceLabel.setText("Log source: Google Sheets");
+			prospectorLogSourceLabel.setForeground(EdoUi.User.MAIN_TEXT);
+		} else {
+			prospectorLogSourceLabel.setText(
+				"Log source: local ~/.edo/prospector_log.csv (not the cloud sheet). Enable Google Sheets in Preferences → Mining to load your spreadsheet.");
+			prospectorLogSourceLabel.setForeground(EdoUi.User.VALUABLE);
 		}
 	}
 
 	/** Load rows from backend and update spreadsheet table on EDT. */
 	void refreshSpreadsheetFromBackend() {
+		synchronized (spreadsheetRefreshLock) {
+			if (spreadsheetRefreshWorkerRunning) {
+				spreadsheetRefreshPending = true;
+				return;
+			}
+			spreadsheetRefreshWorkerRunning = true;
+		}
 		new javax.swing.SwingWorker<ProspectorLoadResult, Void>() {
 			@Override
 			protected ProspectorLoadResult doInBackground() {
@@ -1932,18 +2075,22 @@ return EdoUi.User.MAIN_TEXT;
 					java.util.List<ProspectorLogRow> rows = backend.loadRows();
 					return new ProspectorLoadResult(ProspectorLoadResult.Status.OK, rows);
 				} catch (Exception e) {
-					return new ProspectorLoadResult(ProspectorLoadResult.Status.ERROR, java.util.Collections.emptyList());
+					String m = e.getMessage();
+					return new ProspectorLoadResult(ProspectorLoadResult.Status.ERROR, java.util.Collections.emptyList(),
+							m != null && !m.isBlank() ? m : "Could not load mining log.");
 				}
 			}
 			@Override
 			protected void done() {
 				try {
 					ProspectorLoadResult result = get();
+					updateProspectorLogSourceLabelText();
 					if (result == null || spreadsheetModel == null) {
 						return;
 					}
 					switch (result.getStatus()) {
 						case OK -> {
+							applyMiningSheetsStatusClear();
 							java.util.List<ProspectorLogRow> rows = result.getRows();
 							lastGoodSpreadsheetRows = rows != null ? rows : java.util.Collections.emptyList();
 							spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
@@ -1953,6 +2100,7 @@ return EdoUi.User.MAIN_TEXT;
 							syncScatterActiveRun();
 						}
 						case EMPTY_SHEET -> {
+							applyMiningSheetsStatusClear();
 							lastGoodSpreadsheetRows = java.util.Collections.emptyList();
 							spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
 							if (spreadsheetScatterWrapper != null) {
@@ -1961,6 +2109,11 @@ return EdoUi.User.MAIN_TEXT;
 							syncScatterActiveRun();
 						}
 						case ERROR -> {
+							String detail = result.getDetailMessage();
+							applyMiningSheetsStatusError(
+									detail != null && !detail.isBlank()
+											? detail
+											: "Could not refresh mining log from Google Sheets.");
 							// Keep showing the last good data when there is a transient error.
 							if (lastGoodSpreadsheetRows != null) {
 								spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
@@ -1972,6 +2125,16 @@ return EdoUi.User.MAIN_TEXT;
 						}
 					}
 				} catch (Exception ignored) {
+				} finally {
+					boolean runAgain;
+					synchronized (spreadsheetRefreshLock) {
+						spreadsheetRefreshWorkerRunning = false;
+						runAgain = spreadsheetRefreshPending;
+						spreadsheetRefreshPending = false;
+					}
+					if (runAgain) {
+						refreshSpreadsheetFromBackend();
+					}
 				}
 			}
 		}.execute();
@@ -2866,10 +3029,9 @@ String getName() {
 		}
 	}
 
-	/** Prospector log table header: "Run" spans first two columns, rest drawn per column. */
+	/** Prospector log table header: one label per column (display order differs from sheet column order). */
 	private static final class ProspectorLogTableHeader extends JTableHeader {
 		private static final long serialVersionUID = 1L;
-		private static final int RUN_SPAN_COLUMNS = 2;
 
 		ProspectorLogTableHeader(TableColumnModel cm) {
 			super(cm);
@@ -2881,32 +3043,24 @@ String getName() {
 		protected void paintComponent(Graphics g) {
 			TableColumnModel cm = getColumnModel();
 			int n = cm.getColumnCount();
-			if (n <= 0) return;
+			if (n <= 0) {
+				return;
+			}
 			javax.swing.JTable tbl = getTable();
 			TableCellRenderer renderer = getDefaultRenderer();
-			if (renderer == null || tbl == null) return;
+			if (renderer == null || tbl == null) {
+				return;
+			}
 			boolean ltr = getComponentOrientation().isLeftToRight();
 			Graphics2D g2 = (Graphics2D) g.create();
 			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
-			java.awt.Rectangle r0 = getHeaderRect(0);
-			java.awt.Rectangle r1 = n > 1 ? getHeaderRect(1) : r0;
-			int runSpanW = ltr ? (r0.width + r1.width) : (r1.width + r0.width);
-			int runSpanX = ltr ? r0.x : r1.x;
-			// Clear and draw "Run" spanning first RUN_SPAN_COLUMNS
-			g2.setComposite(AlphaComposite.getInstance(AlphaComposite.CLEAR));
-			g2.fillRect(runSpanX, 0, runSpanW, getHeight());
-			g2.setComposite(AlphaComposite.SrcOver);
-			Component runCell = renderer.getTableCellRendererComponent(tbl, "Run", false, false, -1, 0);
-			runCell.setBounds(0, 0, runSpanW, getHeight());
-			Graphics2D cellG = (Graphics2D) g2.create(runSpanX, 0, runSpanW, getHeight());
-			runCell.paint(cellG);
-			cellG.dispose();
-			// Columns 2..n-1 normally
-			for (int i = RUN_SPAN_COLUMNS; i < n; i++) {
+			for (int i = 0; i < n; i++) {
 				int col = ltr ? i : (n - 1 - i);
 				TableColumn tc = cm.getColumn(col);
 				TableCellRenderer colRenderer = tc.getHeaderRenderer();
-				if (colRenderer == null) colRenderer = renderer;
+				if (colRenderer == null) {
+					colRenderer = renderer;
+				}
 				java.awt.Rectangle r = getHeaderRect(col);
 				g2.setComposite(AlphaComposite.getInstance(AlphaComposite.CLEAR));
 				g2.fillRect(r.x, r.y, r.width, r.height);
@@ -2944,7 +3098,7 @@ String getName() {
 			 label.setBackground(transparent ? EdoUi.Internal.TRANSPARENT : EdoUi.User.BACKGROUND);
 			 label.setForeground(EdoUi.Internal.tableHeaderForeground());
 			 label.setFont(label.getFont().deriveFont(Font.BOLD));
-			 label.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
+			 label.setHorizontalAlignment(column <= 1 ? SwingConstants.LEFT : SwingConstants.RIGHT);
 			 label.setBorder(transparent
 					 ? new EmptyBorder(2, 4, 0, 4)  // no MatteBorder when transparent so no opaque paint
 					 : new CompoundBorder(
@@ -3120,8 +3274,7 @@ String getName() {
 		private void updateScatterRunSummaryLines() {
 			// Scatter's Run line(s) should reflect all active runs (same rule as the table),
 			// regardless of current scatter filter or commander selection.
-			List<RunSummary> summaries = ProspectorLogTableModel
-				.getActiveRunSummaries(currentRows, matcher);
+			List<RunSummary> summaries = ProspectorLogTableModel.getActiveRunSummaries(currentRows, matcher);
 			scatterPanel.setRunSummaries(summaries);
 		}
 
@@ -3243,6 +3396,9 @@ String getName() {
 		private static final int PAD_BOTTOM = 32;
 		private static final int PAD_RIGHT = 16;
 		private static final int PAD_TOP = 16;
+		/** Cap run-summary header lines so padding does not consume the whole panel (merged multi-commander sheets). */
+		private static final int MAX_SCATTER_RUN_SUMMARY_LINES = 16;
+		private static final int SCATTER_MIN_PLOT_HEIGHT = 72;
 		private static final double POINT_RADIUS = 3.0;
 		private static final int TICK_LABELS = 5;
 		private static final Color[] COMMANDER_PALETTE = {
@@ -3255,6 +3411,8 @@ String getName() {
 			new Color(0x87, 0xCE, 0xEB),
 			new Color(0xDD, 0xA0, 0xDD),
 		};
+		/** Cap gun platforms and palette slots in ALL mode (merged sheets can yield many distinct commander strings). */
+		private static final int MAX_TOP_COMMANDERS_GUNS_PALETTE = 8;
 		enum FilterMode { ALL, BY_RUN, BY_COMMANDER }
 		private List<ProspectorLogRow> rows = new ArrayList<>();
 		private FilterMode filterMode = FilterMode.ALL;
@@ -3338,7 +3496,7 @@ String getName() {
 				this.color = color;
 				this.skipKeyFrom = skipKeyFrom != null ? skipKeyFrom : "";
 				this.skipKeyTo = skipKeyTo != null ? skipKeyTo : "";
-				this.animCommander = animCommander != null ? animCommander : "";
+				this.animCommander = normalizeCommanderKey(animCommander);
 				this.queueKey = queueKey != null ? queueKey : "";
 			}
 
@@ -3431,28 +3589,65 @@ String getName() {
 			return geom.plotX + t * geom.plotW;
 		}
 
+		private static String normalizeCommanderKey(String cmdr) {
+			if (cmdr == null || cmdr.isBlank()) {
+				return "-";
+			}
+			return cmdr.trim();
+		}
+
+		private List<String> allCommandersByRowCountDesc(List<ProspectorLogRow> toPlot) {
+			Map<String, Long> counts = new HashMap<>();
+			for (ProspectorLogRow r : toPlot) {
+				counts.merge(normalizeCommanderKey(r.getCommanderName()), 1L, Long::sum);
+			}
+			return counts.entrySet().stream()
+				.sorted(Comparator.<Map.Entry<String, Long>>comparingLong(Map.Entry::getValue).reversed()
+					.thenComparing(Map.Entry::getKey))
+				.map(Map.Entry::getKey)
+				.toList();
+		}
+
+		private List<String> topCommandersForGunsAndPalette(List<ProspectorLogRow> toPlot) {
+			List<String> all = allCommandersByRowCountDesc(toPlot);
+			if (all.size() <= MAX_TOP_COMMANDERS_GUNS_PALETTE) {
+				return all;
+			}
+			return all.subList(0, MAX_TOP_COMMANDERS_GUNS_PALETTE);
+		}
+
+		private static void minMaxPercent(List<ProspectorLogRow> rows, double[] outMinMax) {
+			double minP = Double.POSITIVE_INFINITY;
+			double maxP = Double.NEGATIVE_INFINITY;
+			for (ProspectorLogRow r : rows) {
+				double p = r.getPercent();
+				if (p < minP) {
+					minP = p;
+				}
+				if (p > maxP) {
+					maxP = p;
+				}
+			}
+			outMinMax[0] = minP;
+			outMinMax[1] = maxP;
+		}
+
 		private List<String> platformCommandersForPlot(List<ProspectorLogRow> toPlot) {
 			if (toPlot == null || toPlot.isEmpty()) {
 				return List.of();
 			}
 			if (filterMode == FilterMode.ALL) {
-				List<String> ord = toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList();
-				List<String> out = new ArrayList<>();
-				for (String c : ord) {
-					if (c != null && !c.isEmpty()) {
-						out.add(c);
-					}
-				}
-				return out;
+				return topCommandersForGunsAndPalette(toPlot);
 			}
 			if (selectedCommander != null && !selectedCommander.isEmpty()) {
-				return List.of(selectedCommander);
+				return List.of(normalizeCommanderKey(selectedCommander));
 			}
 			return List.of();
 		}
 
 		private double homeXForCommander(PlotGeom geom, String cmdr, List<String> ordered) {
-			int idx = ordered.indexOf(cmdr);
+			String key = normalizeCommanderKey(cmdr);
+			int idx = ordered.indexOf(key);
 			if (idx < 0) {
 				return gatherLaserOriginX(geom);
 			}
@@ -3488,8 +3683,14 @@ String getName() {
 			if (gatherLaserFrom == null) {
 				gatherLaserFrom = new Point(0, 0);
 			}
-			double cx = cmdr != null && !cmdr.isEmpty() && gunPlatformCenterXByCommander.containsKey(cmdr)
-				? gunPlatformCenterXByCommander.get(cmdr)
+			if (cmdr == null || cmdr.isBlank()) {
+				gatherLaserFrom.x = (int) Math.round(gatherLaserOriginX(geom));
+				gatherLaserFrom.y = gunLaserEmitY(geom);
+				return;
+			}
+			String gk = normalizeCommanderKey(cmdr);
+			double cx = gunPlatformCenterXByCommander.containsKey(gk)
+				? gunPlatformCenterXByCommander.get(gk)
 				: gatherLaserOriginX(geom);
 			gatherLaserFrom.x = (int) Math.round(cx);
 			gatherLaserFrom.y = gunLaserEmitY(geom);
@@ -3728,8 +3929,13 @@ String getName() {
 						runLineCount++;
 					}
 				}
-				int runLineBlockHeight = 4 + runLineCount * lineHeight + 6;
+				int cappedLines = Math.min(runLineCount, MAX_SCATTER_RUN_SUMMARY_LINES);
+				int runLineBlockHeight = 4 + cappedLines * lineHeight + 6;
 				effectivePadTop = Math.max(PAD_TOP, runLineBlockHeight);
+				int maxPadTop = h - PAD_BOTTOM - SCATTER_MIN_PLOT_HEIGHT;
+				if (maxPadTop >= PAD_TOP) {
+					effectivePadTop = Math.min(effectivePadTop, maxPadTop);
+				}
 			}
 			if (h <= effectivePadTop + PAD_BOTTOM) {
 				return null;
@@ -3768,14 +3974,15 @@ String getName() {
 		}
 
 		private Color commanderColorFor(String cmdr, List<ProspectorLogRow> toPlot) {
-			List<String> commanderOrder = filterMode == FilterMode.ALL
-				? toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList()
-				: List.of();
-			Map<String, Color> commanderColor = new HashMap<>();
-			for (int i = 0; i < commanderOrder.size(); i++) {
-				commanderColor.put(commanderOrder.get(i), COMMANDER_PALETTE[i % COMMANDER_PALETTE.length]);
+			if (filterMode != FilterMode.ALL) {
+				return EdoUi.User.VALUABLE;
 			}
-			return commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
+			List<String> top = topCommandersForGunsAndPalette(toPlot);
+			Map<String, Color> commanderColor = new HashMap<>();
+			for (int i = 0; i < top.size(); i++) {
+				commanderColor.put(top.get(i), COMMANDER_PALETTE[i % COMMANDER_PALETTE.length]);
+			}
+			return commanderColor.getOrDefault(normalizeCommanderKey(cmdr), EdoUi.User.VALUABLE);
 		}
 
 		private static String commanderFromRockSnapshotKey(String rockKey) {
@@ -3876,19 +4083,19 @@ String getName() {
 			gatherPhaseSpin = asteroidSpinAngle;
 			gatherMoveFrom = new Point(from);
 			gatherMoveTo = new Point(to);
+			gatherAnimCommander = normalizeCommanderKey(animCommander);
 			List<String> pcs = platformCommandersForPlot(filteredRows());
 			PlotGeom geom = computePlotGeom();
 			if (geom != null) {
 				syncGunPlatformCenters(pcs, geom);
-				String ac = animCommander != null ? animCommander : "";
 				// Do not snap X to home here — that teleports the platform to the idle slot at every gather
 				// start and ignores its current position (e.g. still near the last rock or partway home).
 				// Motion is always via lerp in tickGatherAnimation from whatever X we have now.
-				if (!ac.isEmpty() && !gunPlatformCenterXByCommander.containsKey(ac)) {
-					gunPlatformCenterXByCommander.put(ac, homeXForCommander(geom, ac, pcs));
+				if (!gunPlatformCenterXByCommander.containsKey(gatherAnimCommander)) {
+					gunPlatformCenterXByCommander.put(gatherAnimCommander, homeXForCommander(geom, gatherAnimCommander, pcs));
 				}
 				gatherLaserFrom = new Point(0, 0);
-				updateGatherLaserFromFromGun(geom, ac);
+				updateGatherLaserFromFromGun(geom, gatherAnimCommander);
 			} else {
 				int fallbackY = Math.min(getHeight() - 4, Math.max(gatherMoveFrom.y, gatherMoveTo.y) + 40);
 				gatherLaserFrom = new Point(gatherLaserOriginX(null), fallbackY);
@@ -3896,7 +4103,6 @@ String getName() {
 			gatherAsteroidColor = asteroidColor;
 			gatherSkipRowKeyFrom = skipKeyFrom != null ? skipKeyFrom : "";
 			gatherSkipRowKeyTo = skipKeyTo != null ? skipKeyTo : "";
-			gatherAnimCommander = animCommander != null ? animCommander : "";
 			gatherQueueKey = queueKey != null ? queueKey : "";
 			gatherParticles.clear();
 			gatherAnimTimer.start();
@@ -4191,14 +4397,13 @@ String getName() {
 		private List<ProspectorLogRow> filteredRows() {
 			if (rows.isEmpty()) return rows;
 			switch (filterMode) {
-				case BY_RUN:
+				case BY_RUN: {
+					String want = normalizeCommanderKey(selectedCommander);
 					return rows.stream()
 						.filter(r -> r.getRun() == selectedRun
-							&& java.util.Objects.equals(
-								selectedCommander == null || selectedCommander.isEmpty() ? selectedCommander
-									: selectedCommander,
-								r.getCommanderName()))
+							&& java.util.Objects.equals(want, normalizeCommanderKey(r.getCommanderName())))
 						.toList();
+				}
 				case BY_COMMANDER:
 					return rows.stream().filter(r -> java.util.Objects.equals(selectedCommander, r.getCommanderName())).toList();
 				default:
@@ -4232,6 +4437,13 @@ String getName() {
 			int h = getHeight();
 			PlotGeom geom = computePlotGeom();
 			if (geom == null) {
+				g2.setFont(g2.getFont().deriveFont(12f));
+				String msg = w <= PAD_LEFT + PAD_RIGHT
+						? "Widen the panel to show the chart."
+						: "Not enough space for chart (many runs). Resize taller or use Table.";
+				FontMetrics fm2 = g2.getFontMetrics();
+				int tw = fm2.stringWidth(msg);
+				g2.drawString(msg, Math.max(0, (w - tw) / 2), (h + fm2.getAscent()) / 2 - fm2.getDescent());
 				g2.dispose();
 				return;
 			}
@@ -4278,7 +4490,7 @@ String getName() {
 				g2.drawString(tick, plotX - fm.stringWidth(tick) - 4, ty + fm.getAscent() / 2);
 			}
 			List<String> commanderOrder = filterMode == FilterMode.ALL
-				? toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList()
+				? topCommandersForGunsAndPalette(toPlot)
 				: List.of();
 			Map<String, Color> commanderColor = new HashMap<>();
 			for (int i = 0; i < commanderOrder.size(); i++) {
@@ -4292,7 +4504,11 @@ String getName() {
 				FontMetrics sumFm = g2.getFontMetrics();
 				int lineHeight = sumFm.getHeight();
 				int yTop = 4 + sumFm.getAscent();
+				int drawn = 0;
 				for (RunSummary summary : runSummaries) {
+					if (drawn >= MAX_SCATTER_RUN_SUMMARY_LINES) {
+						break;
+					}
 					if (summary == null) continue;
 					String line = summary.formatSummary();
 					if (line == null || line.isEmpty()) {
@@ -4300,7 +4516,7 @@ String getName() {
 					}
 					Color lineColor = EdoUi.User.MAIN_TEXT;
 					if (filterMode == FilterMode.ALL && summary.commanderName != null && !summary.commanderName.isBlank()) {
-						lineColor = commanderColor.getOrDefault(summary.commanderName, EdoUi.User.MAIN_TEXT);
+						lineColor = commanderColor.getOrDefault(normalizeCommanderKey(summary.commanderName), EdoUi.User.MAIN_TEXT);
 					} else if (filterMode == FilterMode.BY_COMMANDER && selectedCommander != null && !selectedCommander.isEmpty()) {
 						// In commander-only mode, points use the default highlight color.
 						lineColor = EdoUi.User.VALUABLE;
@@ -4308,13 +4524,19 @@ String getName() {
 					g2.setColor(lineColor);
 					g2.drawString(line, plotX, yTop);
 					yTop += lineHeight;
+					drawn++;
+				}
+				if (runSummaries.size() > MAX_SCATTER_RUN_SUMMARY_LINES) {
+					g2.setColor(EdoUi.User.MAIN_TEXT);
+					String more = "+ " + (runSummaries.size() - MAX_SCATTER_RUN_SUMMARY_LINES) + " more runs (see Table tab)";
+					g2.drawString(more, plotX, yTop);
 				}
 				g2.setFont(getFont());
 				g2.setColor(EdoUi.User.MAIN_TEXT);
 			}
 			for (ProspectorLogRow r : toPlot) {
 				Color pointColor = filterMode == FilterMode.ALL && !commanderOrder.isEmpty()
-					? commanderColor.getOrDefault(r.getCommanderName(), EdoUi.User.VALUABLE)
+					? commanderColor.getOrDefault(normalizeCommanderKey(r.getCommanderName()), EdoUi.User.VALUABLE)
 					: EdoUi.User.VALUABLE;
 				g2.setColor(pointColor);
 				double p = r.getPercent();
@@ -4327,63 +4549,67 @@ String getName() {
 				pointInfos.add(new PointInfo(x, y, r));
 			}
 
-			// Trend lines by commander (best-fit line of Percentage vs Actual)
+			// Trend lines by commander (best-fit line of Percentage vs Actual); X span is each series’ % range only.
 			Stroke oldStroke = g2.getStroke();
 			g2.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-			if (filterMode == FilterMode.ALL && !commanderOrder.isEmpty()) {
-				for (String cmdr : commanderOrder) {
+			double[] trendPctRange = new double[2];
+			if (filterMode == FilterMode.ALL) {
+				for (String cmdrKey : allCommandersByRowCountDesc(toPlot)) {
 					List<ProspectorLogRow> rowsForCommander = toPlot.stream()
-						.filter(r -> java.util.Objects.equals(cmdr, r.getCommanderName()))
+						.filter(r -> java.util.Objects.equals(cmdrKey, normalizeCommanderKey(r.getCommanderName())))
 						.toList();
 					Regression reg = computeRegression(rowsForCommander);
 					if (!reg.valid) {
 						continue;
 					}
-					int[] seg = screenEndpointsForTrend(geom, reg);
-					Color c = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
+					minMaxPercent(rowsForCommander, trendPctRange);
+					if (!Double.isFinite(trendPctRange[0]) || !Double.isFinite(trendPctRange[1])) {
+						continue;
+					}
+					int[] seg = screenEndpointsForTrend(geom, reg, trendPctRange[0], trendPctRange[1]);
+					Color c = commanderColor.getOrDefault(cmdrKey, EdoUi.User.VALUABLE);
 					g2.setColor(c);
 					g2.drawLine(seg[0], seg[1], seg[2], seg[3]);
 				}
 			} else if (filterMode == FilterMode.BY_COMMANDER && selectedCommander != null && !selectedCommander.isEmpty()) {
 				Regression reg = computeRegression(toPlot);
 				if (reg.valid) {
-					int[] seg = screenEndpointsForTrend(geom, reg);
-					Color c = commanderColor.getOrDefault(selectedCommander, EdoUi.User.VALUABLE);
+					minMaxPercent(toPlot, trendPctRange);
+					int[] seg = screenEndpointsForTrend(geom, reg, trendPctRange[0], trendPctRange[1]);
+					Color c = commanderColor.getOrDefault(normalizeCommanderKey(selectedCommander), EdoUi.User.VALUABLE);
 					g2.setColor(c);
 					g2.drawLine(seg[0], seg[1], seg[2], seg[3]);
 				}
 			}
 			g2.setStroke(oldStroke);
 
-			// Commander legend (only when coloring by commander: mode = ALL)
-			if (!commanderOrder.isEmpty()) {
+			// Commander legend (only when coloring by commander: mode = ALL) — restored from pre-regression layout (boxed, lower-right inside plot).
+			if (filterMode == FilterMode.ALL && !commanderOrder.isEmpty()) {
 				int swatchSize = 10;
 				int swatchTextGap = 4;
-				int lineHeight = fm.getHeight();
+				int legendLineHeight = fm.getHeight();
 				int maxLabelWidth = 0;
 				for (String name : commanderOrder) {
 					String label = (name == null || name.isEmpty()) ? "-" : name;
 					maxLabelWidth = Math.max(maxLabelWidth, fm.stringWidth(label));
 				}
 				int legendWidth = swatchSize + swatchTextGap + maxLabelWidth + 8;
-				int legendHeight = commanderOrder.size() * lineHeight + 8;
+				int legendHeight = commanderOrder.size() * legendLineHeight + 8;
 				int legendX = plotX + plotW - legendWidth - 4;
 				int legendY = plotY + plotH - legendHeight - 4;
 
-				// Background and border
 				g2.setColor(new Color(0, 0, 0, 160));
 				g2.fillRect(legendX, legendY, legendWidth, legendHeight);
 				g2.setColor(EdoUi.User.MAIN_TEXT);
 				g2.drawRect(legendX, legendY, legendWidth, legendHeight);
 
-				// Entries
 				int entryY = legendY + 4;
 				for (int i = 0; i < commanderOrder.size(); i++) {
 					String name = commanderOrder.get(i);
 					String label = (name == null || name.isEmpty()) ? "-" : name;
 					Color c = commanderColor.getOrDefault(name, EdoUi.User.VALUABLE);
 					int swatchX = legendX + 4;
-					int swatchY = entryY + (lineHeight - swatchSize) / 2;
+					int swatchY = entryY + (legendLineHeight - swatchSize) / 2;
 					g2.setColor(c);
 					g2.fillRect(swatchX, swatchY, swatchSize, swatchSize);
 					g2.setColor(EdoUi.User.MAIN_TEXT);
@@ -4391,7 +4617,7 @@ String getName() {
 					int textX = swatchX + swatchSize + swatchTextGap;
 					int textY = entryY + fm.getAscent();
 					g2.drawString(label, textX, textY);
-					entryY += lineHeight;
+					entryY += legendLineHeight;
 				}
 			}
 
@@ -4406,7 +4632,7 @@ String getName() {
 						inSession, prospectorMaterialKeysForMarkers);
 					for (ProspectorLogRow leadRow : rockRows) {
 						String cmdr = leadRow.getCommanderName() != null ? leadRow.getCommanderName() : "";
-						Color markColor = commanderColor.getOrDefault(cmdr, EdoUi.User.VALUABLE);
+						Color markColor = commanderColor.getOrDefault(normalizeCommanderKey(cmdr), EdoUi.User.VALUABLE);
 						String mat = leadRow.getMaterial() != null ? leadRow.getMaterial() : "";
 						double phase = ((cmdr.hashCode() & 0xFFFF) ^ (mat.hashCode() & 0xFFFF)) * 0.001;
 						String rk = rowKeyForAnim(leadRow);
@@ -4632,24 +4858,45 @@ String getName() {
 			handleMouseMoved(mx, my);
 		}
 
-		/** Same endpoints as drawn in {@link #paintComponent(Graphics)} (Y clamped to plot range). */
-		private static int[] screenEndpointsForTrend(PlotGeom geom, Regression reg) {
-			double minPct = geom.minPct;
-			double maxPct = geom.maxPct;
+		/**
+		 * Screen segment for a linear trend over {@code dataMinPct…dataMaxPct} (that series’ % range),
+		 * mapped through the plot axes (Y clamped to tons axis range).
+		 */
+		private static int[] screenEndpointsForTrend(PlotGeom geom, Regression reg, double dataMinPct, double dataMaxPct) {
+			double minPctAxis = geom.minPct;
+			double maxPctAxis = geom.maxPct;
 			double minAct = geom.minAct;
 			double maxAct = geom.maxAct;
 			int plotX = geom.plotX;
 			int plotY = geom.plotY;
 			int plotW = geom.plotW;
 			int plotH = geom.plotH;
-			double x1 = minPct;
-			double x2 = maxPct;
+			double x1 = dataMinPct;
+			double x2 = dataMaxPct;
+			if (x2 < x1) {
+				double t = x1;
+				x1 = x2;
+				x2 = t;
+			}
+			x1 = Math.max(minPctAxis, Math.min(maxPctAxis, x1));
+			x2 = Math.max(minPctAxis, Math.min(maxPctAxis, x2));
+			double spanAxis = maxPctAxis - minPctAxis;
+			if (!(spanAxis > 0)) {
+				spanAxis = 1;
+			}
+			if (x2 - x1 < 1e-9 * spanAxis) {
+				x2 = Math.min(maxPctAxis, x1 + Math.max(1e-6, spanAxis * 0.02));
+				if (x2 <= x1) {
+					x1 = minPctAxis;
+					x2 = maxPctAxis;
+				}
+			}
 			double y1 = reg.slope * x1 + reg.intercept;
 			double y2 = reg.slope * x2 + reg.intercept;
 			y1 = Math.max(minAct, Math.min(maxAct, y1));
 			y2 = Math.max(minAct, Math.min(maxAct, y2));
-			double nx1 = (maxPct > minPct) ? (x1 - minPct) / (maxPct - minPct) : 0.5;
-			double nx2 = (maxPct > minPct) ? (x2 - minPct) / (maxPct - minPct) : 0.5;
+			double nx1 = (maxPctAxis > minPctAxis) ? (x1 - minPctAxis) / (maxPctAxis - minPctAxis) : 0.5;
+			double nx2 = (maxPctAxis > minPctAxis) ? (x2 - minPctAxis) / (maxPctAxis - minPctAxis) : 0.5;
 			double ny1 = (maxAct > minAct) ? 1.0 - (y1 - minAct) / (maxAct - minAct) : 0.5;
 			double ny2 = (maxAct > minAct) ? 1.0 - (y2 - minAct) / (maxAct - minAct) : 0.5;
 			int sx1 = plotX + (int) (nx1 * plotW);
@@ -4701,22 +4948,25 @@ String getName() {
 			double bestDistSq = Double.POSITIVE_INFINITY;
 			TrendHoverState best = null;
 			double[] proj = new double[2];
+			double[] trendPctRange = new double[2];
 			if (filterMode == FilterMode.ALL) {
-				List<String> commanderOrder = toPlot.stream().map(ProspectorLogRow::getCommanderName).distinct().toList();
-				for (String cmdr : commanderOrder) {
+				for (String cmdrKey : allCommandersByRowCountDesc(toPlot)) {
 					List<ProspectorLogRow> rowsForCommander = toPlot.stream()
-						.filter(r -> java.util.Objects.equals(cmdr, r.getCommanderName()))
+						.filter(r -> java.util.Objects.equals(cmdrKey, normalizeCommanderKey(r.getCommanderName())))
 						.toList();
 					Regression reg = computeRegression(rowsForCommander);
 					if (!reg.valid) {
 						continue;
 					}
-					int[] seg = screenEndpointsForTrend(geom, reg);
+					minMaxPercent(rowsForCommander, trendPctRange);
+					if (!Double.isFinite(trendPctRange[0]) || !Double.isFinite(trendPctRange[1])) {
+						continue;
+					}
+					int[] seg = screenEndpointsForTrend(geom, reg, trendPctRange[0], trendPctRange[1]);
 					double dsq = pointToSegmentDistSq(mx, my, seg[0], seg[1], seg[2], seg[3]);
 					if (dsq < bestDistSq) {
 						closestPointOnSegment(mx, my, seg[0], seg[1], seg[2], seg[3], proj);
-						String label = (cmdr == null || cmdr.isEmpty()) ? "-" : cmdr;
-						best = new TrendHoverState(label, reg, seg[0], seg[1], seg[2], seg[3],
+						best = new TrendHoverState(cmdrKey, reg, seg[0], seg[1], seg[2], seg[3],
 							(int) Math.round(proj[0]), (int) Math.round(proj[1]));
 						bestDistSq = dsq;
 					}
@@ -4724,7 +4974,8 @@ String getName() {
 			} else if (filterMode == FilterMode.BY_COMMANDER && selectedCommander != null && !selectedCommander.isEmpty()) {
 				Regression reg = computeRegression(toPlot);
 				if (reg.valid) {
-					int[] seg = screenEndpointsForTrend(geom, reg);
+					minMaxPercent(toPlot, trendPctRange);
+					int[] seg = screenEndpointsForTrend(geom, reg, trendPctRange[0], trendPctRange[1]);
 					double dsq = pointToSegmentDistSq(mx, my, seg[0], seg[1], seg[2], seg[3]);
 					if (dsq < bestDistSq) {
 						closestPointOnSegment(mx, my, seg[0], seg[1], seg[2], seg[3], proj);
@@ -4866,11 +5117,17 @@ String getName() {
 		}
 	}
 
-	/** Table model for prospector log rows: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander. Before/After/Body hidden in GUI. */
+	/**
+	 * Table model for prospector log rows. Display order: Commander first, then Run, …
+	 * Sheet/API row layout is still 15 columns with Run in column A.
+	 */
 	private static final class ProspectorLogTableModel extends AbstractTableModel {
 		private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("h:mma", Locale.US);
 		private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("M/d/yyyy", Locale.US);
-		private static final String[] COLUMNS = { "Run", "Asteroid", "Time", "Type", "Percentage", "Before Amount", "After Amount", "Tons", "Core", "Duds", "System", "Body", "Commander" };
+		private static final String[] COLUMNS = {
+				"Commander", "Run", "Asteroid", "Time", "Type", "Percentage",
+				"Before Amount", "After Amount", "Tons", "Core", "Duds", "System", "Body"
+		};
 		private List<Object> displayRows = new ArrayList<>();
 
 		void setRows(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
@@ -4897,38 +5154,60 @@ String getName() {
 				RunKey key = new RunKey(run, commander);
 				byRun.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
 			}
-			// Most recent first: runs descending, then within each (run, commander) by commander and timestamp descending
+			// Most recent first: runs descending, then within each (run, commander) by commander and timestamp ascending
+			// (matches sheet / prospecting order; avoids reverse-chronological asteroid lists).
 			List<RunKey> runOrder = new ArrayList<>(byRun.keySet());
 			runOrder.sort(Comparator
 				.comparingInt((RunKey k) -> k.run).reversed()
 				.thenComparing(k -> k.commander, String.CASE_INSENSITIVE_ORDER));
-			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
+			Comparator<Instant> tsAsc = Comparator.nullsLast(Comparator.naturalOrder());
 			Instant now = Instant.now();
 			for (RunKey key : runOrder) {
 				List<ProspectorLogRow> runRows = new ArrayList<>(byRun.get(key));
-				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsDesc));
-				RunSummary summary = computeRunSummary(key, runRows, matcher, now);
-				if (summary != null) {
-					out.add(summary);
+				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsAsc));
+				if (isOpenRunForSummary(runRows)) {
+					RunSummary summary = computeRunSummary(key, runRows, matcher, now);
+					if (summary != null) {
+						out.add(summary);
+					}
 				}
 				out.addAll(runRows);
 			}
 			return out;
 		}
 
+		/**
+		 * After rows are sorted by prospecting timestamp ascending, the sheet's run metadata lives on the first row
+		 * that carries {@link ProspectorLogRow#getRunStartTime()}.
+		 */
+		private static ProspectorLogRow canonicalRunMetaRow(List<ProspectorLogRow> runRowsTimeAscending) {
+			if (runRowsTimeAscending == null) {
+				return null;
+			}
+			for (ProspectorLogRow r : runRowsTimeAscending) {
+				if (r != null && r.getRunStartTime() != null) {
+					return r;
+				}
+			}
+			return null;
+		}
+
+		/** True when the canonical run row has a start time and no end time (open run). */
+		private static boolean isOpenRunForSummary(List<ProspectorLogRow> runRowsTimeAscending) {
+			ProspectorLogRow c = canonicalRunMetaRow(runRowsTimeAscending);
+			return c != null && c.getRunEndTime() == null;
+		}
+
 		private static RunSummary computeRunSummary(RunKey key, List<ProspectorLogRow> runRows, MaterialNameMatcher matcher, Instant now) {
 			if (runRows == null || runRows.isEmpty()) return null;
 			Instant firstTs = null, lastTs = null;
-			ProspectorLogRow canonicalRow = null; // row that has run start/end (at most one per run)
+			ProspectorLogRow canonicalRow = canonicalRunMetaRow(runRows);
 			double totalTons = 0.0;
 			double totalCredits = 0.0;
 			for (ProspectorLogRow r : runRows) {
 				if (r.getTimestamp() != null) {
 					if (firstTs == null || r.getTimestamp().isBefore(firstTs)) firstTs = r.getTimestamp();
 					if (lastTs == null || r.getTimestamp().isAfter(lastTs)) lastTs = r.getTimestamp();
-				}
-				if (r.getRunStartTime() != null) {
-					canonicalRow = r;
 				}
 				double diff = r.getDifference();
 				totalTons += diff;
@@ -4949,10 +5228,8 @@ String getName() {
 			return new RunSummary(key.run, key.commander, dateStr, tonsPerHour, creditsPerHour);
 		}
 
-		/** Build run summary strings for the given rows (grouped by run/commander). Same format as Table Run row.
-		 * @param inProgressOnly if true, only include runs that have no end time yet (active runs)
-		 */
-		static List<String> getRunSummaryLines(List<ProspectorLogRow> rows, MaterialNameMatcher matcher, boolean inProgressOnly) {
+		/** Build run summary strings for open runs only (same format as Table Run row). */
+		static List<String> getRunSummaryLines(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
 			if (rows == null || rows.isEmpty()) return List.of();
 			Map<RunKey, List<ProspectorLogRow>> byRun = new HashMap<>();
 			for (ProspectorLogRow r : rows) {
@@ -4961,22 +5238,15 @@ String getName() {
 				if (commander == null || commander.isBlank()) commander = "-";
 				byRun.computeIfAbsent(new RunKey(r.getRun(), commander), k -> new ArrayList<>()).add(r);
 			}
-			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
+			Comparator<Instant> tsAsc = Comparator.nullsLast(Comparator.naturalOrder());
 			Instant now = Instant.now();
 			List<String> lines = new ArrayList<>();
 			for (Map.Entry<RunKey, List<ProspectorLogRow>> e : byRun.entrySet()) {
 				List<ProspectorLogRow> runRows = new ArrayList<>(e.getValue());
-				if (inProgressOnly) {
-					ProspectorLogRow canonical = runRows.stream()
-						.filter(r -> r.getRunStartTime() != null)
-						.findFirst()
-						.orElse(null);
-					// Only show runs that are in progress: must have a canonical row with no end time.
-					if (canonical == null || canonical.getRunEndTime() != null) {
-						continue; // skip completed or legacy (no run start time) runs
-					}
+				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsAsc));
+				if (!isOpenRunForSummary(runRows)) {
+					continue;
 				}
-				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsDesc));
 				RunSummary summary = computeRunSummary(e.getKey(), runRows, matcher, now);
 				if (summary != null) {
 					lines.add(summary.formatSummary());
@@ -4985,9 +5255,9 @@ String getName() {
 			return lines;
 		}
 
-		/** All active run summaries across all commanders, using the same rules as the table:
-		 *  - Group by (run, commander).
-		 *  - A run is active if its canonical row (the one with a run start time) has no end time.
+		/**
+		 * Active (in-progress) runs only: canonical row has run start and no run end.
+		 * Aggregates to one combined line per commander.
 		 */
 		static List<RunSummary> getActiveRunSummaries(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
 			if (rows == null || rows.isEmpty()) return List.of();
@@ -5001,7 +5271,7 @@ String getName() {
 			if (byRun.isEmpty()) return List.of();
 
 			Instant now = Instant.now();
-			// Aggregate active runs per commander so the scatter/table run line shows
+			// Aggregate active runs per commander so the scatter run line shows
 			// a single combined performance line for each commander.
 			class CommanderAgg {
 				Instant start;
@@ -5012,16 +5282,15 @@ String getName() {
 			}
 			Map<String, CommanderAgg> byCommander = new HashMap<>();
 
+			Comparator<Instant> tsAsc = Comparator.nullsLast(Comparator.naturalOrder());
 			for (Map.Entry<RunKey, List<ProspectorLogRow>> e : byRun.entrySet()) {
 				List<ProspectorLogRow> runRows = new ArrayList<>(e.getValue());
 				if (runRows.isEmpty()) continue;
+				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsAsc));
 
 				// Determine canonical row, totals, and span for this run.
 				Instant firstTs = null, lastTs = null;
-				ProspectorLogRow canonical = runRows.stream()
-					.filter(r -> r.getRunStartTime() != null)
-					.findFirst()
-					.orElse(null);
+				ProspectorLogRow canonical = canonicalRunMetaRow(runRows);
 				if (canonical == null || canonical.getRunEndTime() != null) {
 					continue;
 				}
@@ -5137,32 +5406,32 @@ String getName() {
 			}
 			ProspectorLogRow r = (ProspectorLogRow) item;
 			switch (columnIndex) {
-				case 0: return r.getRun();
-				case 1:
+				case 0: return r.getCommanderName();
+				case 1: return r.getRun();
+				case 2:
 					String aid = r.getAsteroidId();
 					return (aid != null && !aid.isEmpty() && !"-".equals(aid)) ? aid : "";
-				case 2:
+				case 3:
 					if (r.getTimestamp() == null) return "";
 					return r.getTimestamp().atZone(ZoneId.systemDefault()).format(TS_FMT).toLowerCase(Locale.US);
-				case 3: return r.getMaterial();
-				case 4: return String.format(Locale.US, "%.2f", r.getPercent());
-				case 5: return String.format(Locale.US, "%.2f", r.getBeforeAmount());
-				case 6: return String.format(Locale.US, "%.2f", r.getAfterAmount());
+				case 4: return r.getMaterial();
+				case 5: return String.format(Locale.US, "%.2f", r.getPercent());
+				case 6: return String.format(Locale.US, "%.2f", r.getBeforeAmount());
+				case 7: return String.format(Locale.US, "%.2f", r.getAfterAmount());
 				// Tons: display as whole tons (no decimal places)
-				case 7: return String.format(Locale.US, "%d", Math.round(r.getDifference()));
-				case 8:
+				case 8: return String.format(Locale.US, "%d", Math.round(r.getDifference()));
+				case 9:
 					String core = r.getCoreType();
 					return (core != null && !core.isEmpty() && !"-".equals(core)) ? core : "";
-				case 9: return r.getDuds() == 0 ? "" : r.getDuds();
-				case 10: {
+				case 10: return r.getDuds() == 0 ? "" : r.getDuds();
+				case 11: {
 					String[] sb = splitSystemAndBodyForDisplay(r.getFullBodyName());
 					return sb[0];
 				}
-				case 11: {
+				case 12: {
 					String[] sb = splitSystemAndBodyForDisplay(r.getFullBodyName());
 					return sb[1];
 				}
-				case 12: return r.getCommanderName();
 				default: return "";
 			}
 		}

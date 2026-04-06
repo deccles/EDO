@@ -28,7 +28,8 @@ import java.util.Set;
  *       closed set from rule (2).</li>
  *   <li><strong>Location continuation:</strong> if there is no active run but the latest row at the current
  *       system/body belongs to a run that is <em>not</em> closed, continue that run number; otherwise allocate
- *       {@code lastGlobalRun + 1}.</li>
+ *       {@code lastRunForThisCommander + 1}.</li>
+ *   <li><strong>Run numbers are per commander</strong> (1..n within each commander), not globally unique across commanders.</li>
  * </ol>
  */
 public final class MiningRunNumberResolver {
@@ -42,9 +43,9 @@ public final class MiningRunNumberResolver {
      * @param commander     normalized mining log commander (blank becomes {@code "-"} when matching rows)
      * @param system        current star system name (may be empty)
      * @param body          current body name (may be empty)
-     * @param forceNewRun   when true, allocate {@code lastGlobalRun + 1} if there is no active run
-     * @param existingRows  all rows from the backend (sheet/CSV); may be empty, never null from callers
-     * @return run number to use for new writes (always {@code >= 1} when any global run existed)
+     * @param forceNewRun   when true, allocate {@code lastRunForThisCommander + 1} if there is no active run
+     * @param existingRows  all rows from the backend for this commander (or merged list; other commanders are ignored); may be empty, never null from callers
+     * @return run number to use for new writes
      */
     public static int compute(
             String commander,
@@ -54,7 +55,6 @@ public final class MiningRunNumberResolver {
             List<ProspectorLogRow> existingRows) {
         List<ProspectorLogRow> existing = existingRows != null ? existingRows : List.of();
 
-        int lastRunGlobal = 0;
         int lastRunForCommander = 0;
         int lastRunForCommanderAtLocation = 0;
         int activeRunForCommander = 0;
@@ -79,9 +79,6 @@ public final class MiningRunNumberResolver {
                 continue;
             }
             int rRun = r.getRun();
-            if (rRun > lastRunGlobal) {
-                lastRunGlobal = rRun;
-            }
             String rowCommander = normalizeCommander(r.getCommanderName());
             if (!rowCommander.equals(normalizeCommander(commander))) {
                 continue;
@@ -125,19 +122,19 @@ public final class MiningRunNumberResolver {
             }
         }
 
-        if (lastRunGlobal == 0) {
+        if (lastRunForCommander == 0) {
             return 1;
         }
         if (activeRunForCommander > 0) {
             return activeRunForCommander;
         }
         if (forceNewRun) {
-            return lastRunGlobal + 1;
+            return lastRunForCommander + 1;
         }
         if (lastRunForCommanderAtLocation > 0 && !runsWithEndForCommander.contains(lastRunForCommanderAtLocation)) {
             return lastRunForCommanderAtLocation;
         }
-        return lastRunGlobal + 1;
+        return lastRunForCommander + 1;
     }
 
     static String normalizeCommander(String name) {

@@ -7,6 +7,7 @@ import java.util.List;
 
 import javax.swing.SwingUtilities;
 
+import org.dce.ed.OverlayPreferences;
 import org.dce.ed.logreader.EliteLogParser;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
@@ -16,6 +17,8 @@ class ProspectorEventFlowThreadingTest {
 
     @Test
     void prospectedAsteroidFlow_fromNonEdt_updatesMiningOnEdt() throws Exception {
+        OverlayPreferences.setMiningLogBackend("local");
+        OverlayPreferences.setMiningGoogleSheetsUrl("");
         EliteOverlayTabbedPane tabs = new EliteOverlayTabbedPane(() -> false);
         MiningTabPanel mining = tabs.getMiningTabPanel();
 

@@ -153,6 +153,32 @@ public class RouteTabPanel extends JPanel {
 	};
 	protected final RouteSession routeSession = new RouteSession(routeJumpFlashHandle, this::shouldUpdateOnCarrierJump);
 
+	/**
+	 * Next plotted route system after the current system; {@code null} if unknown or at end.
+	 * Used by route-adjacent tabs (e.g. Fleet Carrier) for clipboard copy.
+	 */
+	public static String nextRouteDestinationSystemName(RouteSession session) {
+		if (session == null) {
+			return null;
+		}
+		List<RouteEntry> entries = session.getBaseRouteEntries();
+		if (entries == null || entries.isEmpty()) {
+			return null;
+		}
+		int row = RouteGeometry.findSystemRow(entries, session.getCurrentSystemName(), session.getCurrentSystemAddress());
+		int start = row + 1;
+		if (row < 0) {
+			start = 0;
+		}
+		for (int i = start; i < entries.size(); i++) {
+			RouteEntry e = entries.get(i);
+			if (e != null && !e.isBodyRow && e.systemName != null && !e.systemName.isBlank()) {
+				return e.systemName.trim();
+			}
+		}
+		return null;
+	}
+
 	private final Map<Long, RouteScanStatus> lastKnownScanStatusByAddress = new ConcurrentHashMap<>();
 	private final Map<Long, EdsmScanSummary> edsmSummaryByAddress = new ConcurrentHashMap<>();
 

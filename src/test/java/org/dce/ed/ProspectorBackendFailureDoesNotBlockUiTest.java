@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import javax.swing.SwingUtilities;
@@ -18,15 +19,26 @@ import org.dce.ed.mining.ProspectorLogRow;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import com.google.gson.JsonObject;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class ProspectorBackendFailureDoesNotBlockUiTest {
+
+    @AfterEach
+    void clearStatusSinks() {
+        MiningTabPanel.clearMiningSheetsStatusSinksForTests();
+    }
 
     @Test
     void backendFailure_doesNotWipeLastSpreadsheetOrProspectorRows() throws Exception {
         GalacticAveragePrices prices = GalacticAveragePrices.loadDefault();
 
         AtomicInteger loadCalls = new AtomicInteger(0);
+        AtomicReference<String> lastError = new AtomicReference<>();
+        AtomicInteger clearCount = new AtomicInteger();
+        MiningTabPanel.setMiningSheetsStatusSinksForTests(
+                lastError::set,
+                clearCount::incrementAndGet);
         List<ProspectorLogRow> goodRows = List.of(new ProspectorLogRow(
                 1,
                 "Sol > Earth",
@@ -98,10 +110,25 @@ class ProspectorBackendFailureDoesNotBlockUiTest {
             Thread.sleep(20);
         }
 
+        // Second refresh runs on a SwingWorker; wait for done() on the EDT to set mining status.
+        deadlineMs = System.currentTimeMillis() + 2_000;
+        while (System.currentTimeMillis() < deadlineMs
+                && (lastError.get() == null || lastError.get().isBlank())) {
+            Thread.sleep(20);
+        }
+        SwingUtilities.invokeAndWait(() -> {
+        });
+
         // On ERROR, MiningTabPanel keeps showing last-good rows.
         afterSpreadsheetRows = panel.getProspectorSpreadsheetRowCountForTests();
         assertEquals(spreadsheetRows, afterSpreadsheetRows, "Spreadsheet row count should remain unchanged on backend failure");
         assertEquals(prospectorRows, panel.getProspectorTableRowCount(), "Prospector table should not be wiped by backend errors");
+
+        String err = lastError.get();
+        assertTrue(err != null && !err.isBlank(), "Expected mining status error text when refresh fails");
+        assertTrue(err.contains("backend boom") || err.contains("Could not load mining log"),
+                "Error text should surface failure: " + err);
+        assertTrue(clearCount.get() >= 1, "Successful initial load should clear mining status at least once");
     }
 }
 

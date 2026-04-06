@@ -12,6 +12,7 @@ import java.awt.Rectangle;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLayeredPane;
 import javax.swing.JLabel;
@@ -225,6 +226,53 @@ public class SystemTableHoverCopyManager {
 
         int x = layeredCenterPoint.x - size.width / 2;
         int y = layeredCenterPoint.y - size.height / 2;
+
+        toast.setLocation(x, y);
+
+        layeredPane.add(toast, JLayeredPane.POPUP_LAYER);
+        layeredPane.revalidate();
+        layeredPane.repaint();
+
+        Timer removeTimer = new Timer(TOAST_DURATION_MS, e -> {
+            layeredPane.remove(toast);
+            layeredPane.revalidate();
+            layeredPane.repaint();
+        });
+        removeTimer.setRepeats(false);
+        removeTimer.start();
+    }
+
+    /**
+     * Shows the same "Copied: …" toast as hover/double-click copy, anchored to the center of a component.
+     */
+    public static void showCopiedToast(JComponent anchor, String copiedText) {
+        if (anchor == null || copiedText == null || copiedText.isBlank()) {
+            return;
+        }
+        Window window = SwingUtilities.getWindowAncestor(anchor);
+        if (!(window instanceof JFrame)) {
+            return;
+        }
+        JFrame frame = (JFrame) window;
+        JRootPane rootPane = frame.getRootPane();
+        JLayeredPane layeredPane = rootPane.getLayeredPane();
+
+        JLabel toast = new JLabel("Copied: " + copiedText, SwingConstants.CENTER);
+        toast.setOpaque(true);
+        toast.setBackground(EdoUi.Internal.BLACK_ALPHA_180);
+        toast.setForeground(Color.WHITE);
+        toast.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        toast.setSize(toast.getPreferredSize());
+        Dimension size = toast.getSize();
+
+        Point center = new Point(anchor.getWidth() / 2, anchor.getHeight() / 2);
+        SwingUtilities.convertPointToScreen(center, anchor);
+        Point layeredCenter = new Point(center);
+        SwingUtilities.convertPointFromScreen(layeredCenter, layeredPane);
+
+        int x = layeredCenter.x - size.width / 2;
+        int y = layeredCenter.y - size.height / 2;
 
         toast.setLocation(x, y);
 
