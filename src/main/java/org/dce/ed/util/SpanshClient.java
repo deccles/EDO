@@ -22,7 +22,9 @@ import com.google.gson.JsonParser;
  * Minimal client for Spansh (spansh.co.uk) API.
  * <ul>
  *   <li>Route: POST /api/route (form), then GET /api/results/{job} until 200.</li>
+ *   <li>Fleet carrier: POST /api/fleetcarrier/route (form), then GET /api/results/{job} with {@code result.jumps}.</li>
  *   <li>Search: GET /api/search?q=... (like top search bar). Returns systems and bodies; each result has "record" and "type".</li>
+ *   <li>Systems: GET /api/search/systems?q=... (system name lookup).</li>
  *   <li>Body: GET /api/body/{id} (body detail page). Returns record with name, landmarks (exobiology), signals.</li>
  *   <li>Bodies search: POST /api/bodies/search (form-style filters); ref_system often ignored in practice.</li>
  * </ul>
@@ -37,6 +39,9 @@ public class SpanshClient {
 
     private final HttpClient client;
     private final Gson gson = new Gson();
+
+    /** Set when a polled job returns {@code status: failed} (see {@link #pollResults(String, boolean)}). */
+    private volatile String lastResultsPollError;
 
     public SpanshClient() {
         this.client = HttpClient.newBuilder()
@@ -88,6 +93,10 @@ public class SpanshClient {
     }
 
     private String pollResults(String job) throws Exception {
+        return pollResults(job, false);
+    }
+
+    private String pollResults(String job, boolean failOnInBodyFailure) throws Exception {
         URI resultsUri = URI.create(BASE + "/results/" + job);
         for (int i = 0; i < POLL_ATTEMPTS; i++) {
             TimeUnit.MILLISECONDS.sleep(POLL_MS);
@@ -104,6 +113,20 @@ public class SpanshClient {
             String body = resp.body();
 
             if (code == 200) {
+                if (failOnInBodyFailure && body != null && !body.isBlank()) {
+                    try {
+                        JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+                        if (json.has("status") && "failed".equals(json.get("status").getAsString())) {
+                            lastResultsPollError = json.has("error") && !json.get("error").isJsonNull()
+                                    ? json.get("error").getAsString()
+                                    : "failed";
+                            System.err.println("Spansh results failed: " + body);
+                            return null;
+                        }
+                    } catch (Exception ignored) {
+                        // return raw body
+                    }
+                }
                 return body;
             }
             if (code == 400) {
@@ -126,6 +149,144 @@ public class SpanshClient {
             String job = submitJob(BASE + "/route", form, "route");
             if (job == null) return null;
             return pollResults(job);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public String getLastResultsPollError() {
+        return lastResultsPollError;
+    }
+
+    /**
+     * GET /api/search/systems?q=...
+     */
+    public String searchSystems(String query) {
+        if (query == null || query.isBlank()) {
+            return null;
+        }
+        try {
+            String path = BASE + "/search/systems?q=" + urlEncode(query.trim());
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(path))
+                    .header("User-Agent", USER_AGENT)
+                    .timeout(Duration.ofSeconds(30))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() == 200) {
+                return resp.body();
+            }
+            System.err.println("Spansh search/systems: HTTP " + resp.statusCode() + " " + resp.body());
+            return null;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Resolves a system name to id64 for Spansh APIs. Tries {@link #searchSystems(String)} first, then {@link #search(String)}.
+     */
+    public Long resolveSystemId64(String systemName) {
+        if (systemName == null || systemName.isBlank()) {
+            return null;
+        }
+        String trimmed = systemName.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        Long id = parseSystemId64FromSearchResults(searchSystems(trimmed), lower);
+        if (id != null) {
+            return id;
+        }
+        return parseSystemId64FromSearchResults(search(trimmed), lower);
+    }
+
+    private static Long parseSystemId64FromSearchResults(String searchJson, String nameLower) {
+        if (searchJson == null || searchJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(searchJson).getAsJsonObject();
+            if (!root.has("results") || !root.get("results").isJsonArray()) {
+                return null;
+            }
+            JsonArray results = root.getAsJsonArray("results");
+            Long best = null;
+            for (JsonElement el : results) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject row = el.getAsJsonObject();
+                JsonObject rec = row.has("record") ? row.getAsJsonObject("record") : row;
+                if (!rec.has("id64")) {
+                    continue;
+                }
+                long id64 = readId64(rec);
+                if (id64 == 0L) {
+                    continue;
+                }
+                String name = rec.has("name") ? rec.get("name").getAsString() : "";
+                if (name.trim().toLowerCase(Locale.ROOT).equals(nameLower)) {
+                    return id64;
+                }
+                if (best == null) {
+                    best = id64;
+                }
+            }
+            return best;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static long readId64(JsonObject rec) {
+        try {
+            if (!rec.has("id64")) {
+                return 0L;
+            }
+            JsonElement el = rec.get("id64");
+            if (el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
+                String s = el.getAsString();
+                if (s == null || s.isBlank()) {
+                    return 0L;
+                }
+                return Long.parseLong(s.trim());
+            }
+            return el.getAsLong();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Fleet carrier route plot: POST /api/fleetcarrier/route, poll /api/results/{job}.
+     * Returns the same JSON as a browser (root includes {@code result.jumps}), or null on failure.
+     * Check {@link #getLastResultsPollError()} when the result is null.
+     */
+    public String queryFleetCarrierRoute(long sourceSystemId64, List<Long> destinationSystemId64s,
+            String carrierType, int usedCapacity, boolean calculateStartingFuel) {
+        lastResultsPollError = null;
+        if (destinationSystemId64s == null || destinationSystemId64s.isEmpty()) {
+            return null;
+        }
+        try {
+            String ct = (carrierType != null && !carrierType.isBlank()) ? carrierType : "fleet";
+            StringBuilder form = new StringBuilder();
+            form.append("carrier_type=").append(urlEncode(ct));
+            form.append("&used_capacity=").append(usedCapacity);
+            form.append("&calculate_starting_fuel=").append(calculateStartingFuel ? 1 : 0);
+            form.append("&source_system=").append(sourceSystemId64);
+            for (Long d : destinationSystemId64s) {
+                if (d != null && d != 0L) {
+                    form.append("&destination_systems=").append(d.longValue());
+                }
+            }
+            String job = submitJob(BASE + "/fleetcarrier/route", form.toString(), "fleetcarrier");
+            if (job == null) {
+                return null;
+            }
+            return pollResults(job, true);
         } catch (Exception e) {
             e.printStackTrace();
             return null;

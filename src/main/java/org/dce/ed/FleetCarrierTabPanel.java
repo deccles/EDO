@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Font;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
@@ -11,6 +12,7 @@ import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -23,6 +25,11 @@ import org.dce.ed.logreader.event.CarrierLocationEvent;
 import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.session.FleetCarrierSessionMapper;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.SystemNameAutocomplete;
+import org.dce.ed.util.SpanshClient;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /**
  * Fleet Carrier tab:
@@ -38,8 +45,12 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 
 	private volatile boolean spanshRouteLoaded = false;
 
+	private final SpanshClient spanshClient = new SpanshClient();
 	private final JPanel bottomBar;
 	private final JLabel statusLabel;
+	private final JLabel destinationLabel;
+	private final JTextField destinationField;
+	private final JButton calculateButton;
 	private final JButton importButton;
 
 	public FleetCarrierTabPanel(BooleanSupplier passThroughEnabledSupplier) {
@@ -60,6 +71,27 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		statusLabel.setForeground(EdoUi.User.MAIN_TEXT);
 		Font base = OverlayPreferences.getUiFont();
 		statusLabel.setFont(base);
+
+		destinationLabel = new JLabel("Destination:");
+		destinationLabel.setOpaque(false);
+		destinationLabel.setForeground(EdoUi.User.MAIN_TEXT);
+		destinationLabel.setFont(base);
+
+		destinationField = new JTextField();
+		destinationField.setFocusable(true);
+		destinationField.setForeground(EdoUi.User.MAIN_TEXT);
+		destinationField.setCaretColor(EdoUi.User.MAIN_TEXT);
+		destinationField.setFont(base);
+		destinationField.setToolTipText("Destination system name (EDSM autocomplete, resolved via Spansh for fetch)");
+
+		new SystemNameAutocomplete(destinationField, edsmClient());
+
+		calculateButton = new JButton("Calculate");
+		calculateButton.setFocusable(false);
+		calculateButton.setForeground(EdoUi.User.MAIN_TEXT);
+		calculateButton.setOpaque(!OverlayPreferences.overlayChromeRequestsTransparency());
+		calculateButton.setBackground(EdoUi.Internal.DARK_ALPHA_220);
+		calculateButton.addActionListener(e -> fetchRouteFromSpansh());
 
 		importButton = new JButton("Import Spansh Fleet Carrier (JSON or CSV)");
 		importButton.setFocusable(false);
@@ -88,8 +120,88 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		bottomBar.add(importButton, BorderLayout.WEST);
 		bottomBar.add(statusWrap, BorderLayout.CENTER);
 
-		add(bottomBar, BorderLayout.SOUTH);
+		JPanel fetchRow = new JPanel(new BorderLayout(8, 0));
+		fetchRow.setOpaque(false);
+		fetchRow.setBackground(EdoUi.Internal.TRANSPARENT);
+		fetchRow.add(destinationLabel, BorderLayout.WEST);
+		fetchRow.add(destinationField, BorderLayout.CENTER);
+		fetchRow.add(calculateButton, BorderLayout.EAST);
+
+		JPanel southOuter = new JPanel(new BorderLayout());
+		southOuter.setOpaque(false);
+		southOuter.setBackground(EdoUi.Internal.TRANSPARENT);
+		southOuter.add(fetchRow, BorderLayout.NORTH);
+		southOuter.add(bottomBar, BorderLayout.CENTER);
+
+		add(southOuter, BorderLayout.SOUTH);
 		applyOverlayBackground(EdoUi.Internal.TRANSPARENT, OverlayPreferences.overlayChromeRequestsTransparency());
+	}
+
+	private void fetchRouteFromSpansh() {
+		String dest = destinationField.getText();
+		if (dest == null || dest.isBlank()) {
+			statusLabel.setText("Enter a destination system name.");
+			return;
+		}
+		calculateButton.setEnabled(false);
+		statusLabel.setText("Calculating route…");
+		new Thread(() -> {
+			try {
+				long sourceAddr = routeSession.getCurrentSystemAddress();
+				String sourceName = routeSession.getCurrentSystemName();
+				Long sourceId = sourceAddr != 0L ? Long.valueOf(sourceAddr) : null;
+				if (sourceId == null && sourceName != null && !sourceName.isBlank()) {
+					sourceId = spanshClient.resolveSystemId64(sourceName);
+				}
+				if (sourceId == null || sourceId == 0L) {
+					SwingUtilities.invokeLater(() -> {
+						calculateButton.setEnabled(true);
+						statusLabel.setText("Could not resolve current system. Jump once or wait for Location.");
+					});
+					return;
+				}
+				Long destId = spanshClient.resolveSystemId64(dest.trim());
+				if (destId == null || destId == 0L) {
+					SwingUtilities.invokeLater(() -> {
+						calculateButton.setEnabled(true);
+						statusLabel.setText("Could not resolve destination system name.");
+					});
+					return;
+				}
+				if (destId.equals(sourceId)) {
+					SwingUtilities.invokeLater(() -> {
+						calculateButton.setEnabled(true);
+						statusLabel.setText("Destination is the same as current system.");
+					});
+					return;
+				}
+				String json = spanshClient.queryFleetCarrierRoute(sourceId.longValue(),
+						Collections.singletonList(destId), "fleet", 0, true);
+				SwingUtilities.invokeLater(() -> {
+					calculateButton.setEnabled(true);
+					if (json == null) {
+						String err = spanshClient.getLastResultsPollError();
+						statusLabel.setText(err != null ? ("Spansh: " + err) : "Spansh route failed or timed out.");
+						return;
+					}
+					JsonObject root;
+					try {
+						root = JsonParser.parseString(json).getAsJsonObject();
+					} catch (Exception ex) {
+						statusLabel.setText("Could not parse Spansh response.");
+						return;
+					}
+					importSpanshFleetCarrierRouteFromResultsJson(root);
+				});
+			} catch (Exception ex) {
+				ex.printStackTrace();
+				SwingUtilities.invokeLater(() -> {
+					calculateButton.setEnabled(true);
+					String msg = ex.getMessage();
+					statusLabel.setText(msg != null ? ("Error: " + msg) : "Error fetching Spansh route.");
+				});
+			}
+		}, "SpanshFleetCarrierFetch").start();
 	}
 
 	@Override
@@ -133,6 +245,18 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		spanshRouteLoaded = ok;
 		if (!ok) {
 			statusLabel.setText("Invalid/unsupported Spansh fleet-carrier JSON or CSV");
+		} else {
+			statusLabel.setText(defaultStatusText);
+		}
+		return ok;
+	}
+
+	@Override
+	public boolean importSpanshFleetCarrierRouteFromResultsJson(JsonObject root) {
+		boolean ok = super.importSpanshFleetCarrierRouteFromResultsJson(root);
+		spanshRouteLoaded = ok;
+		if (!ok) {
+			statusLabel.setText("Invalid/unsupported Spansh fleet-carrier JSON.");
 		} else {
 			statusLabel.setText(defaultStatusText);
 		}
@@ -184,11 +308,21 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		// Bottom container stays non-opaque; the card panel background does the heavy lifting.
 		bottomBar.setOpaque(false);
 		statusLabel.setOpaque(false);
+		destinationLabel.setOpaque(false);
 
 		// JButton needs explicit opacity so it doesn't look “wrong” in transparent mode.
 		importButton.setOpaque(!opaque ? false : true);
 		importButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
 		importButton.setForeground(EdoUi.User.MAIN_TEXT);
+		calculateButton.setOpaque(!opaque ? false : true);
+		calculateButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
+		calculateButton.setForeground(EdoUi.User.MAIN_TEXT);
+		destinationField.setOpaque(opaque);
+		if (opaque) {
+			destinationField.setBackground(EdoUi.Internal.GRAY_180);
+		} else {
+			destinationField.setBackground(EdoUi.Internal.DARK_ALPHA_220);
+		}
 		revalidate();
 		repaint();
 	}

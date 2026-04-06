@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -226,6 +227,38 @@ public class EdsmClient {
                 + "?showId=1&showCoordinates=1&showPermit=1"
                 + "&systemName=" + encode(joined);
         return get(url, SystemResponse[].class);
+    }
+
+    /**
+     * System name prefix suggestions (EDSM {@code /api-v1/systems?systemName=...}). Same API as
+     * {@link org.dce.ed.util.EdsmQueryTool} autocomplete.
+     */
+    public List<String> suggestSystemNames(String prefix) {
+        if (prefix == null) {
+            return List.of();
+        }
+        String p = prefix.trim();
+        if (p.length() < 3) {
+            return List.of();
+        }
+        try {
+            SystemResponse[] arr = getSystems(p);
+            if (arr == null || arr.length == 0) {
+                return List.of();
+            }
+            LinkedHashSet<String> out = new LinkedHashSet<>();
+            for (SystemResponse s : arr) {
+                if (s != null && s.name != null && !s.name.isEmpty()) {
+                    out.add(s.name);
+                    if (out.size() >= 20) {
+                        break;
+                    }
+                }
+            }
+            return List.copyOf(out);
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     /**

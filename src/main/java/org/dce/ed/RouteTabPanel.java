@@ -161,6 +161,11 @@ public class RouteTabPanel extends JPanel {
 		return routeSession;
 	}
 
+	/** EDSM client used for route resolution (subclasses may reuse for autocomplete, etc.). */
+	protected EdsmClient edsmClient() {
+		return edsmClient;
+	}
+
 	/** Optional callback when route state changes (for debounced session persist). */
 	private Runnable sessionStateChangeCallback;
 
@@ -691,6 +696,43 @@ public class RouteTabPanel extends JPanel {
 			jumpFlashTimer.stop();
 		}
 
+		setHeaderLabelText("Route: " + entries.size() + " systems");
+		routeSession.applySpanshImport(entries);
+		rebuildDisplayedEntries();
+		fireSessionStateChanged();
+		return true;
+	}
+
+	/**
+	 * Imports a Spansh fleet-carrier route from JSON (e.g. GET /api/results/{job} after fleet carrier plot).
+	 */
+	public boolean importSpanshFleetCarrierRouteFromResultsJson(JsonObject root) {
+		if (root == null) {
+			setHeaderLabelText("Error: empty Spansh response.");
+			routeSession.applyNavRouteReloadParsed(new ArrayList<>());
+			tableModel.setEntries(new ArrayList<>());
+			return false;
+		}
+		List<RouteEntry> entries;
+		try {
+			entries = RouteNavRouteJson.parseSpanshFleetCarrierRouteFromJson(root);
+		} catch (Exception e) {
+			e.printStackTrace();
+			setHeaderLabelText("Error parsing Spansh fleet-carrier JSON.");
+			routeSession.applyNavRouteReloadParsed(new ArrayList<>());
+			tableModel.setEntries(new ArrayList<>());
+			return false;
+		}
+		if (entries == null || entries.isEmpty()) {
+			setHeaderLabelText("No jumps found in Spansh response.");
+			routeSession.applyNavRouteReloadParsed(new ArrayList<>());
+			tableModel.setEntries(new ArrayList<>());
+			return false;
+		}
+		jumpFlashOn = true;
+		if (jumpFlashTimer != null && jumpFlashTimer.isRunning()) {
+			jumpFlashTimer.stop();
+		}
 		setHeaderLabelText("Route: " + entries.size() + " systems");
 		routeSession.applySpanshImport(entries);
 		rebuildDisplayedEntries();
