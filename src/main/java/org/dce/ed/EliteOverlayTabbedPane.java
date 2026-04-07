@@ -42,7 +42,10 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.TransferHandler;
 
+import org.dce.ed.mining.ProspectorLogBackendFactory;
 import org.dce.ed.OverlayPreferences.MiningLimpetReminderMode;
+import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogParser;
@@ -214,7 +217,12 @@ public class EliteOverlayTabbedPane extends JPanel {
 		
 		this.biologyTab = new BiologyTabPanel();
 		this.biologyTab.setSystemTabPanel(systemTab);
-		this.miningTab = new MiningTabPanel(galacticAvgPrices, this::isCurrentlyDocked);
+		this.miningTab = new MiningTabPanel(
+				galacticAvgPrices,
+				this::isCurrentlyDocked,
+				new TtsSprintf(new PollyTtsCached()),
+				ProspectorLogBackendFactory::create,
+				systemTab::getState);
 		// Treat docking as the end of a mining "trip": when we transition to docked,
 		// flush any pending mining gains and advance the run counter if needed.
 		addDockedStateListener(docked -> {

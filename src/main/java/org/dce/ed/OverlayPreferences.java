@@ -5,6 +5,7 @@ import java.awt.Font;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 
 import org.dce.ed.logreader.EliteLogFileLocator;
@@ -681,6 +682,17 @@ public static Engine getSpeechEngine() {
 
     public static void setMiningGoogleSheetsUrl(String url) {
         PREFS.put(KEY_MINING_GOOGLE_SHEETS_URL, url != null ? url.trim() : "");
+    }
+
+    /**
+     * Persists pending preference writes to the backing store (best-effort). Call after applying Preferences
+     * so edits survive abrupt process exit more reliably.
+     */
+    public static void flushBackingStore() {
+        try {
+            PREFS.flush();
+        } catch (BackingStoreException ignored) {
+        }
     }
 
     /** OAuth 2.0 Client ID from Google Cloud Console (Desktop app). */

@@ -98,6 +98,15 @@ class MiningTabPanelTest {
     }
 
     @Test
+    void buildInventoryTonsFromCargo_canonicalKeys_ignoreLocalisedForMining() {
+        String json = "{\"Inventory\":[{\"Name\":\"internal_tritium\",\"Name_Localised\":\"Tritium\",\"Count\":5}]}";
+        JsonObject cargo = JsonParser.parseString(json).getAsJsonObject();
+        Map<String, Double> out = MiningTabPanel.buildInventoryTonsFromCargo(cargo, s -> "CANON_" + s, false);
+        assertEquals(1, out.size());
+        assertEquals(5.0, out.get("CANON_internal_tritium"), 1e-6);
+    }
+
+    @Test
     void parseAsteroidIdToIndex_examples() {
         assertEquals(0, MiningTabPanel.parseAsteroidIdToIndex("A"));
         assertEquals(1, MiningTabPanel.parseAsteroidIdToIndex("B"));

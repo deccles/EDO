@@ -25,10 +25,13 @@ import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.beans.PropertyChangeListener;
+import java.io.IOException;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -56,6 +59,7 @@ import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JScrollBar;
 import javax.swing.JLabel;
 import javax.swing.JLayer;
 import javax.swing.JList;
@@ -81,6 +85,8 @@ import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.edsm.UtilTable;
+import org.dce.ed.logreader.EliteLogFileLocator;
+import org.dce.ed.logreader.EliteLogParser;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
@@ -101,10 +107,12 @@ import org.dce.ed.mining.MiningScatterAsteroidModel;
 import org.dce.ed.mining.ProspectorLogRow;
 import org.dce.ed.mining.ProspectorWriteResult;
 import org.dce.ed.session.EdoSessionState;
+import org.dce.ed.state.SystemState;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.EdoMiningSplitPaneUi;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.SubtleScrollBarUI;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.TransparentTableHeaderUI;
 
@@ -188,12 +196,23 @@ public class MiningTabPanel extends JPanel {
 	/** True after we've synced the run counter from the spreadsheet once this session (so next write uses the right run number). */
 	private boolean syncedRunCounterFromBackend;
 
-	/** Current system and body for prospector log rows (updated from LocationEvent / StatusEvent). */
+	/**
+	 * When non-null, spreadsheet System column and run resolution use {@link SystemState#getSystemName()} first
+	 * (authoritative). Journal-derived {@link #currentSystemName} / {@link #lastNonEmptySystemName} are fallback only.
+	 */
+	private final Supplier<SystemState> systemStateSupplier;
+
+	/** Current system and body for prospector log rows (journal / Status; system is superseded by SystemState when wired). */
 	private volatile String currentSystemName = "";
 	private volatile String currentBodyName = "";
 	/** Last non-empty system/body we have seen; used to avoid regressions to blank. */
 	private volatile String lastNonEmptySystemName = "";
 	private volatile String lastNonEmptyBodyName = "";
+
+	private static final EliteLogParser MINING_STATUS_PARSER = new EliteLogParser();
+	private final Object statusBodyReadLock = new Object();
+	private long statusBodyCacheMtime = -1L;
+	private String statusBodyCacheValue = "";
 
 	/** True once we've seen a prospector this trip; enables cargo-driven logging. */
 	private boolean miningLoggingArmed;
@@ -283,18 +302,27 @@ private final JLayer<JTable> cargoLayer;
 	}
 
 	public MiningTabPanel(GalacticAveragePrices prices, BooleanSupplier isDockedSupplier) {
-		this(prices, isDockedSupplier, new TtsSprintf(new PollyTtsCached()), ProspectorLogBackendFactory::create);
+		this(prices, isDockedSupplier, new TtsSprintf(new PollyTtsCached()), ProspectorLogBackendFactory::create, null);
 	}
 
 	public MiningTabPanel(GalacticAveragePrices prices,
 	                        BooleanSupplier isDockedSupplier,
 	                        TtsSprintf tts,
 	                        Supplier<ProspectorLogBackend> backendSupplier) {
+		this(prices, isDockedSupplier, tts, backendSupplier, null);
+	}
+
+	public MiningTabPanel(GalacticAveragePrices prices,
+	                        BooleanSupplier isDockedSupplier,
+	                        TtsSprintf tts,
+	                        Supplier<ProspectorLogBackend> backendSupplier,
+	                        Supplier<SystemState> systemStateSupplier) {
 		super(new BorderLayout());
 		this.prices = prices;
 		this.isDockedSupplier = isDockedSupplier;
 		this.tts = Objects.requireNonNull(tts, "tts");
 		this.prospectorBackendSupplier = Objects.requireNonNull(backendSupplier, "backendSupplier");
+		this.systemStateSupplier = systemStateSupplier;
 
 		this.matcher = new MaterialNameMatcher(prices);
 // Always render transparent so passthrough mode looks right.
@@ -699,6 +727,7 @@ private final JLayer<JTable> cargoLayer;
 			spreadHeaderViewport.setBorder(null);
 		}
 		configureOverlayScroller(spreadsheetScroller);
+		installSubtleScrollBarsOnProspectorLog(spreadsheetScroller);
 		// Install system-name copy behavior on the System column (model index 11).
 		miningSystemCopyManager = new SystemTableHoverCopyManager(spreadsheetTable, 11, isDockedSupplier);
 		miningSystemCopyManager.start();
@@ -961,18 +990,22 @@ private final JLayer<JTable> cargoLayer;
 		cm.getColumn(4).setPreferredWidth(95);
 	}
 
-	/** Hide Before Amount (6), After Amount (7), Body (12) in the prospector log table; data still in model. */
+	/** Hide Before Amount (6), After Amount (7); keep Body (12) visible narrow. Data still in model. */
 	private static void applyProspectorLogColumnVisibility(JTable tbl) {
 		if (tbl == null) return;
 		TableColumnModel cm = tbl.getColumnModel();
 		if (cm == null || cm.getColumnCount() < 13) return;
-		for (int i : new int[] { 6, 7, 12 }) {
+		for (int i : new int[] { 6, 7 }) {
 			TableColumn col = cm.getColumn(i);
 			col.setMinWidth(0);
 			col.setMaxWidth(0);
 			col.setPreferredWidth(0);
 			col.setWidth(0);
 		}
+		TableColumn bodyCol = cm.getColumn(12);
+		bodyCol.setMinWidth(40);
+		bodyCol.setMaxWidth(220);
+		bodyCol.setPreferredWidth(80);
 	}
 
 	private static final int GREEN_THRESHOLD_AVG_CR_PER_TON = 4_000_000;
@@ -1294,17 +1327,22 @@ return EdoUi.User.MAIN_TEXT;
 	}
 
 	/**
-	 * Builds a map of commodity display name -> total tons from Cargo.json Inventory.
-	 * Used to compare inventory at each ProspectorEvent and compute ton deltas for CSV logging.
+	 * Canonical material keys (journal/raw → {@link #toUiName}) for mining deltas and prospector % lookup.
+	 * Cargo.json {@code Name_Localised} is ignored so keys match {@link ProspectedAsteroidEvent} material names.
 	 */
-	private Map<String, Double> buildInventoryTonsFromCargo(JsonObject cargo) {
-		return buildInventoryTonsFromCargo(cargo, this::toUiName);
+	private Map<String, Double> buildInventoryTonsForMiningLog(JsonObject cargo) {
+		return buildInventoryTonsFromCargo(cargo, this::toUiName, false);
 	}
 
 	/**
-	 * Static variant for unit tests; nameResolver maps raw item name to display name.
+	 * Static variant for unit tests; {@code preferLocalizedDisplayName} true matches UI cargo table keys.
 	 */
 	static Map<String, Double> buildInventoryTonsFromCargo(JsonObject cargo, Function<String, String> nameResolver) {
+		return buildInventoryTonsFromCargo(cargo, nameResolver, true);
+	}
+
+	static Map<String, Double> buildInventoryTonsFromCargo(JsonObject cargo, Function<String, String> nameResolver,
+			boolean preferLocalizedDisplayName) {
 		Map<String, Double> out = new HashMap<>();
 		if (cargo == null || nameResolver == null) {
 			return out;
@@ -1357,8 +1395,10 @@ return EdoUi.User.MAIN_TEXT;
 			if (count <= 0) {
 				continue;
 			}
-			String shownName = (localizedName != null && !localizedName.isBlank()) ? localizedName : nameResolver.apply(rawName);
-			out.merge(shownName, (double) count, Double::sum);
+			String key = (preferLocalizedDisplayName && localizedName != null && !localizedName.isBlank())
+					? localizedName
+					: nameResolver.apply(rawName);
+			out.merge(key, (double) count, Double::sum);
 		}
 		return out;
 	}
@@ -1387,7 +1427,7 @@ return EdoUi.User.MAIN_TEXT;
 			if (isDockedSupplier != null && isDockedSupplier.getAsBoolean()) {
 				return;
 			}
-			Map<String, Double> current = buildInventoryTonsFromCargo(cargoObj);
+			Map<String, Double> current = buildInventoryTonsForMiningLog(cargoObj);
 			if (lastCargoTonsForLogging == null || lastCargoTonsForLogging.isEmpty()) {
 				lastCargoTonsForLogging = new HashMap<>(current);
 				return;
@@ -1417,19 +1457,12 @@ return EdoUi.User.MAIN_TEXT;
 		if (commander == null || commander.isBlank()) {
 			commander = "-";
 		}
-		String sys = currentSystemName != null && !currentSystemName.isBlank()
-				? currentSystemName
-				: (lastNonEmptySystemName != null ? lastNonEmptySystemName : "");
-		String body = currentBodyName != null && !currentBodyName.isBlank()
-				? currentBodyName
-				: (lastNonEmptyBodyName != null ? lastNonEmptyBodyName : "");
-		if (sys.isEmpty()) {
-			System.out.println("[EDO][Mining] WARNING: mining prospector log computed blank system; this should not happen.");
-		}
+		String sys = resolveSystemNameForMiningLog();
+		String body = resolveBodyNameForMiningLog();
 		if (sys.isEmpty()) {
 			System.out.println("[EDO][Mining] WARNING: mining cargo-driven log computed blank system; this should not happen.");
 		}
-		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
+		String fullBodyName = GoogleSheetsBackend.buildFullBodyNameForProspectorRow(sys, body);
 		// Choose a run number once per system/body and reuse it for the rest of the trip so
 		// repeated cargo gains update the same run instead of starting new ones. When we have
 		// explicitly marked that the next mining event should start a new run (e.g. after
@@ -1796,6 +1829,75 @@ return EdoUi.User.MAIN_TEXT;
 	}
 
 	/**
+	 * System name for mining log rows and {@link MiningRunNumberResolver}: {@link SystemState} when the overlay
+	 * supplies it; otherwise journal-cached {@link #currentSystemName} / {@link #lastNonEmptySystemName}.
+	 */
+	private String resolveSystemNameForMiningLog() {
+		Supplier<SystemState> sup = systemStateSupplier;
+		if (sup != null) {
+			try {
+				SystemState st = sup.get();
+				if (st != null) {
+					String n = st.getSystemName();
+					if (n != null && !n.isBlank()) {
+						return n.trim();
+					}
+				}
+			} catch (RuntimeException ignored) {
+			}
+		}
+		if (currentSystemName != null && !currentSystemName.isBlank()) {
+			return currentSystemName.trim();
+		}
+		return lastNonEmptySystemName != null ? lastNonEmptySystemName.trim() : "";
+	}
+
+	/**
+	 * Body column for mining log rows: journal/Status pipeline first, then a direct read of {@code Status.json}
+	 * in the configured journal folder. The game often omits body on some journal lines while still writing
+	 * {@code BodyName} in the live status file (e.g. ring mining), which previously left sheet Body blank.
+	 */
+	private String resolveBodyNameForMiningLog() {
+		String body = currentBodyName != null && !currentBodyName.isBlank()
+				? currentBodyName.trim()
+				: (lastNonEmptyBodyName != null && !lastNonEmptyBodyName.isBlank() ? lastNonEmptyBodyName.trim() : "");
+		if (!body.isEmpty()) {
+			return body;
+		}
+		return readCachedBodyNameFromStatusFile();
+	}
+
+	/**
+	 * Parses {@code Status.json} next to the commander journals (same path as {@link org.dce.ed.logreader.LiveJournalMonitor}).
+	 * Cached by file mtime so rapid cargo-driven writes do not re-read every delta.
+	 */
+	private String readCachedBodyNameFromStatusFile() {
+		synchronized (statusBodyReadLock) {
+			try {
+				Path dir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+				Path statusPath = EliteLogFileLocator.findStatusFile(dir);
+				if (statusPath == null) {
+					return "";
+				}
+				long m = Files.getLastModifiedTime(statusPath).toMillis();
+				if (m == statusBodyCacheMtime && statusBodyCacheValue != null) {
+					return statusBodyCacheValue;
+				}
+				StatusEvent se = MINING_STATUS_PARSER.parseStatusJsonFile(statusPath);
+				String bn = "";
+				if (se != null && se.getBodyName() != null && !se.getBodyName().isBlank()) {
+					bn = se.getBodyName().trim();
+				}
+				statusBodyCacheMtime = m;
+				statusBodyCacheValue = bn;
+				return bn;
+			} catch (IOException | RuntimeException ignored) {
+				return "";
+			}
+		}
+	}
+
+	/**
 	 * After restart, align the in-memory asteroid letter with rows already stored for the resolved run
 	 * (continuing an open run). No-op once we have written this trip or when the backend has no rows for that run.
 	 */
@@ -1807,12 +1909,8 @@ return EdoUi.User.MAIN_TEXT;
 		if (commander == null || commander.isBlank()) {
 			commander = "-";
 		}
-		String sys = currentSystemName != null && !currentSystemName.isBlank()
-				? currentSystemName
-				: (lastNonEmptySystemName != null ? lastNonEmptySystemName : "");
-		String body = currentBodyName != null && !currentBodyName.isBlank()
-				? currentBodyName
-				: (lastNonEmptyBodyName != null ? lastNonEmptyBodyName : "");
+		String sys = resolveSystemNameForMiningLog();
+		String body = resolveBodyNameForMiningLog();
 		int run = computeRunNumberForWrite(commander, sys, body, forceNewRun);
 		try {
 			List<ProspectorLogRow> existing = loadRowsForRunResolution();
@@ -1962,13 +2060,9 @@ return EdoUi.User.MAIN_TEXT;
 		if (commander == null || commander.isBlank()) {
 			commander = "-";
 		}
-		String sys = currentSystemName != null && !currentSystemName.isBlank()
-				? currentSystemName
-				: (lastNonEmptySystemName != null ? lastNonEmptySystemName : "");
-		String body = currentBodyName != null && !currentBodyName.isBlank()
-				? currentBodyName
-				: (lastNonEmptyBodyName != null ? lastNonEmptyBodyName : "");
-		String fullBodyName = sys.isEmpty() && body.isEmpty() ? "" : (sys.isEmpty() ? body : (body.isEmpty() ? sys : sys + " > " + body));
+		String sys = resolveSystemNameForMiningLog();
+		String body = resolveBodyNameForMiningLog();
+		String fullBodyName = GoogleSheetsBackend.buildFullBodyNameForProspectorRow(sys, body);
 
 		// Determine run number from existing sheet rows for this commander and system/body.
 		int run = computeRunNumberForWrite(commander, sys, body, false);
@@ -2094,6 +2188,7 @@ return EdoUi.User.MAIN_TEXT;
 							java.util.List<ProspectorLogRow> rows = result.getRows();
 							lastGoodSpreadsheetRows = rows != null ? rows : java.util.Collections.emptyList();
 							spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
+							scrollProspectorLogTableToTop();
 							if (spreadsheetScatterWrapper != null) {
 								spreadsheetScatterWrapper.setRows(lastGoodSpreadsheetRows);
 							}
@@ -2103,6 +2198,7 @@ return EdoUi.User.MAIN_TEXT;
 							applyMiningSheetsStatusClear();
 							lastGoodSpreadsheetRows = java.util.Collections.emptyList();
 							spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
+							scrollProspectorLogTableToTop();
 							if (spreadsheetScatterWrapper != null) {
 								spreadsheetScatterWrapper.setRows(lastGoodSpreadsheetRows);
 							}
@@ -2117,6 +2213,7 @@ return EdoUi.User.MAIN_TEXT;
 							// Keep showing the last good data when there is a transient error.
 							if (lastGoodSpreadsheetRows != null) {
 								spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
+								scrollProspectorLogTableToTop();
 								if (spreadsheetScatterWrapper != null) {
 									spreadsheetScatterWrapper.setRows(lastGoodSpreadsheetRows);
 								}
@@ -2423,8 +2520,11 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 
 		// Snapshot current cargo so we can log inventory deltas at dock flush if needed.
 		CargoMonitor.Snapshot cargoSnap = CargoMonitor.getInstance().getSnapshot();
-		Map<String, Double> currentInventory = buildInventoryTonsFromCargo(cargoSnap != null ? cargoSnap.getCargoJson() : null);
+		Map<String, Double> currentInventory = buildInventoryTonsForMiningLog(cargoSnap != null ? cargoSnap.getCargoJson() : null);
 		lastInventoryTonsAtProspector = new HashMap<>(currentInventory);
+		// Align cargo baseline with this rock so the next Cargo.json poll cannot miss the first fragment
+		// (null/empty lastCargo + already-increased inventory used to absorb the gain without a row).
+		lastCargoTonsForLogging = new HashMap<>(currentInventory);
 		Map<String, Double> nextPercent = new HashMap<>();
 		for (MaterialProportion mp : event.getMaterials()) {
 			if (mp != null && mp.getName() != null) {
@@ -2815,6 +2915,51 @@ String getName() {
 	 }
 
 
+
+	/** Match Route/System tabs: subtle scrollbar UI on the prospector log table only. */
+	private static void installSubtleScrollBarsOnProspectorLog(JScrollPane sp) {
+		if (sp == null) {
+			return;
+		}
+		JScrollBar vsb = sp.getVerticalScrollBar();
+		if (vsb != null) {
+			vsb.setOpaque(false);
+			vsb.setBackground(EdoUi.Internal.TRANSPARENT);
+			vsb.setUI(new SubtleScrollBarUI());
+			vsb.setPreferredSize(new Dimension(12, Integer.MAX_VALUE));
+			vsb.setUnitIncrement(16);
+		}
+		JScrollBar hsb = sp.getHorizontalScrollBar();
+		if (hsb != null) {
+			hsb.setOpaque(false);
+			hsb.setBackground(EdoUi.Internal.TRANSPARENT);
+			hsb.setUI(new SubtleScrollBarUI());
+			hsb.setPreferredSize(new Dimension(Integer.MAX_VALUE, 12));
+			hsb.setUnitIncrement(16);
+		}
+	}
+
+	/**
+	 * After the model refreshes (newest runs at the top), keep the viewport at the top instead of
+	 * leaving the thumb at a stale position.
+	 */
+	private void scrollProspectorLogTableToTop() {
+		if (spreadsheetScroller == null || spreadsheetTable == null) {
+			return;
+		}
+		SwingUtilities.invokeLater(() -> {
+			JViewport vp = spreadsheetScroller.getViewport();
+			if (vp != null) {
+				vp.setViewPosition(new Point(0, 0));
+			}
+			if (spreadsheetTable.getRowCount() > 0) {
+				try {
+					spreadsheetTable.scrollRectToVisible(spreadsheetTable.getCellRect(0, 0, true));
+				} catch (Exception ignored) {
+				}
+			}
+		});
+	}
 
 	 private static void configureOverlayScroller(JScrollPane sp) {
 		 if (sp == null) {
@@ -5154,22 +5299,25 @@ String getName() {
 				RunKey key = new RunKey(run, commander);
 				byRun.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
 			}
-			// Most recent first: runs descending, then within each (run, commander) by commander and timestamp ascending
-			// (matches sheet / prospecting order; avoids reverse-chronological asteroid lists).
+			// Order runs by latest activity first (row timestamps, else run end/start), then run number and commander.
 			List<RunKey> runOrder = new ArrayList<>(byRun.keySet());
+			Comparator<Instant> newestFirst = Comparator.nullsLast(Comparator.reverseOrder());
+			// Do not use .reversed() after thenComparingInt: that flips the *whole* comparator and would put
+			// oldest runs first. Tie-break on higher run number only (newer trips within a commander).
 			runOrder.sort(Comparator
-				.comparingInt((RunKey k) -> k.run).reversed()
+				.<RunKey, Instant>comparing(k -> runRecencyForOrdering(byRun.get(k)), newestFirst)
+				.thenComparing((RunKey a, RunKey b) -> Integer.compare(b.run, a.run))
 				.thenComparing(k -> k.commander, String.CASE_INSENSITIVE_ORDER));
-			Comparator<Instant> tsAsc = Comparator.nullsLast(Comparator.naturalOrder());
+			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
 			Instant now = Instant.now();
 			for (RunKey key : runOrder) {
 				List<ProspectorLogRow> runRows = new ArrayList<>(byRun.get(key));
-				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsAsc));
-				if (isOpenRunForSummary(runRows)) {
-					RunSummary summary = computeRunSummary(key, runRows, matcher, now);
-					if (summary != null) {
-						out.add(summary);
-					}
+				runRows.sort(Comparator
+					.comparing(ProspectorLogRow::getTimestamp, tsDesc)
+					.thenComparing(ProspectorLogTableModel::compareAsteroidIdDescending));
+				RunSummary summary = computeRunSummary(key, runRows, matcher, now);
+				if (summary != null) {
+					out.add(summary);
 				}
 				out.addAll(runRows);
 			}
@@ -5177,14 +5325,14 @@ String getName() {
 		}
 
 		/**
-		 * After rows are sorted by prospecting timestamp ascending, the sheet's run metadata lives on the first row
-		 * that carries {@link ProspectorLogRow#getRunStartTime()}.
+		 * Run start/end metadata: any row in the group may carry {@link ProspectorLogRow#getRunStartTime()}.
+		 * (Display order is newest-first; scan does not depend on sort order.)
 		 */
-		private static ProspectorLogRow canonicalRunMetaRow(List<ProspectorLogRow> runRowsTimeAscending) {
-			if (runRowsTimeAscending == null) {
+		private static ProspectorLogRow canonicalRunMetaRow(List<ProspectorLogRow> runRows) {
+			if (runRows == null) {
 				return null;
 			}
-			for (ProspectorLogRow r : runRowsTimeAscending) {
+			for (ProspectorLogRow r : runRows) {
 				if (r != null && r.getRunStartTime() != null) {
 					return r;
 				}
@@ -5196,6 +5344,68 @@ String getName() {
 		private static boolean isOpenRunForSummary(List<ProspectorLogRow> runRowsTimeAscending) {
 			ProspectorLogRow c = canonicalRunMetaRow(runRowsTimeAscending);
 			return c != null && c.getRunEndTime() == null;
+		}
+
+		/** Latest {@link ProspectorLogRow#getTimestamp()} in the run group; null if all rows lack timestamps. */
+		private static Instant maxProspectingTimestamp(List<ProspectorLogRow> runRows) {
+			if (runRows == null || runRows.isEmpty()) {
+				return null;
+			}
+			Instant max = null;
+			for (ProspectorLogRow r : runRows) {
+				if (r == null) {
+					continue;
+				}
+				Instant t = r.getTimestamp();
+				if (t == null) {
+					continue;
+				}
+				if (max == null || t.isAfter(max)) {
+					max = t;
+				}
+			}
+			return max;
+		}
+
+		/**
+		 * Best instant for ordering runs in the table: latest prospect row time, else latest run end, else latest run start.
+		 */
+		private static Instant runRecencyForOrdering(List<ProspectorLogRow> runRows) {
+			Instant best = maxProspectingTimestamp(runRows);
+			if (best != null) {
+				return best;
+			}
+			if (runRows == null) {
+				return null;
+			}
+			for (ProspectorLogRow r : runRows) {
+				if (r == null) {
+					continue;
+				}
+				Instant e = r.getRunEndTime();
+				if (e != null && (best == null || e.isAfter(best))) {
+					best = e;
+				}
+			}
+			if (best != null) {
+				return best;
+			}
+			for (ProspectorLogRow r : runRows) {
+				if (r == null) {
+					continue;
+				}
+				Instant s = r.getRunStartTime();
+				if (s != null && (best == null || s.isAfter(best))) {
+					best = s;
+				}
+			}
+			return best;
+		}
+
+		private static int compareAsteroidIdDescending(ProspectorLogRow a, ProspectorLogRow b) {
+			int ia = parseAsteroidIdToIndex(a != null ? a.getAsteroidId() : "");
+			int ib = parseAsteroidIdToIndex(b != null ? b.getAsteroidId() : "");
+			return Integer.compare(ib, ia);
 		}
 
 		private static RunSummary computeRunSummary(RunKey key, List<ProspectorLogRow> runRows, MaterialNameMatcher matcher, Instant now) {
@@ -5228,7 +5438,7 @@ String getName() {
 			return new RunSummary(key.run, key.commander, dateStr, tonsPerHour, creditsPerHour);
 		}
 
-		/** Build run summary strings for open runs only (same format as Table Run row). */
+		/** Build run summary strings for every (run, commander) group (same format as Table Run row). */
 		static List<String> getRunSummaryLines(List<ProspectorLogRow> rows, MaterialNameMatcher matcher) {
 			if (rows == null || rows.isEmpty()) return List.of();
 			Map<RunKey, List<ProspectorLogRow>> byRun = new HashMap<>();
@@ -5238,16 +5448,23 @@ String getName() {
 				if (commander == null || commander.isBlank()) commander = "-";
 				byRun.computeIfAbsent(new RunKey(r.getRun(), commander), k -> new ArrayList<>()).add(r);
 			}
-			Comparator<Instant> tsAsc = Comparator.nullsLast(Comparator.naturalOrder());
+			List<RunKey> runOrder = new ArrayList<>(byRun.keySet());
+			Comparator<Instant> newestFirst = Comparator.nullsLast(Comparator.reverseOrder());
+			// Do not use .reversed() after thenComparingInt: that flips the *whole* comparator and would put
+			// oldest runs first. Tie-break on higher run number only (newer trips within a commander).
+			runOrder.sort(Comparator
+				.<RunKey, Instant>comparing(k -> runRecencyForOrdering(byRun.get(k)), newestFirst)
+				.thenComparing((RunKey a, RunKey b) -> Integer.compare(b.run, a.run))
+				.thenComparing(k -> k.commander, String.CASE_INSENSITIVE_ORDER));
+			Comparator<Instant> tsDesc = Comparator.nullsLast(Comparator.reverseOrder());
 			Instant now = Instant.now();
 			List<String> lines = new ArrayList<>();
-			for (Map.Entry<RunKey, List<ProspectorLogRow>> e : byRun.entrySet()) {
-				List<ProspectorLogRow> runRows = new ArrayList<>(e.getValue());
-				runRows.sort(Comparator.comparing(ProspectorLogRow::getTimestamp, tsAsc));
-				if (!isOpenRunForSummary(runRows)) {
-					continue;
-				}
-				RunSummary summary = computeRunSummary(e.getKey(), runRows, matcher, now);
+			for (RunKey key : runOrder) {
+				List<ProspectorLogRow> runRows = new ArrayList<>(byRun.get(key));
+				runRows.sort(Comparator
+					.comparing(ProspectorLogRow::getTimestamp, tsDesc)
+					.thenComparing(ProspectorLogTableModel::compareAsteroidIdDescending));
+				RunSummary summary = computeRunSummary(key, runRows, matcher, now);
 				if (summary != null) {
 					lines.add(summary.formatSummary());
 				}
@@ -5442,29 +5659,7 @@ String getName() {
 			return (item instanceof RunSummary) ? (RunSummary) item : null;
 		}
 		private static String[] splitSystemAndBodyForDisplay(String fullBodyName) {
-			String system = "";
-			String body = "";
-			if (fullBodyName == null) {
-				return new String[] {"", ""};
-			}
-			String s = fullBodyName.trim();
-			if (s.isEmpty()) {
-				return new String[] {"", ""};
-			}
-			int idx = s.indexOf(" > ");
-			if (idx >= 0) {
-				system = s.substring(0, idx).trim();
-				body = s.substring(idx + 3).trim();
-			} else {
-				body = s;
-			}
-			if (!system.isEmpty() && body.startsWith(system)) {
-				body = body.substring(system.length()).trim();
-			}
-			if (body.endsWith(" Ring")) {
-				body = body.substring(0, body.length() - " Ring".length()).trim();
-			}
-			return new String[] {system, body};
+			return GoogleSheetsBackend.splitSystemAndBody(fullBodyName);
 		}
 	}
 

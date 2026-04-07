@@ -1,5 +1,6 @@
 package org.dce.ed;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -1328,19 +1329,23 @@ private void refreshPassThroughUnifiedStatus() {
             Graphics2D g2 = (Graphics2D) g.create();
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                // ED-style orange with some transparency
-                g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_200);
+                g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
 
                 int x = crosshairPoint.x;
                 int y = crosshairPoint.y;
 
                 int arm = 10;
 
-                // Horizontal segment
+                // Grey shadow (slightly thicker stroke behind the main crosshair)
+                g2.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setColor(EdoUi.withAlpha(new Color(200, 200, 200), 220));
                 g2.drawLine(x - arm, y, x + arm, y);
+                g2.drawLine(x, y - arm, x, y + arm);
 
-                // Vertical segment
+                // ED-style orange with some transparency
+                g2.setStroke(new BasicStroke(1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setColor(EdoUi.Internal.MAIN_TEXT_ALPHA_200);
+                g2.drawLine(x - arm, y, x + arm, y);
                 g2.drawLine(x, y - arm, x, y + arm);
 
             } finally {

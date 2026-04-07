@@ -1636,7 +1636,20 @@ public class PreferencesDialog extends JDialog {
             OverlayPreferences.setMiningLogBackend(miningLogBackendGoogleRadio.isSelected() ? "google" : "local");
         }
         if (miningGoogleSheetsUrlField != null) {
-            OverlayPreferences.setMiningGoogleSheetsUrl(miningGoogleSheetsUrlField.getText());
+            String rawUrl = miningGoogleSheetsUrlField.getText();
+            String trimmedUrl = rawUrl != null ? rawUrl.trim() : "";
+            boolean googleSelected = miningLogBackendGoogleRadio != null && miningLogBackendGoogleRadio.isSelected();
+            if (googleSelected && trimmedUrl.isEmpty()) {
+                String previous = OverlayPreferences.getMiningGoogleSheetsUrl();
+                if (previous != null && !previous.isBlank()) {
+                    // Avoid wiping the stored sheet link when OK is pressed with an empty URL field (mis-click, focus loss).
+                    miningGoogleSheetsUrlField.setText(previous);
+                } else {
+                    OverlayPreferences.setMiningGoogleSheetsUrl(rawUrl);
+                }
+            } else {
+                OverlayPreferences.setMiningGoogleSheetsUrl(rawUrl);
+            }
         }
         if (miningGoogleClientIdField != null) {
             OverlayPreferences.setMiningGoogleSheetsClientId(miningGoogleClientIdField.getText());
@@ -1704,7 +1717,7 @@ public class PreferencesDialog extends JDialog {
             OverlayPreferences.setAutoExpandBioOnTargetedBody(autoExpandBioOnTargetedBodyCheckBox.isSelected());
         }
 
-        // Other tabs can be wired into OverlayPreferences later as needed.
+        OverlayPreferences.flushBackingStore();
     }
 
 		private void applyLiveOverlayBackgroundPreview(boolean passThroughSection) {

@@ -5,6 +5,9 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,8 +23,12 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 import org.dce.ed.CargoMonitor;
+import org.dce.ed.EliteDangerousOverlay;
 import org.dce.ed.EliteOverlayTabbedPane;
+import org.dce.ed.OverlayPreferences;
+import org.dce.ed.logreader.EliteJournalReader;
 import org.dce.ed.logreader.EliteLogEvent;
+import org.dce.ed.logreader.EliteLogParser;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent.MaterialProportion;
@@ -29,6 +36,8 @@ import org.dce.ed.logreader.event.StartJumpEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.logreader.event.SupercruiseExitEvent;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 /**
@@ -39,6 +48,8 @@ import com.google.gson.JsonObject;
  * This is intended for developer/testing use only.
  */
 public final class MiningDebugHarness {
+
+    private static final EliteLogParser STATUS_PARSER = new EliteLogParser();
 
     private MiningDebugHarness() {
     }
@@ -75,9 +86,9 @@ public final class MiningDebugHarness {
 
         int row = 0;
 
-        // System / Body
-        JTextField systemField = new JTextField("Eol Prou LW-L c8-75");
-        JTextField bodyField = new JTextField("6 B Ring");
+        // System / Body (filled from live cache / Status.json / journal after controls are built)
+        JTextField systemField = new JTextField();
+        JTextField bodyField = new JTextField();
 
         gc.gridx = 0;
         gc.gridy = row++;
@@ -290,6 +301,22 @@ public final class MiningDebugHarness {
 
         JButton btnProspector = new JButton("Fire Prospector");
         btnProspector.addActionListener(e -> {
+            // Sync SystemState / mining location with the text fields (same as "Location: Undocked").
+            EliteLogEvent locEv = new LocationEvent(
+                Instant.now(),
+                new JsonObject(),
+                false,
+                false,
+                false,
+                systemField.getText().trim(),
+                0L,
+                null,
+                bodyField.getText().trim(),
+                0,
+                "Ring"
+            );
+            tabs.processJournalEvent(locEv);
+
             List<MaterialProportion> mats = parseMaterials(prospectorArea.getText());
             String motherlode = motherlodeField.getText().trim();
             if (motherlode.isEmpty()) {
@@ -319,7 +346,6 @@ public final class MiningDebugHarness {
         gc.gridwidth = 1;
 
         JTextArea cargoArea = new JTextArea(6, 20);
-        cargoArea.setText("Bromellite=110\nLimpet=18");
         JScrollPane cargoScroll = new JScrollPane(cargoArea);
         cargoScroll.setPreferredSize(new Dimension(220, 120));
 
@@ -345,7 +371,146 @@ public final class MiningDebugHarness {
         panel.add(btnSetCargo, gc);
         gc.gridwidth = 1;
 
+        populateHarnessFieldsFromLiveState(tabs, systemField, bodyField, cargoArea);
+
         return panel;
+    }
+
+    /**
+     * Prefill system, body, and cargo text areas from the same sources as the overlay:
+     * {@link org.dce.ed.SystemTabPanel} cache, {@code Status.json}, latest journal {@link LocationEvent},
+     * and {@link CargoMonitor} (live {@code Cargo.json} poll).
+     */
+    private static void populateHarnessFieldsFromLiveState(EliteOverlayTabbedPane tabs,
+            JTextField systemField, JTextField bodyField, JTextArea cargoArea) {
+        String system = "";
+        String body = "";
+        if (tabs != null) {
+            var stp = tabs.getSystemTabPanel();
+            if (stp != null && stp.getState() != null) {
+                String n = stp.getState().getSystemName();
+                if (n != null && !n.isBlank()) {
+                    system = n.trim();
+                }
+            }
+        }
+        StatusEvent status = readStatusSnapshotFromDisk();
+        if (status != null) {
+            String bn = status.getBodyName();
+            if (bn != null && !bn.isBlank()) {
+                body = bn.trim();
+            }
+        }
+        if (system.isEmpty() || body.isEmpty()) {
+            try {
+                Path dir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
+                if (dir != null && Files.isDirectory(dir)) {
+                    EliteJournalReader reader = new EliteJournalReader(dir);
+                    EliteLogEvent trans = reader.findMostRecentSystemTransitionEvent(null);
+                    if (trans instanceof LocationEvent le) {
+                        if (system.isEmpty()) {
+                            String sn = le.getStarSystem();
+                            if (sn != null && !sn.isBlank()) {
+                                system = sn.trim();
+                            }
+                        }
+                        if (body.isEmpty()) {
+                            String b = le.getBody();
+                            if (b != null && !b.isBlank()) {
+                                body = b.trim();
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        systemField.setText(system);
+        bodyField.setText(body);
+        cargoArea.setText(formatCargoInventoryLines(CargoMonitor.getInstance().getSnapshot()));
+    }
+
+    private static StatusEvent readStatusSnapshotFromDisk() {
+        try {
+            String home = System.getProperty("user.home");
+            Path p = Path.of(home, "Saved Games", "Frontier Developments", "Elite Dangerous", "Status.json");
+            if (!Files.exists(p)) {
+                return null;
+            }
+            return STATUS_PARSER.parseStatusJsonFile(p);
+        } catch (IOException | RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static String formatCargoInventoryLines(CargoMonitor.Snapshot snap) {
+        if (snap == null) {
+            return "";
+        }
+        JsonObject cargo = snap.getCargoJson();
+        if (cargo == null) {
+            return "";
+        }
+        JsonArray inv = null;
+        if (cargo.has("Inventory") && cargo.get("Inventory").isJsonArray()) {
+            inv = cargo.getAsJsonArray("Inventory");
+        } else if (cargo.has("inventory") && cargo.get("inventory").isJsonArray()) {
+            inv = cargo.getAsJsonArray("inventory");
+        }
+        if (inv == null || inv.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (JsonElement el : inv) {
+            if (el == null || !el.isJsonObject()) {
+                continue;
+            }
+            JsonObject o = el.getAsJsonObject();
+            String localised = jsonString(o, "Name_Localised");
+            String name = jsonString(o, "Name");
+            if (name == null) {
+                name = jsonString(o, "name");
+            }
+            String display = (localised != null && !localised.isBlank()) ? localised.trim()
+                    : (name != null ? name.trim() : "");
+            if (display.isEmpty()) {
+                continue;
+            }
+            long count = jsonLong(o, "Count");
+            if (count <= 0L) {
+                count = jsonLong(o, "count");
+            }
+            if (count <= 0L) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(display).append('=').append(count);
+        }
+        return sb.toString();
+    }
+
+    private static String jsonString(JsonObject o, String key) {
+        if (o == null || !o.has(key) || o.get(key).isJsonNull()) {
+            return null;
+        }
+        try {
+            return o.get(key).getAsString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static long jsonLong(JsonObject o, String key) {
+        if (o == null || !o.has(key) || o.get(key).isJsonNull()) {
+            return 0L;
+        }
+        try {
+            return o.get(key).getAsLong();
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 
     private static List<MaterialProportion> parseMaterials(String text) {

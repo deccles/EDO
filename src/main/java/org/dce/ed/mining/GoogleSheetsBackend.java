@@ -3,7 +3,9 @@ package org.dce.ed.mining;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -363,81 +365,77 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                     continue;
                 }
                 String ts = r.getTimestamp() != null ? r.getTimestamp().atZone(zone).format(fmt) : "-";
-                String fullBody = (r.getFullBodyName() != null && !r.getFullBodyName().isEmpty()) ? r.getFullBodyName() : "-";
+                String fullBody = r.getFullBodyName() != null ? r.getFullBodyName() : "";
                 String[] sysBody = splitSystemAndBody(fullBody);
-                String system = sysBody[0].isEmpty() ? "-" : sysBody[0];
-                String body = sysBody[1].isEmpty() ? "-" : sysBody[1];
+                String incSystem = sysBody[0].trim();
+                String incBody = sysBody[1].trim();
                 String commander = (r.getCommanderName() != null && !r.getCommanderName().isEmpty()) ? r.getCommanderName() : "-";
                 String material = (r.getMaterial() != null && !r.getMaterial().isEmpty()) ? r.getMaterial() : "-";
                 String asteroid = (r.getAsteroidId() != null && !r.getAsteroidId().isEmpty()) ? r.getAsteroidId() : "-";
                 String core = (r.getCoreType() != null && !r.getCoreType().isEmpty()) ? r.getCoreType() : "-";
 
                 boolean updated = false;
-                // Search for an existing row with the same logical key.
-                for (int i = 1; i < values.size(); i++) {
-                    List<Object> row = values.get(i);
-                    if (row == null || row.size() < 13) {
-                        continue;
-                    }
-                    int existingRun = parseInt(row.get(0), 0);
-                    String existingAsteroid = str(row.get(1));
-                    String existingMaterial = str(row.get(3));
+                // Match (run, asteroid, material, commander) with flexible system/body so blank journal
+                // location does not append a duplicate row. When incoming location is blank, prefer updating
+                // a row that already has system/body so orphan "-" rows are not chosen first.
+                int matchIdx = findProspectorUpsertRowIndex(values, r.getRun(), asteroid, material, commander,
+                        incSystem, incBody);
+                if (matchIdx >= 0) {
+                    List<Object> row = values.get(matchIdx);
+                    // Short rows from legacy edits or API trimming would make set(10..12) throw or misalign columns.
+                    ensureRowSize(row, 15);
                     String existingSystem = str(row.get(10));
                     String existingBody = str(row.get(11));
-                    String existingCommander = str(row.get(12));
 
-                    if (existingRun == r.getRun()
-                        && existingAsteroid.equals(asteroid)
-                        && existingMaterial.equals(material)
-                        && existingSystem.equals(system)
-                        && existingBody.equals(body)
-                        && existingCommander.equals(commander)) {
-
-                        // Update this row in-place. Preserve existing run start/end when the
-                        // incoming row has null (e.g. a later cargo update) so we don't wipe them.
-                        row.set(0, r.getRun());
-                        row.set(1, asteroid);
-                        row.set(2, ts);
-                        row.set(3, material);
-                        row.set(4, r.getPercent());
-                        row.set(5, r.getBeforeAmount());
-                        row.set(6, r.getAfterAmount());
-                        row.set(7, r.getDifference());
-                        row.set(8, core);
-                        row.set(9, r.getDuds());
-                        row.set(10, system);
-                        row.set(11, body);
-                        row.set(12, commander);
-                        ensureRowSize(row, 15);
-                        // See ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow (+ tests).
-                        String existingStart = row.size() > 13 ? str(row.get(13)) : "";
-                        if (ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow(existingStart, r.getRunStartTime())) {
-                            row.set(13, r.getRunStartTime().atZone(zone).format(fmt));
-                        }
-                        if (r.getRunEndTime() != null) {
-                            row.set(14, r.getRunEndTime().atZone(zone).format(fmt));
-                        }
-                        updated = true;
-                        break;
+                    String outSystem = !isBlankSheetCell(incSystem) ? incSystem : existingSystem;
+                    String outBody = !isBlankSheetCell(incBody) ? incBody : existingBody;
+                    if (isBlankSheetCell(outSystem)) {
+                        outSystem = "";
                     }
+                    if (isBlankSheetCell(outBody)) {
+                        outBody = "";
+                    }
+
+                    row.set(0, r.getRun());
+                    row.set(1, asteroid);
+                    row.set(2, ts);
+                    row.set(3, material);
+                    row.set(4, r.getPercent());
+                    row.set(5, r.getBeforeAmount());
+                    row.set(6, r.getAfterAmount());
+                    row.set(7, r.getDifference());
+                    row.set(8, core);
+                    row.set(9, r.getDuds());
+                    row.set(10, outSystem);
+                    row.set(11, outBody);
+                    row.set(12, commander);
+                    String existingStart = row.size() > 13 ? str(row.get(13)) : "";
+                    if (ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow(existingStart, r.getRunStartTime())) {
+                        row.set(13, r.getRunStartTime().atZone(zone).format(fmt));
+                    }
+                    if (r.getRunEndTime() != null) {
+                        row.set(14, r.getRunEndTime().atZone(zone).format(fmt));
+                    }
+                    updated = true;
                 }
 
                 if (!updated) {
-                    // Append as a new row.
+                    String outSystem = isBlankSheetCell(incSystem) ? "" : incSystem;
+                    String outBody = isBlankSheetCell(incBody) ? "" : incBody;
                     List<Object> newRow = new ArrayList<>();
-                    newRow.add(r.getRun());          // 0 Run
-                    newRow.add(asteroid);            // 1 Asteroid
-                    newRow.add(ts);                  // 2 Timestamp
-                    newRow.add(material);            // 3 Type
-                    newRow.add(r.getPercent());      // 4 %
-                    newRow.add(r.getBeforeAmount()); // 5 Before
-                    newRow.add(r.getAfterAmount());  // 6 After
-                    newRow.add(r.getDifference());   // 7 Actual/Tons
-                    newRow.add(core);                // 8 Core
-                    newRow.add(r.getDuds());         // 9 Duds
-                    newRow.add(system);              // 10 System
-                    newRow.add(body);                // 11 Body
-                    newRow.add(commander);           // 12 Commander
+                    newRow.add(r.getRun());
+                    newRow.add(asteroid);
+                    newRow.add(ts);
+                    newRow.add(material);
+                    newRow.add(r.getPercent());
+                    newRow.add(r.getBeforeAmount());
+                    newRow.add(r.getAfterAmount());
+                    newRow.add(r.getDifference());
+                    newRow.add(core);
+                    newRow.add(r.getDuds());
+                    newRow.add(outSystem);
+                    newRow.add(outBody);
+                    newRow.add(commander);
                     newRow.add(r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");
                     newRow.add(r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");
                     values.add(newRow);
@@ -599,7 +597,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 }
                 if (row.size() >= 13) {
                     String asteroidId = str(row.get(1));
-                    Instant ts = parseTimestamp(str(row.get(2)));
+                    Instant ts = parseTimestampCell(row.get(2));
                     String material = str(row.get(3));
                     double percent = parseDouble(row.get(4), 0.0);
                     double before = parseDouble(row.get(5), 0.0);
@@ -609,16 +607,29 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                     int duds = parseInt(row.get(9), 0);
                     String system = str(row.get(10));
                     String body = str(row.get(11));
+                    if (isBlankSheetCell(system)) {
+                        system = "";
+                    }
+                    if (isBlankSheetCell(body)) {
+                        body = "";
+                    }
+                    if (system.isEmpty() && !body.isEmpty()) {
+                        String[] inferred = splitSystemAndBody(body);
+                        if (!inferred[0].isEmpty()) {
+                            system = inferred[0];
+                            body = inferred[1];
+                        }
+                    }
                     String commander = commanderWithWorksheetDefault(str(row.get(12)), worksheetTitle);
                     String rawStart = (row.size() >= 14 && row.get(13) != null) ? row.get(13).toString() : "";
                     String rawEnd = (row.size() >= 15 && row.get(14) != null) ? row.get(14).toString() : "";
-                    Instant runStart = (!rawStart.isBlank()) ? parseTimestamp(rawStart) : null;
-                    Instant runEnd = (!rawEnd.isBlank()) ? parseTimestamp(rawEnd) : null;
+                    Instant runStart = (!rawStart.isBlank()) ? parseTimestampCell(row.get(13)) : null;
+                    Instant runEnd = (!rawEnd.isBlank()) ? parseTimestampCell(row.get(14)) : null;
                     String fullBodyName = buildFullBodyName(system, body);
                     out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds, runStart, runEnd));
                 } else if (row.size() >= 12) {
                     String asteroidId = str(row.get(1));
-                    Instant ts = parseTimestamp(str(row.get(2)));
+                    Instant ts = parseTimestampCell(row.get(2));
                     String material = str(row.get(3));
                     double percent = parseDouble(row.get(4), 0.0);
                     double before = parseDouble(row.get(5), 0.0);
@@ -626,12 +637,15 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                     double diff = parseDouble(row.get(7), 0.0);
                     String core = str(row.get(8));
                     String body = str(row.get(9));
+                    if (isBlankSheetCell(body)) {
+                        body = "";
+                    }
                     int duds = parseInt(row.get(10), 0);
                     String commander = commanderWithWorksheetDefault(str(row.get(11)), worksheetTitle);
                     String fullBodyName = buildFullBodyName("", body);
                     out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds));
                 } else {
-                    Instant ts = parseTimestamp(str(row.get(1)));
+                    Instant ts = parseTimestampCell(row.get(1));
                     String material = str(row.get(2));
                     double percent = parseDouble(row.get(3), 0.0);
                     double before = parseDouble(row.get(4), 0.0);
@@ -837,6 +851,100 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
     private static String str(Object o) {
         return o != null ? o.toString().trim() : "";
+    }
+
+    /** Blank, whitespace-only, or legacy "-" placeholder from older writes — treat as no location. */
+    static boolean isBlankSheetCell(String s) {
+        if (s == null) {
+            return true;
+        }
+        String t = s.trim();
+        return t.isEmpty() || "-".equals(t);
+    }
+
+    static String normSheetCell(String s) {
+        return isBlankSheetCell(s) ? "" : s.trim();
+    }
+
+    /**
+     * When upserting, match rows even if system/body temporarily went blank in the journal (or were written as "-").
+     * Incoming blank does not create a second row; existing blank can be filled by incoming coordinates.
+     */
+    static boolean locationsCompatibleForUpsert(String incSys, String incBody, String existingSys, String existingBody) {
+        String nis = normSheetCell(incSys);
+        String nib = normSheetCell(incBody);
+        String es = normSheetCell(existingSys);
+        String eb = normSheetCell(existingBody);
+        if (nis.equals(es) && nib.equals(eb)) {
+            return true;
+        }
+        if (nis.isEmpty() && nib.isEmpty()) {
+            return true;
+        }
+        return es.isEmpty() && eb.isEmpty();
+    }
+
+    private static boolean upsertCoreKeyMatches(List<Object> row, int run, String asteroid, String material, String commander) {
+        if (row == null || row.size() < 4) {
+            return false;
+        }
+        int existingRun = parseInt(row.get(0), 0);
+        String existingAsteroid = str(row.get(1));
+        String existingMaterial = row.size() > 3 ? str(row.get(3)) : "";
+        String existingCommander = row.size() > 12 ? str(row.get(12)) : "";
+        return existingRun == run
+            && normSheetCell(existingAsteroid).equals(normSheetCell(asteroid))
+            && normSheetCell(existingMaterial).equals(normSheetCell(material))
+            && normSheetCell(existingCommander).equals(normSheetCell(commander));
+    }
+
+    /**
+     * Find a data row (index into {@code values}) to upsert, or -1. When incoming system/body are blank,
+     * prefers the first matching row that already has a non-blank location so duplicate "-" rows are not updated first.
+     */
+    static int findProspectorUpsertRowIndex(List<List<Object>> values, int run, String asteroid, String material,
+            String commander, String incSystem, String incBody) {
+        if (values == null || values.size() <= 1) {
+            return -1;
+        }
+        String nis = normSheetCell(incSystem);
+        String nib = normSheetCell(incBody);
+        boolean incLocBlank = nis.isEmpty() && nib.isEmpty();
+
+        if (incLocBlank) {
+            for (int i = 1; i < values.size(); i++) {
+                List<Object> row = values.get(i);
+                if (row == null) {
+                    continue;
+                }
+                if (!upsertCoreKeyMatches(row, run, asteroid, material, commander)) {
+                    continue;
+                }
+                String es = row.size() > 10 ? str(row.get(10)) : "";
+                String eb = row.size() > 11 ? str(row.get(11)) : "";
+                if (!locationsCompatibleForUpsert(incSystem, incBody, es, eb)) {
+                    continue;
+                }
+                if (!normSheetCell(es).isEmpty() || !normSheetCell(eb).isEmpty()) {
+                    return i;
+                }
+            }
+        }
+        for (int i = 1; i < values.size(); i++) {
+            List<Object> row = values.get(i);
+            if (row == null) {
+                continue;
+            }
+            if (!upsertCoreKeyMatches(row, run, asteroid, material, commander)) {
+                continue;
+            }
+            String es = row.size() > 10 ? str(row.get(10)) : "";
+            String eb = row.size() > 11 ? str(row.get(11)) : "";
+            if (locationsCompatibleForUpsert(incSystem, incBody, es, eb)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static int parseInt(Object o, int def) {
@@ -1129,8 +1237,75 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         return null;
     }
 
-    // Split a combined \"system > body\" string into [system, body], with some cleanup.
-    private static String[] splitSystemAndBody(String fullBodyName) {
+    /**
+     * Parse a sheet cell that may be a formatted string, ISO text, Unix epoch number, or Sheets serial date.
+     * Package-private for tests in {@code org.dce.ed.mining}.
+     */
+    static Instant parseTimestampCell(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Number n) {
+            return instantFromNumericTimestamp(n.doubleValue());
+        }
+        return parseTimestamp(str(o));
+    }
+
+    /**
+     * Interpret numeric cells from Google Sheets API: serial dates (~25k–60k), Unix seconds, or milliseconds.
+     */
+    private static Instant instantFromNumericTimestamp(double n) {
+        if (Double.isNaN(n) || !Double.isFinite(n)) {
+            return null;
+        }
+        // Milliseconds since epoch (e.g. 1.71e12)
+        if (n >= 1e11) {
+            return Instant.ofEpochMilli((long) n);
+        }
+        // Seconds since epoch
+        if (n >= 1e9 && n < 1e11) {
+            return Instant.ofEpochSecond((long) n);
+        }
+        // Google Sheets / Excel serial: days since 1899-12-30 (UTC), optional fractional day
+        if (n > 20_000 && n < 80_000) {
+            return sheetsSerialDateToInstant(n);
+        }
+        return null;
+    }
+
+    private static Instant sheetsSerialDateToInstant(double serial) {
+        long wholeDays = (long) Math.floor(serial);
+        double frac = serial - wholeDays;
+        LocalDate base = LocalDate.of(1899, 12, 30);
+        long nanos = (long) Math.round(frac * 86_400_000_000_000L);
+        return base.plusDays(wholeDays).atStartOfDay(ZoneOffset.UTC).plusNanos(nanos).toInstant();
+    }
+
+    /**
+     * Encodes system and body for {@link ProspectorLogRow#getFullBodyName()} so {@link #splitSystemAndBody} can
+     * recover columns: when the body is empty, uses {@code system + " >"} (not raw system) so the name is not
+     * mistaken for a body-only value.
+     */
+    public static String buildFullBodyNameForProspectorRow(String system, String body) {
+        String sys = system != null ? system.trim() : "";
+        String b = body != null ? body.trim() : "";
+        if (sys.isEmpty() && b.isEmpty()) {
+            return "";
+        }
+        if (sys.isEmpty()) {
+            return b;
+        }
+        if (b.isEmpty()) {
+            return sys + " >";
+        }
+        return sys + " > " + b;
+    }
+
+    /**
+     * Split a combined \"system > body\" string into [system, body], with ring / duplicate-prefix cleanup.
+     * Public for {@link org.dce.ed.MiningTabPanel} table display (same rules as sheet columns).
+     */
+    public static String[] splitSystemAndBody(String fullBodyName) {
         String system = "";
         String body = "";
         if (fullBodyName == null) {
@@ -1145,11 +1320,18 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             system = s.substring(0, idx).trim();
             body = s.substring(idx + 3).trim();
         } else {
-            body = s;
+            int idx2 = s.indexOf(" >");
+            if (idx2 >= 0) {
+                system = s.substring(0, idx2).trim();
+                body = s.substring(idx2 + 2).trim();
+            } else {
+                body = s;
+            }
         }
-        // If the body still starts with the system name, strip it.
-        if (!system.isEmpty() && body.startsWith(system)) {
-            body = body.substring(system.length()).trim();
+        // If the body repeats the full system name, strip it only when followed by a space and the system
+        // name is long enough to avoid treating \"1\" as a prefix of \"1 B Ring\" (which would yield \"B\").
+        if (system.length() >= 3 && body.startsWith(system + " ")) {
+            body = body.substring(system.length() + 1).trim();
         }
         // Drop trailing \"Ring\" suffix to get just the orbital identifier (e.g. \"6 B\").
         if (body.endsWith(" Ring")) {
@@ -1159,18 +1341,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
     }
 
     private static String buildFullBodyName(String system, String body) {
-        String sys = system != null ? system.trim() : "";
-        String b = body != null ? body.trim() : "";
-        if (sys.isEmpty() && b.isEmpty()) {
-            return "";
-        }
-        if (sys.isEmpty()) {
-            return b;
-        }
-        if (b.isEmpty()) {
-            return sys;
-        }
-        return sys + " > " + b;
+        return buildFullBodyNameForProspectorRow(system, body);
     }
 
     // Helper types for renumbering/sorting
