@@ -172,6 +172,17 @@ public class MiningTabPanel extends JPanel {
 	private boolean spreadsheetRefreshPending;
 	/** Throttle modal "reconnect to Google" prompts on repeated refresh failures. */
 	private long lastGoogleSheetsReconnectDialogMs;
+	/**
+	 * Short-lived cache of commander-tab reads for run/asteroid resolution. Full multi-tab merges (partner visibility)
+	 * still run on {@link #SPREADSHEET_REFRESH_MS}.
+	 */
+	private static final long RUN_RESOLUTION_CACHE_MS = 10_000L;
+	private String runResolutionCacheCmdr = "";
+	private long runResolutionCacheExpiresAtMs;
+	private List<ProspectorLogRow> runResolutionCache = List.of();
+	/** Coalesce rapid Sheet writes into one UI refresh (Google backend only). */
+	private static final int SPREADSHEET_REFRESH_AFTER_WRITE_DEBOUNCE_MS = 1_500;
+	private final Timer spreadsheetRefreshAfterWriteDebounceTimer;
 	private final JSplitPane miningOuterSplit;
 	private final JSplitPane miningInnerSplit;
 	private SystemTableHoverCopyManager miningSystemCopyManager;
@@ -925,6 +936,9 @@ private final JLayer<JTable> cargoLayer;
 		spreadsheetRefreshTimer = new Timer(SPREADSHEET_REFRESH_MS, e -> refreshSpreadsheetFromBackend());
 		spreadsheetRefreshTimer.setRepeats(true);
 		spreadsheetRefreshTimer.start();
+		spreadsheetRefreshAfterWriteDebounceTimer = new Timer(SPREADSHEET_REFRESH_AFTER_WRITE_DEBOUNCE_MS,
+				e -> refreshSpreadsheetFromBackend());
+		spreadsheetRefreshAfterWriteDebounceTimer.setRepeats(false);
 
 		CargoMonitor.getInstance().addListener(snap -> SwingUtilities.invokeLater(() -> updateFromCargoSnapshot(snap)));
 		updateFromCargoSnapshot(CargoMonitor.getInstance().getSnapshot());
@@ -1608,7 +1622,8 @@ return EdoUi.User.MAIN_TEXT;
 			}
 			if (ok) {
 				applyMiningSheetsStatusClear();
-				refreshSpreadsheetFromBackend();
+				invalidateRunResolutionCache();
+				scheduleSpreadsheetRefreshAfterMiningWrite();
 				wroteRowsThisRun = true;
 				haveActiveAsteroid = true;
 				loggedCargoSinceLastProspector = true;
@@ -1747,7 +1762,8 @@ return EdoUi.User.MAIN_TEXT;
 				}
 				if (ok) {
 					applyMiningSheetsStatusClear();
-					refreshSpreadsheetFromBackend();
+					invalidateRunResolutionCache();
+					scheduleSpreadsheetRefreshAfterMiningWrite();
 				}
 			}
 		}
@@ -1806,8 +1822,17 @@ return EdoUi.User.MAIN_TEXT;
 				if (cmd == null || cmd.isBlank()) {
 					cmd = "-";
 				}
-				return gs.loadRowsWithStatusForCommander(cmd).getRows();
+				long now = System.currentTimeMillis();
+				if (now < runResolutionCacheExpiresAtMs && cmd.equals(runResolutionCacheCmdr)) {
+					return runResolutionCache;
+				}
+				List<ProspectorLogRow> rows = gs.loadRowsWithStatusForCommander(cmd).getRows();
+				runResolutionCache = rows != null ? rows : List.of();
+				runResolutionCacheCmdr = cmd;
+				runResolutionCacheExpiresAtMs = now + RUN_RESOLUTION_CACHE_MS;
+				return runResolutionCache;
 			}
+			invalidateRunResolutionCache();
 			return backend.loadRows();
 		} catch (Exception e) {
 			return List.of();
@@ -2159,7 +2184,8 @@ return EdoUi.User.MAIN_TEXT;
 		}
 		if (ok) {
 			applyMiningSheetsStatusClear();
-			refreshSpreadsheetFromBackend();
+			invalidateRunResolutionCache();
+			scheduleSpreadsheetRefreshAfterMiningWrite();
 			wroteRowsThisRun = true;
 			return true;
 		}
@@ -2179,6 +2205,25 @@ return EdoUi.User.MAIN_TEXT;
 			prospectorLogSourceLabel.setText(
 				"Log source: local ~/.edo/prospector_log.csv (not the cloud sheet). Enable Google Sheets in Preferences → Mining to load your spreadsheet.");
 			prospectorLogSourceLabel.setForeground(EdoUi.User.VALUABLE);
+		}
+	}
+
+	private void invalidateRunResolutionCache() {
+		runResolutionCacheExpiresAtMs = 0L;
+		runResolutionCacheCmdr = "";
+		runResolutionCache = List.of();
+	}
+
+	/**
+	 * After local writes, refresh the merged prospector table without hammering Sheets on every upsert burst.
+	 * Timer polling for other players is unchanged.
+	 */
+	private void scheduleSpreadsheetRefreshAfterMiningWrite() {
+		ProspectorLogBackend b = prospectorBackendSupplier.get();
+		if (b instanceof GoogleSheetsBackend) {
+			spreadsheetRefreshAfterWriteDebounceTimer.restart();
+		} else {
+			refreshSpreadsheetFromBackend();
 		}
 	}
 

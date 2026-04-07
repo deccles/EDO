@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -186,13 +187,45 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         return m.length() > 200 ? m.substring(0, 197) + "..." : m;
     }
 
+    /**
+     * Tabs we already verified exist (or just created). Avoids a spreadsheets.get on every append/upsert.
+     * Key is spreadsheetId + NUL + title. Cleared when the sheet is missing on a values call (best-effort).
+     */
+    private static final Set<String> ENSURED_SHEET_WITH_HEADER_KEYS = ConcurrentHashMap.newKeySet();
+
+    /** For tests that need a clean slate when reusing the same spreadsheet id. */
+    static void clearEnsuredSheetWithHeaderCacheForTests() {
+        ENSURED_SHEET_WITH_HEADER_KEYS.clear();
+    }
+
+    static void forgetEnsuredSheetWithHeader(String spreadsheetId, String title) {
+        if (spreadsheetId == null || title == null) {
+            return;
+        }
+        ENSURED_SHEET_WITH_HEADER_KEYS.remove(spreadsheetId + "\0" + title);
+    }
+
+    private static boolean sheetErrorSuggestsMissingWorksheet(String m) {
+        if (m == null) {
+            return false;
+        }
+        return m.contains("Unable to parse range")
+                || m.contains("not found")
+                || m.contains("Invalid value at");
+    }
+
     private void ensureSheetWithHeader(Sheets sheets, String title) throws IOException, GeneralSecurityException {
+        String cacheKey = spreadsheetId + "\0" + title;
+        if (ENSURED_SHEET_WITH_HEADER_KEYS.contains(cacheKey)) {
+            return;
+        }
         Spreadsheet spr = sheets.spreadsheets().get(spreadsheetId).execute();
         List<Sheet> list = spr.getSheets();
         if (list != null) {
             for (Sheet sh : list) {
                 SheetProperties p = sh.getProperties();
                 if (p != null && Objects.equals(title, p.getTitle())) {
+                    ENSURED_SHEET_WITH_HEADER_KEYS.add(cacheKey);
                     return;
                 }
             }
@@ -208,6 +241,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             .update(spreadsheetId, rangeA1OForSheetTitle(title), headerOnly)
             .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
             .execute();
+        ENSURED_SHEET_WITH_HEADER_KEYS.add(cacheKey);
     }
 
     private static List<Object> headerRow15() {
@@ -292,13 +326,13 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         if (rows == null || rows.isEmpty() || spreadsheetId.isEmpty()) {
             return ProspectorWriteResult.ok();
         }
+        ProspectorLogRow first = rows.get(0);
+        String sheetTitle = MiningSheetTitles.sheetTitleForCommander(first != null ? first.getCommanderName() : "-");
         try {
             Sheets sheets = createSheetsService();
             if (sheets == null) {
                 return authFailure();
             }
-            ProspectorLogRow first = rows.get(0);
-            String sheetTitle = MiningSheetTitles.sheetTitleForCommander(first != null ? first.getCommanderName() : "-");
             ensureSheetWithHeader(sheets, sheetTitle);
             List<List<Object>> values = new ArrayList<>();
             ZoneId zone = ZoneId.systemDefault();
@@ -316,6 +350,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 .execute();
             return ProspectorWriteResult.ok();
         } catch (Exception e) {
+            if (sheetErrorSuggestsMissingWorksheet(e.getMessage())) {
+                forgetEnsuredSheetWithHeader(spreadsheetId, sheetTitle);
+            }
             return ProspectorWriteResult.failure(truncateMsg(e.getMessage()), e);
         }
     }
@@ -449,6 +486,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 .execute();
             return ProspectorWriteResult.ok();
         } catch (Exception e) {
+            if (sheetErrorSuggestsMissingWorksheet(e.getMessage())) {
+                forgetEnsuredSheetWithHeader(spreadsheetId, sheetTitle);
+            }
             return ProspectorWriteResult.failure(truncateMsg(e.getMessage()), e);
         }
     }
@@ -562,6 +602,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             } catch (Exception ex) {
                 String m = ex.getMessage() != null ? ex.getMessage() : "";
                 if (m.contains("Unable to parse range") || m.contains("not found")) {
+                    forgetEnsuredSheetWithHeader(spreadsheetId, sheetTitle);
                     return new ProspectorLoadResult(ProspectorLoadResult.Status.EMPTY_SHEET, Collections.emptyList());
                 }
                 return new ProspectorLoadResult(ProspectorLoadResult.Status.ERROR, Collections.emptyList(),
@@ -967,12 +1008,12 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         if (spreadsheetId.isEmpty() || endTime == null) {
             return ProspectorWriteResult.ok();
         }
+        String sheetTitle = MiningSheetTitles.sheetTitleForCommander(commander);
         try {
             Sheets sheets = createSheetsService();
             if (sheets == null) {
                 return authFailure();
             }
-            String sheetTitle = MiningSheetTitles.sheetTitleForCommander(commander);
             ValueRange response = sheets.spreadsheets().values()
                 .get(spreadsheetId, rangeA1OForSheetTitle(sheetTitle))
                 .execute();
@@ -997,6 +1038,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             }
             return ProspectorWriteResult.ok();
         } catch (Exception e) {
+            if (sheetErrorSuggestsMissingWorksheet(e.getMessage())) {
+                forgetEnsuredSheetWithHeader(spreadsheetId, sheetTitle);
+            }
             return ProspectorWriteResult.failure(truncateMsg(e.getMessage()), e);
         }
     }
