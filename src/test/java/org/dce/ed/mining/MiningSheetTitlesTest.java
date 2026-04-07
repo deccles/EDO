@@ -63,4 +63,42 @@ class MiningSheetTitlesTest {
         assertTrue(MiningSheetTitles.rangeA1O("Sheet1").startsWith("'"));
         assertTrue(MiningSheetTitles.rangeA1O("Sheet1").endsWith("!A:O"));
     }
+
+    @Test
+    void sheetTitleForCommander_truncatesVeryLongNameToApiLimit() {
+        String longName = "X".repeat(120);
+        String title = MiningSheetTitles.sheetTitleForCommander(longName);
+        assertTrue(title.length() <= 99);
+        assertTrue(title.startsWith(MiningSheetTitles.CMDR_WORKSHEET_PREFIX));
+    }
+
+    @Test
+    void sanitizeTitle_invalidCharsBecomeUnderscores() {
+        assertEquals("____", MiningSheetTitles.sanitizeTitle("::::"));
+    }
+
+    @Test
+    void uniqueTitle_severalCollisions_findsNextFreeSuffix() {
+        Set<String> used = new LinkedHashSet<>();
+        used.add("CMDR Test");
+        used.add("CMDR Test (2)");
+        used.add("CMDR Test (3)");
+        assertEquals("CMDR Test (4)", MiningSheetTitles.uniqueTitle("CMDR Test", used));
+    }
+
+    @Test
+    void commanderNameFromCmdrWorksheetTitle_requiresCmdrPrefixWithSpace() {
+        assertEquals("", MiningSheetTitles.commanderNameFromCmdrWorksheetTitle("CMDR"));
+        assertEquals("X", MiningSheetTitles.commanderNameFromCmdrWorksheetTitle("CMDR X"));
+    }
+
+    @Test
+    void isCmdrMiningWorksheet_requiresSpaceAfterCmdrLetters() {
+        assertFalse(MiningSheetTitles.isCmdrMiningWorksheet("CMDRX"));
+    }
+
+    @Test
+    void quoteSheetNameForRange_nullTreatedAsEmpty() {
+        assertEquals("''", MiningSheetTitles.quoteSheetNameForRange(null));
+    }
 }

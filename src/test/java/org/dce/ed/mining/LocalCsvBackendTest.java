@@ -98,4 +98,61 @@ class LocalCsvBackendTest {
         assertNull(loaded.get(1).getRunEndTime());
         assertNull(loaded.get(2).getRunEndTime());
     }
+
+    @Test
+    void appendRows_twice_preservesOrder(@TempDir Path dir) throws Exception {
+        Path csv = dir.resolve("multi.csv");
+        LocalCsvBackend backend = new LocalCsvBackend(csv);
+        Instant t1 = Instant.parse("2026-02-16T14:30:00Z");
+        Instant t2 = Instant.parse("2026-02-16T14:31:00Z");
+        backend.appendRows(List.of(
+                new ProspectorLogRow(1, "A", "S > B", t1, "A", 1, 0, 1, 1, "C1", "", 0, null, null)));
+        backend.appendRows(List.of(
+                new ProspectorLogRow(1, "B", "S > B", t2, "B", 1, 0, 1, 1, "C1", "", 0, null, null)));
+        List<ProspectorLogRow> loaded = backend.loadRows();
+        assertEquals(2, loaded.size());
+        assertEquals("A", loaded.get(0).getMaterial());
+        assertEquals("B", loaded.get(1).getMaterial());
+    }
+
+    @Test
+    void loadRows_malformedLine_skipsOrHandlesGracefully(@TempDir Path dir) throws Exception {
+        Path csv = dir.resolve("bad.csv");
+        Files.writeString(
+                csv,
+                "run,timestamp,material,percent,before amount,after amount,difference,body,commander\n"
+                        + "not-a-valid-row\n"
+                        + "1,2/16/2026 14:30:00,Tritium,10,0,1,1,Sol,C1\n",
+                StandardCharsets.UTF_8);
+        LocalCsvBackend backend = new LocalCsvBackend(csv);
+        List<ProspectorLogRow> loaded = backend.loadRows();
+        assertEquals(1, loaded.size());
+        assertEquals("Tritium", loaded.get(0).getMaterial());
+    }
+
+    @Test
+    void appendThenLoad_preservesCoreAndDudsWhenPresent(@TempDir Path dir) throws Exception {
+        Path csv = dir.resolve("core.csv");
+        LocalCsvBackend backend = new LocalCsvBackend(csv);
+        Instant ts = Instant.parse("2026-03-01T12:00:00Z");
+        ProspectorLogRow row = new ProspectorLogRow(
+                2,
+                "A",
+                "X > Y",
+                ts,
+                "Painite",
+                50.0,
+                0.0,
+                1.0,
+                1.0,
+                "Cmdr",
+                "Painite",
+                3,
+                ts,
+                null);
+        backend.appendRows(List.of(row));
+        ProspectorLogRow r = backend.loadRows().get(0);
+        assertEquals("Painite", r.getCoreType());
+        assertEquals(3, r.getDuds());
+    }
 }

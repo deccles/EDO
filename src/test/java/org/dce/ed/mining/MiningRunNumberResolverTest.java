@@ -130,4 +130,45 @@ class MiningRunNumberResolverTest {
                 mat(4, "B", tNew, null, null));
         assertEquals(4, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
     }
+
+    @Test
+    void normalizeCommander_blankBecomesDash() {
+        assertEquals("-", MiningRunNumberResolver.normalizeCommander(null));
+        assertEquals("-", MiningRunNumberResolver.normalizeCommander(""));
+        assertEquals("-", MiningRunNumberResolver.normalizeCommander("   "));
+    }
+
+    @Test
+    void normalizeCommander_doesNotTrimNonBlank() {
+        assertEquals("  Villunus  ", MiningRunNumberResolver.normalizeCommander("  Villunus  "));
+    }
+
+    @Test
+    void blankCommander_matchesRowsStoredAsDash() {
+        Instant t = Instant.parse("2026-04-02T15:00:00Z");
+        List<ProspectorLogRow> rows = List.of(
+                new ProspectorLogRow(2, "A", LOC, t, "X", 10, 0, 1, 1, "-", "", 0, t, null));
+        assertEquals(2, MiningRunNumberResolver.compute("", SYS, BODY, false, rows));
+        assertEquals(2, MiningRunNumberResolver.compute("   ", SYS, BODY, false, rows));
+    }
+
+    @Test
+    void differentLocation_onlyClosedRunsElsewhere_allocatesNextRun() {
+        Instant t = Instant.parse("2026-04-02T15:00:00Z");
+        Instant start = Instant.parse("2026-04-02T14:00:00Z");
+        Instant end = Instant.parse("2026-04-02T14:30:00Z");
+        String otherLoc = "OtherSys > OtherBody";
+        List<ProspectorLogRow> rows = List.of(
+                new ProspectorLogRow(3, "A", otherLoc, t, "X", 10, 0, 1, 1, CMDR, "", 0, start, end));
+        assertEquals(4, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
+    }
+
+    @Test
+    void forceNewRun_false_closedRunAtLocation_stillIncrements() {
+        Instant t = Instant.parse("2026-04-02T16:00:00Z");
+        Instant start = Instant.parse("2026-04-02T15:00:00Z");
+        Instant end = Instant.parse("2026-04-02T15:30:00Z");
+        List<ProspectorLogRow> rows = List.of(mat(8, "A", t, start, end));
+        assertEquals(9, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
+    }
 }
