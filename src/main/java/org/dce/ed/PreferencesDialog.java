@@ -52,20 +52,42 @@ import org.dce.ed.tts.VoicePackManager;
  */
 public class PreferencesDialog extends JDialog {
 
+	/** Index of the Mining tab in {@link #PreferencesDialog(Window, String)}'s tabbed pane (Colors, Exobiology, Fonts, Logging, Mining, …). */
+	public static final int MINING_TAB_INDEX = 4;
+
 	/**
 	 * Shows preferences, or brings the existing modeless window to the front if one is already open.
 	 * Avoids multiple dialogs whose OK would overwrite newer mining (Sheets) settings with stale UI.
 	 */
 	public static void show(Window owner, String clientKey) {
+		show(owner, clientKey, -1);
+	}
+
+	/**
+	 * @param initialTabIndex tab to select when opening a new dialog, or -1 for the first tab
+	 */
+	public static void show(Window owner, String clientKey, int initialTabIndex) {
 		for (Window w : Window.getWindows()) {
-			if (w instanceof PreferencesDialog && w.isDisplayable()) {
+			if (w instanceof PreferencesDialog pd && w.isDisplayable()) {
 				w.toFront();
+				if (initialTabIndex >= 0) {
+					pd.selectTabIfPossible(initialTabIndex);
+				}
 				return;
 			}
 		}
 		PreferencesDialog d = new PreferencesDialog(owner, clientKey);
+		if (initialTabIndex >= 0) {
+			d.selectTabIfPossible(initialTabIndex);
+		}
 		d.setLocationRelativeTo(owner);
 		d.setVisible(true);
+	}
+
+	void selectTabIfPossible(int index) {
+		if (preferenceTabs != null && index >= 0 && index < preferenceTabs.getTabCount()) {
+			preferenceTabs.setSelectedIndex(index);
+		}
 	}
 
 	public final String clientKey;
@@ -149,6 +171,9 @@ public class PreferencesDialog extends JDialog {
 	private JSpinner bioValuableThresholdMillionSpinner;
 	private JCheckBox autoExpandBioOnTargetedBodyCheckBox;
 
+	/** Root tabbed pane (Colors, Exobiology, …); used to jump to a specific tab from helpers. */
+	private JTabbedPane preferenceTabs;
+
 	private boolean okPressed;
 	private final Font originalUiFont;
 	private final int originalNormalTransparencyPct;
@@ -193,16 +218,16 @@ public class PreferencesDialog extends JDialog {
 		setLayout(new BorderLayout());
 		setMinimumSize(new Dimension(560, 380));
 
-		JTabbedPane tabs = new JTabbedPane();
-		tabs.addTab("Colors", createColorsPanel());
-		tabs.addTab("Exobiology", createExobiologyPanel());
-		tabs.addTab("Fonts", createFontsPanel());
-		tabs.addTab("Logging", createLoggingPanel());
-		tabs.addTab("Mining", createMiningPanel());
-		tabs.addTab("Overlay", createOverlayPanel());
-		tabs.addTab("Speech", createSpeechPanel());
+		this.preferenceTabs = new JTabbedPane();
+		preferenceTabs.addTab("Colors", createColorsPanel());
+		preferenceTabs.addTab("Exobiology", createExobiologyPanel());
+		preferenceTabs.addTab("Fonts", createFontsPanel());
+		preferenceTabs.addTab("Logging", createLoggingPanel());
+		preferenceTabs.addTab("Mining", createMiningPanel());
+		preferenceTabs.addTab("Overlay", createOverlayPanel());
+		preferenceTabs.addTab("Speech", createSpeechPanel());
 
-		add(tabs, BorderLayout.CENTER);
+		add(preferenceTabs, BorderLayout.CENTER);
 		add(createButtonPanel(), BorderLayout.SOUTH);
 
 		pack();
@@ -1635,11 +1660,13 @@ public class PreferencesDialog extends JDialog {
         if (miningLogBackendLocalRadio != null && miningLogBackendGoogleRadio != null) {
             OverlayPreferences.setMiningLogBackend(miningLogBackendGoogleRadio.isSelected() ? "google" : "local");
         }
-        if (miningGoogleSheetsUrlField != null) {
+        // Persist sheet URL and OAuth client fields only when Google Sheets is selected. Saving while "Local CSV"
+        // is selected used to overwrite stored values with empty text from disabled fields (platform/LAF dependent).
+        boolean googleSheetsSelected = miningLogBackendGoogleRadio != null && miningLogBackendGoogleRadio.isSelected();
+        if (googleSheetsSelected && miningGoogleSheetsUrlField != null) {
             String rawUrl = miningGoogleSheetsUrlField.getText();
             String trimmedUrl = rawUrl != null ? rawUrl.trim() : "";
-            boolean googleSelected = miningLogBackendGoogleRadio != null && miningLogBackendGoogleRadio.isSelected();
-            if (googleSelected && trimmedUrl.isEmpty()) {
+            if (trimmedUrl.isEmpty()) {
                 String previous = OverlayPreferences.getMiningGoogleSheetsUrl();
                 if (previous != null && !previous.isBlank()) {
                     // Avoid wiping the stored sheet link when OK is pressed with an empty URL field (mis-click, focus loss).
@@ -1651,10 +1678,10 @@ public class PreferencesDialog extends JDialog {
                 OverlayPreferences.setMiningGoogleSheetsUrl(rawUrl);
             }
         }
-        if (miningGoogleClientIdField != null) {
+        if (googleSheetsSelected && miningGoogleClientIdField != null) {
             OverlayPreferences.setMiningGoogleSheetsClientId(miningGoogleClientIdField.getText());
         }
-        if (miningGoogleClientSecretField != null) {
+        if (googleSheetsSelected && miningGoogleClientSecretField != null) {
             OverlayPreferences.setMiningGoogleSheetsClientSecret(miningGoogleClientSecretField.getText());
         }
 

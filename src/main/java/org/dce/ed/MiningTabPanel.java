@@ -72,6 +72,7 @@ import javax.swing.JViewport;
 import javax.swing.ListCellRenderer;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import java.awt.Window;
 import javax.swing.Timer;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
@@ -97,6 +98,7 @@ import org.dce.ed.market.GalacticAveragePrices;
 import org.dce.ed.market.MaterialNameMatcher;
 import org.dce.ed.OverlayFrame;
 import org.dce.ed.mining.GoogleSheetsBackend;
+import org.dce.ed.mining.GoogleSheetsReconnectDialog;
 import org.dce.ed.mining.ProspectorLoadResult;
 import org.dce.ed.mining.MiningRunNumberResolver;
 import org.dce.ed.mining.ProspectorLogBackend;
@@ -168,6 +170,8 @@ public class MiningTabPanel extends JPanel {
 	private final Object spreadsheetRefreshLock = new Object();
 	private boolean spreadsheetRefreshWorkerRunning;
 	private boolean spreadsheetRefreshPending;
+	/** Throttle modal "reconnect to Google" prompts on repeated refresh failures. */
+	private long lastGoogleSheetsReconnectDialogMs;
 	private final JSplitPane miningOuterSplit;
 	private final JSplitPane miningInnerSplit;
 	private SystemTableHoverCopyManager miningSystemCopyManager;
@@ -295,6 +299,36 @@ private final JLayer<JTable> cargoLayer;
 		if (frame != null) {
 			frame.clearMiningSheetsStatusError();
 		}
+	}
+
+	/**
+	 * When Google Sheets fails for auth/setup reasons, offer a reconnect dialog (throttled) so the user is not
+	 * stuck with only the status-bar line.
+	 */
+	private void maybeOfferGoogleSheetsReconnectDialog(String detailMessage) {
+		if (miningSheetsStatusErrorSinkForTests != null) {
+			return;
+		}
+		if (!"google".equals(OverlayPreferences.getMiningLogBackend())) {
+			return;
+		}
+		if (OverlayPreferences.getMiningGoogleSheetsUrl().isBlank()) {
+			return;
+		}
+		if (!GoogleSheetsReconnectDialog.isLikelyAuthOrSetupFailure(detailMessage)) {
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (now - lastGoogleSheetsReconnectDialogMs < 90_000L) {
+			return;
+		}
+		lastGoogleSheetsReconnectDialogMs = now;
+		Window w = SwingUtilities.getWindowAncestor(this);
+		if (w == null) {
+			return;
+		}
+		// Defer so the error status line updates before the modal.
+		SwingUtilities.invokeLater(() -> GoogleSheetsReconnectDialog.show(w, EliteDangerousOverlay.clientKey, detailMessage));
 	}
 
 	public MiningTabPanel(GalacticAveragePrices prices) {
@@ -2206,10 +2240,11 @@ return EdoUi.User.MAIN_TEXT;
 						}
 						case ERROR -> {
 							String detail = result.getDetailMessage();
-							applyMiningSheetsStatusError(
-									detail != null && !detail.isBlank()
-											? detail
-											: "Could not refresh mining log from Google Sheets.");
+							String shown = detail != null && !detail.isBlank()
+									? detail
+									: "Could not refresh mining log from Google Sheets.";
+							applyMiningSheetsStatusError(shown);
+							maybeOfferGoogleSheetsReconnectDialog(shown);
 							// Keep showing the last good data when there is a transient error.
 							if (lastGoodSpreadsheetRows != null) {
 								spreadsheetModel.setRows(lastGoodSpreadsheetRows, matcher);
