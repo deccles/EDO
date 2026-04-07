@@ -238,6 +238,8 @@ public final class SystemCache implements SystemStore {
                     boolean idMatch = (newBody.bodyId >= 0 && existing.bodyId >= 0 && newBody.bodyId == existing.bodyId);
                     boolean nameMatch = (newBody.name != null && !newBody.name.isEmpty() && newBody.name.equals(existing.name));
                     if (idMatch || nameMatch) {
+                        int mergedBio = Math.max(existing.getNumberOfBioSignals(), newBody.getNumberOfBioSignals());
+                        newBody.setNumberOfBioSignals(mergedBio);
                         cs.bodies.set(i, newBody);
                         merged = true;
                         break;
@@ -758,7 +760,11 @@ public final class SystemCache implements SystemStore {
                 }
             }
 
-            cb.setNumberOfBioSignals(b.getNumberOfBioSignals());
+            {
+                int mem = b.getNumberOfBioSignals() != null ? b.getNumberOfBioSignals().intValue() : 0;
+                int disk = prev != null ? prev.getNumberOfBioSignals() : 0;
+                cb.setNumberOfBioSignals(Math.max(mem, disk));
+            }
             if (b.getPredictions() != null && !b.getPredictions().isEmpty()) {
                 cb.predictions = b.getPredictions();
             } else if (prev != null && prev.predictions != null && !prev.predictions.isEmpty()) {

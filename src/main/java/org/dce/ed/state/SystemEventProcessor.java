@@ -938,6 +938,14 @@ public class SystemEventProcessor {
 
         ExplorationBodyCredits.syncHighValueExplorationFromClassifiers(real);
 
+        {
+            int tr = tmp.getNumberOfBioSignals() != null ? tmp.getNumberOfBioSignals().intValue() : 0;
+            int rr = real.getNumberOfBioSignals() != null ? real.getNumberOfBioSignals().intValue() : 0;
+            if (tr > rr) {
+                real.setNumberOfBioSignals(tr);
+            }
+        }
+
         state.getBodies().remove(tmpKey);
     }
     private void applyBioSignalCount(BodyInfo info, int count) {

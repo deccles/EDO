@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -643,27 +644,37 @@ public class SystemTabPanel extends JPanel {
         if (candidates == null || candidates.isEmpty()) {
             return null;
         }
-        int signalCount = (fssBioSignalCount != null && fssBioSignalCount.intValue() > 0)
-                ? fssBioSignalCount.intValue()
-                : Math.max(1, candidates.size());
-        List<Long> payouts = new ArrayList<>(candidates.size());
+        Map<String, List<Long>> byGenus = new LinkedHashMap<>();
         for (BioCandidate bio : candidates) {
-            payouts.add(Long.valueOf(bio.getEstimatedPayout(firstBonusApplies)));
+            if (bio == null) {
+                continue;
+            }
+            String genus = firstWord(canonicalBioName(bio.getDisplayName())).toLowerCase(Locale.ROOT);
+            long p = bio.getEstimatedPayout(firstBonusApplies);
+            byGenus.computeIfAbsent(genus, k -> new ArrayList<>()).add(Long.valueOf(p));
         }
-        Collections.sort(payouts);
-        signalCount = Math.min(signalCount, payouts.size());
-        if (signalCount <= 0) {
+        List<Long> mins = new ArrayList<>(byGenus.size());
+        List<Long> maxs = new ArrayList<>(byGenus.size());
+        for (List<Long> payouts : byGenus.values()) {
+            long minV = Long.MAX_VALUE;
+            long maxV = Long.MIN_VALUE;
+            for (Long c : payouts) {
+                if (c == null) {
+                    continue;
+                }
+                long v = c.longValue();
+                minV = Math.min(minV, v);
+                maxV = Math.max(maxV, v);
+            }
+            if (minV != Long.MAX_VALUE) {
+                mins.add(Long.valueOf(minV));
+                maxs.add(Long.valueOf(maxV));
+            }
+        }
+        if (mins.isEmpty()) {
             return null;
         }
-        long minTotal = 0L;
-        for (int i = 0; i < signalCount; i++) {
-            minTotal += payouts.get(i).longValue();
-        }
-        long maxTotal = 0L;
-        for (int i = payouts.size() - signalCount; i < payouts.size(); i++) {
-            maxTotal += payouts.get(i).longValue();
-        }
-        return new long[] { minTotal, maxTotal, signalCount };
+        return BioTableBuilder.bioPayoutRangeFromMinMaxLists(mins, maxs, fssBioSignalCount);
     }
 
     /** Drops species the player has fully analysed (3/3) so TTS matches the remaining pool. */
@@ -3317,8 +3328,14 @@ static class Row {
             keep.setMassEm(drop.getMassEm());
         }
 
-        if (keep.getNumberOfBioSignals() == null && drop.getNumberOfBioSignals() != null) {
-            keep.setNumberOfBioSignals(drop.getNumberOfBioSignals());
+        // numberOfBioSignals uses primitive int (default 0); getter never returns null, so the old
+        // null-check merge never copied FSS counts from a duplicate body entry onto the keeper.
+        {
+            int kb = keep.getNumberOfBioSignals() != null ? keep.getNumberOfBioSignals().intValue() : 0;
+            int db = drop.getNumberOfBioSignals() != null ? drop.getNumberOfBioSignals().intValue() : 0;
+            if (db > kb) {
+                keep.setNumberOfBioSignals(db);
+            }
         }
 
         // Merge observed genus/species if present

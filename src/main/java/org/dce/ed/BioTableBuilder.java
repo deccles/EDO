@@ -83,10 +83,13 @@ final class BioTableBuilder {
         }
 
         String remainingStr = null;
-        if (!split.remaining.isEmpty()) {
-            long[] range = bioPayoutRangeFromRemainingCredits(split.remaining, b.getNumberOfBioSignals());
-            if (range != null) {
-                remainingStr = formatMillionSummary(range[0], range[1]);
+        long[] payoutRange = null;
+        if (!split.remainingPerSpecies.isEmpty()) {
+            payoutRange = bioPayoutRangeFromRemainingCredits(
+                    split.remainingMin, split.remainingMax, b.getNumberOfBioSignals());
+            if (payoutRange != null) {
+                remainingStr = formatRemainingMillionSummaryForHeader(
+                        payoutRange[0], payoutRange[1], split.remainingPerSpecies);
             }
         }
 
@@ -114,6 +117,28 @@ final class BioTableBuilder {
 
     private static String parentheticalSignals(int n) {
         return "(" + n + (n == 1 ? " signal)" : " signals)");
+    }
+
+    /**
+     * Million-scale header for remaining payouts: for a single total, prefer the sum of per-species
+     * {@code round(cr/1M)} so the headline matches the rounded detail lines (aggregate round can differ by 1M).
+     */
+    private static String formatRemainingMillionSummaryForHeader(long minCr, long maxCr, List<Long> remainingCredits) {
+        String aggregate = formatMillionSummary(minCr, maxCr);
+        if (aggregate == null || remainingCredits == null || remainingCredits.isEmpty() || minCr != maxCr) {
+            return aggregate;
+        }
+        long sumRoundedM = 0L;
+        for (Long c : remainingCredits) {
+            if (c != null) {
+                sumRoundedM += Math.round(c.longValue() / 1_000_000.0);
+            }
+        }
+        long aggregateM = Math.round(minCr / 1_000_000.0);
+        if (sumRoundedM != aggregateM) {
+            return sumRoundedM + "M";
+        }
+        return aggregate;
     }
 
     /** e.g. {@code "(137M scanned)"} from summed credits at million scale. */
@@ -328,10 +353,23 @@ final class BioTableBuilder {
 
                     String remainingStr = null;
                     if (!gs.remaining.isEmpty()) {
-                        long[] rng = bioPayoutRangeFromRemainingCredits(
-                                new ArrayList<>(gs.remaining), Integer.valueOf(1));
-                        if (rng != null) {
-                            remainingStr = formatMillionSummary(rng[0], rng[1]);
+                        long minG = Long.MAX_VALUE;
+                        long maxG = Long.MIN_VALUE;
+                        for (Long c : gs.remaining) {
+                            if (c != null) {
+                                long v = c.longValue();
+                                minG = Math.min(minG, v);
+                                maxG = Math.max(maxG, v);
+                            }
+                        }
+                        if (minG != Long.MAX_VALUE) {
+                            long[] rng = bioPayoutRangeFromRemainingCredits(
+                                    Collections.singletonList(Long.valueOf(minG)),
+                                    Collections.singletonList(Long.valueOf(maxG)),
+                                    Integer.valueOf(1));
+                            if (rng != null) {
+                                remainingStr = formatMillionSummary(rng[0], rng[1]);
+                            }
                         }
                     }
                     long claimedSum = 0L;
@@ -712,29 +750,39 @@ final class BioTableBuilder {
     }
 
     /**
-     * Min/max sum of {@code k} payouts (k = FSS bio count when known, else all remaining species),
-     * same rule as INITIAL bio TTS, over credits already filtered to “still in play”.
+     * Min/max sum of {@code k} biological signal slots (k = FSS bio count when known, else one slot per
+     * remaining genus). {@code minCredits[i]} / {@code maxCredits[i]} bound Vista payout for genus {@code i}
+     * when multiple species are predicted (only one species per genus exists on the body).
      */
-    private static long[] bioPayoutRangeFromRemainingCredits(List<Long> payoutCredits, Integer fssBioSignalCount) {
-        if (payoutCredits == null || payoutCredits.isEmpty()) {
+    static long[] bioPayoutRangeFromMinMaxLists(List<Long> minCredits, List<Long> maxCredits,
+            Integer fssBioSignalCount) {
+        return bioPayoutRangeFromRemainingCredits(minCredits, maxCredits, fssBioSignalCount);
+    }
+
+    private static long[] bioPayoutRangeFromRemainingCredits(List<Long> minCredits, List<Long> maxCredits,
+            Integer fssBioSignalCount) {
+        if (minCredits == null || maxCredits == null || minCredits.isEmpty() || minCredits.size() != maxCredits.size()) {
             return null;
         }
-        List<Long> sorted = new ArrayList<>(payoutCredits);
-        Collections.sort(sorted);
+        List<Long> sortedMin = new ArrayList<>(minCredits);
+        List<Long> sortedMax = new ArrayList<>(maxCredits);
+        Collections.sort(sortedMin);
+        Collections.sort(sortedMax);
+        int n = sortedMin.size();
         int signalCount = (fssBioSignalCount != null && fssBioSignalCount.intValue() > 0)
                 ? fssBioSignalCount.intValue()
-                : Math.max(1, sorted.size());
-        signalCount = Math.min(signalCount, sorted.size());
+                : Math.max(1, n);
+        signalCount = Math.min(signalCount, n);
         if (signalCount <= 0) {
             return null;
         }
         long minTotal = 0L;
         for (int i = 0; i < signalCount; i++) {
-            minTotal += sorted.get(i).longValue();
+            minTotal += sortedMin.get(i).longValue();
         }
         long maxTotal = 0L;
-        for (int i = sorted.size() - signalCount; i < sorted.size(); i++) {
-            maxTotal += sorted.get(i).longValue();
+        for (int i = sortedMax.size() - signalCount; i < sortedMax.size(); i++) {
+            maxTotal += sortedMax.get(i).longValue();
         }
         return new long[] { minTotal, maxTotal, signalCount };
     }
@@ -752,8 +800,39 @@ final class BioTableBuilder {
     }
 
     private static final class RemainingClaimedCredits {
-        final List<Long> remaining = new ArrayList<>();
+        /** One entry per predicted species still in play (matches expanded table rows / rounding). */
+        final List<Long> remainingPerSpecies = new ArrayList<>();
+        /** One entry per genus with remaining species: min Vista payout among predicted species in that genus. */
+        final List<Long> remainingMin = new ArrayList<>();
+        /** One entry per genus with remaining species: max Vista payout among predicted species in that genus. */
+        final List<Long> remainingMax = new ArrayList<>();
         final List<Long> claimed = new ArrayList<>();
+    }
+
+    private static void appendCollapsedMinMax(RemainingClaimedCredits out, List<Long> pendingRemaining) {
+        if (pendingRemaining == null || pendingRemaining.isEmpty()) {
+            return;
+        }
+        if (pendingRemaining.size() == 1) {
+            long c = pendingRemaining.get(0).longValue();
+            out.remainingMin.add(Long.valueOf(c));
+            out.remainingMax.add(Long.valueOf(c));
+            return;
+        }
+        long min = Long.MAX_VALUE;
+        long max = Long.MIN_VALUE;
+        for (Long c : pendingRemaining) {
+            if (c == null) {
+                continue;
+            }
+            long v = c.longValue();
+            min = Math.min(min, v);
+            max = Math.max(max, v);
+        }
+        if (min != Long.MAX_VALUE) {
+            out.remainingMin.add(Long.valueOf(min));
+            out.remainingMax.add(Long.valueOf(max));
+        }
     }
 
     /**
@@ -801,14 +880,25 @@ final class BioTableBuilder {
         boolean caseA = !hasGenusPrefixes && !hasObservedNames;
 
         if (caseA) {
+            Map<String, List<ExobiologyData.BioCandidate>> predictedByGenusCaseA = new LinkedHashMap<>();
             for (ExobiologyData.BioCandidate cand : preds) {
-                String name = canonicalBioName(cand.getDisplayName());
-                long cr = cand.getEstimatedPayout(firstBonus);
-                if (speciesFullySampled(b, name)) {
-                    out.claimed.add(Long.valueOf(cr));
-                } else {
-                    out.remaining.add(Long.valueOf(cr));
+                String canon = canonicalBioName(cand.getDisplayName());
+                String genus = firstWord(canon).toLowerCase(Locale.ROOT);
+                predictedByGenusCaseA.computeIfAbsent(genus, k -> new ArrayList<>()).add(cand);
+            }
+            for (Map.Entry<String, List<ExobiologyData.BioCandidate>> ge : predictedByGenusCaseA.entrySet()) {
+                List<Long> pendingRemaining = new ArrayList<>();
+                for (ExobiologyData.BioCandidate cand : ge.getValue()) {
+                    String name = canonicalBioName(cand.getDisplayName());
+                    long cr = cand.getEstimatedPayout(firstBonus);
+                    if (speciesFullySampled(b, name)) {
+                        out.claimed.add(Long.valueOf(cr));
+                    } else {
+                        out.remainingPerSpecies.add(Long.valueOf(cr));
+                        pendingRemaining.add(Long.valueOf(cr));
+                    }
                 }
+                appendCollapsedMinMax(out, pendingRemaining);
             }
         } else {
             Map<String, List<ExobiologyData.BioCandidate>> predictedByGenus = new LinkedHashMap<>();
@@ -887,6 +977,8 @@ final class BioTableBuilder {
                     continue;
                 }
 
+                List<Long> pendingRemaining = new ArrayList<>();
+
                 if (confirmedForGenus != null && !confirmedForGenus.isEmpty()) {
                     for (String canonName : confirmedForGenus) {
                         ExobiologyData.BioCandidate cand = predictedByCanonName.get(canonName);
@@ -897,7 +989,8 @@ final class BioTableBuilder {
                         if (speciesFullySampled(b, canonName)) {
                             out.claimed.add(Long.valueOf(cr));
                         } else {
-                            out.remaining.add(Long.valueOf(cr));
+                            out.remainingPerSpecies.add(Long.valueOf(cr));
+                            pendingRemaining.add(Long.valueOf(cr));
                         }
                     }
                 } else if (predictedForGenus != null && !predictedForGenus.isEmpty()) {
@@ -907,14 +1000,16 @@ final class BioTableBuilder {
                         if (speciesFullySampled(b, name)) {
                             out.claimed.add(Long.valueOf(cr));
                         } else {
-                            out.remaining.add(Long.valueOf(cr));
+                            out.remainingPerSpecies.add(Long.valueOf(cr));
+                            pendingRemaining.add(Long.valueOf(cr));
                         }
                     }
                 }
+                appendCollapsedMinMax(out, pendingRemaining);
             }
         }
 
-        if (out.remaining.isEmpty() && out.claimed.isEmpty()) {
+        if (out.remainingPerSpecies.isEmpty() && out.claimed.isEmpty()) {
             return null;
         }
         return out;
@@ -926,14 +1021,15 @@ final class BioTableBuilder {
      */
     static String computeBioHeaderSummary(BodyInfo b) {
         RemainingClaimedCredits split = collectRemainingClaimedPayoutCredits(b);
-        if (split == null || split.remaining.isEmpty()) {
+        if (split == null || split.remainingPerSpecies.isEmpty()) {
             return null;
         }
-        long[] range = bioPayoutRangeFromRemainingCredits(split.remaining, b.getNumberOfBioSignals());
+        long[] range = bioPayoutRangeFromRemainingCredits(
+                split.remainingMin, split.remainingMax, b.getNumberOfBioSignals());
         if (range == null) {
             return null;
         }
-        return formatMillionSummary(range[0], range[1]);
+        return formatRemainingMillionSummaryForHeader(range[0], range[1], split.remainingPerSpecies);
     }
 
 }

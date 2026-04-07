@@ -240,11 +240,39 @@ class BioTableBuilderTest {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Two predicted species in the same genus must contribute one slot for payout range (not both species
+     * credits when FSS picks k of N).
+     */
+    @Test
+    void bodyBioColumnText_mutuallyExclusiveGenus_reducesMaxComparedToPerSpeciesList() {
+        BodyInfo body = new BodyInfo();
+        body.setHasBio(true);
+        body.setNumberOfBioSignals(2);
+        body.setObservedGenusPrefixes(new HashSet<>(Set.of("cactoida", "bacterium")));
+        body.setPredictions(new ArrayList<>(List.of(
+                makeCandidate("Cactoida Lapis", 200_000_000L),
+                makeCandidate("Cactoida Peperatis", 100_000_000L),
+                makeCandidate("Bacterium Acies", 50_000_000L))));
+
+        String text = BioTableBuilder.formatBodyBioColumnText(body);
+        assertNotNull(text);
+        assertFalse(text.contains(" species)"), "should not show species count; use FSS signals when known");
+        assertTrue(text.contains("(2 signals)"), "expected FSS signals suffix: " + text);
+        assertFalse(text.contains("300M"), "max must not sum 200M + 100M from Cactoida as two species");
+        assertTrue(text.contains("250M") || text.contains("250\u2013") || text.contains("250–"),
+                "expected max total ~ 200M + 50M (one Cactoida slot); got: " + text);
+    }
+
     private static BioCandidate makeCandidate(String displayName) {
+        return makeCandidate(displayName, 1_000_000L);
+    }
+
+    private static BioCandidate makeCandidate(String displayName, long basePayoutCr) {
         String[] parts = displayName.split(" ", 2);
         String genus = parts.length > 0 ? parts[0] : "";
         String species = parts.length > 1 ? parts[1] : "";
-        SpeciesConstraint sc = new SpeciesConstraint(genus, species, 1_000_000L, Collections.emptyList());
+        SpeciesConstraint sc = new SpeciesConstraint(genus, species, basePayoutCr, Collections.emptyList());
         return new BioCandidate(sc, 0.5, null);
     }
 }
