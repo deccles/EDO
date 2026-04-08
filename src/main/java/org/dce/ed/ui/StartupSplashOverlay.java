@@ -2,12 +2,12 @@ package org.dce.ed.ui;
 
 import java.awt.AlphaComposite;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.event.MouseAdapter;
 import java.awt.font.GlyphVector;
 import java.awt.image.BufferedImage;
 
@@ -21,6 +21,8 @@ import org.dce.ed.util.AppIconUtil;
 
 /**
  * Brief full-window splash: large centered app icon over a light dim, fading out (glass pane).
+ * Does not capture the mouse ({@link #contains}) so the overlay cursor / pass-through behavior keeps working,
+ * and any prior glass pane (e.g. crosshair) is painted on top after the splash art.
  */
 public final class StartupSplashOverlay {
 
@@ -51,7 +53,9 @@ public final class StartupSplashOverlay {
                 return;
             }
             JRootPane root = frame.getRootPane();
-            SplashPanel panel = new SplashPanel(root, img);
+            // Preserve the frame's prior glass pane (e.g. OverlayFrame crosshair); restore after splash.
+            Component previousGlass = root.getGlassPane();
+            SplashPanel panel = new SplashPanel(root, img, previousGlass);
             root.setGlassPane(panel);
             panel.setVisible(true);
             panel.startFade();
@@ -62,22 +66,29 @@ public final class StartupSplashOverlay {
 
         private final JRootPane root;
         private final BufferedImage image;
+        /** Glass pane installed before the splash (restored on dismiss). */
+        private final Component previousGlass;
         private final Timer timer;
         private long fadeStartNanos;
         private volatile boolean dismissed;
 
-        SplashPanel(JRootPane root, BufferedImage image) {
+        SplashPanel(JRootPane root, BufferedImage image, Component previousGlass) {
             this.root = root;
             this.image = image;
+            this.previousGlass = previousGlass;
             setOpaque(false);
             setLayout(null);
-            // Block clicks to underlying UI until the splash is gone.
-            MouseAdapter block = new MouseAdapter() {
-            };
-            addMouseListener(block);
-            addMouseMotionListener(block);
 
             timer = new Timer(TICK_MS, e -> onTick());
+        }
+
+        /**
+         * Let mouse events fall through to the layered pane (same idea as {@code CrosshairOverlay}),
+         * so the system cursor and overlay hit-testing keep working during the splash.
+         */
+        @Override
+        public boolean contains(int x, int y) {
+            return false;
         }
 
         void startFade() {
@@ -102,10 +113,14 @@ public final class StartupSplashOverlay {
             dismissed = true;
             timer.stop();
             Runnable clear = () -> {
-                JPanel empty = new JPanel();
-                empty.setOpaque(false);
-                root.setGlassPane(empty);
-                empty.setVisible(false);
+                if (previousGlass != null) {
+                    root.setGlassPane(previousGlass);
+                } else {
+                    JPanel empty = new JPanel();
+                    empty.setOpaque(false);
+                    root.setGlassPane(empty);
+                    empty.setVisible(false);
+                }
             };
             if (SwingUtilities.isEventDispatchThread()) {
                 clear.run();
@@ -177,34 +192,36 @@ public final class StartupSplashOverlay {
                 return;
             }
             float a = splashOpacity();
-            if (a <= 0.001f) {
-                return;
+            if (a > 0.001f) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                try {
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                    g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, a * 0.4f));
+                    g2.setColor(Color.BLACK);
+                    g2.fillRect(0, 0, w, h);
+
+                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, a));
+                    int iw = image.getWidth();
+                    int ih = image.getHeight();
+                    int maxSide = (int) Math.round(Math.min(w, h) * 0.58);
+                    double scale = Math.min((double) maxSide / iw, (double) maxSide / ih);
+                    int tw = Math.max(1, (int) Math.round(iw * scale));
+                    int th = Math.max(1, (int) Math.round(ih * scale));
+                    int x = (w - tw) / 2;
+                    int y = (h - th) / 2;
+                    g2.drawImage(image, x, y, tw, th, null);
+
+                    drawTitle(g2, w, h, y + th, titleOpacity());
+                } finally {
+                    g2.dispose();
+                }
             }
-            Graphics2D g2 = (Graphics2D) g.create();
-            try {
-                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-
-                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, a * 0.4f));
-                g2.setColor(Color.BLACK);
-                g2.fillRect(0, 0, w, h);
-
-                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, a));
-                int iw = image.getWidth();
-                int ih = image.getHeight();
-                int maxSide = (int) Math.round(Math.min(w, h) * 0.58);
-                double scale = Math.min((double) maxSide / iw, (double) maxSide / ih);
-                int tw = Math.max(1, (int) Math.round(iw * scale));
-                int th = Math.max(1, (int) Math.round(ih * scale));
-                int x = (w - tw) / 2;
-                int y = (h - th) / 2;
-                g2.drawImage(image, x, y, tw, th, null);
-
-                drawTitle(g2, w, h, y + th, titleOpacity());
-            } finally {
-                g2.dispose();
+            if (previousGlass != null) {
+                SwingUtilities.paintComponent(g, previousGlass, this, 0, 0, w, h);
             }
         }
 
