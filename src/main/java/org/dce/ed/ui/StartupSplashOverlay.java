@@ -2,10 +2,13 @@ package org.dce.ed.ui;
 
 import java.awt.AlphaComposite;
 import java.awt.Color;
+import java.awt.Font;
+import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
+import java.awt.font.GlyphVector;
 import java.awt.image.BufferedImage;
 
 import javax.swing.JFrame;
@@ -22,8 +25,8 @@ import org.dce.ed.util.AppIconUtil;
 public final class StartupSplashOverlay {
 
     /** Fade duration (ms). */
-    private static final int FADE_MS = 2200;
-    private static final int TICK_MS = 40;
+    private static final int FADE_MS = 6000;
+    private static final int TICK_MS = 16;
 
     private StartupSplashOverlay() {
     }
@@ -58,8 +61,7 @@ public final class StartupSplashOverlay {
         private final JRootPane root;
         private final BufferedImage image;
         private final Timer timer;
-        private final int totalTicks;
-        private int tick;
+        private long fadeStartNanos;
         private volatile boolean dismissed;
 
         SplashPanel(JRootPane root, BufferedImage image) {
@@ -73,18 +75,17 @@ public final class StartupSplashOverlay {
             addMouseListener(block);
             addMouseMotionListener(block);
 
-            totalTicks = Math.max(1, FADE_MS / TICK_MS);
             timer = new Timer(TICK_MS, e -> onTick());
         }
 
         void startFade() {
+            fadeStartNanos = System.nanoTime();
             timer.setRepeats(true);
             timer.start();
         }
 
         private void onTick() {
-            tick++;
-            if (tick >= totalTicks) {
+            if (fadeProgress() >= 1f) {
                 timer.stop();
                 dismiss();
                 return;
@@ -111,15 +112,44 @@ public final class StartupSplashOverlay {
             }
         }
 
-        /** Opacity 1 → 0 while the splash is visible ({@code tick} advances each timer tick). */
+        /** Opacity 1 → 0 for icon/dim, based on elapsed time. */
         private float splashOpacity() {
-            if (tick >= totalTicks) {
+            float t = fadeProgress();
+            if (t >= 1f) {
                 return 0f;
             }
-            float t = tick / (float) totalTicks;
-            // Ease-out: icon stays bold briefly, then fades more quickly at the end.
-            float easedT = 1f - (1f - t) * (1f - t);
+            // Icon fades out by ~90% of the full animation so title can linger slightly longer.
+            float iconT = Math.min(1f, t / 0.90f);
+            float easedT = easeOutCubic(iconT);
             return Math.max(0f, 1f - easedT);
+        }
+
+        /** Title opacity lingers longer than icon opacity and uses the same gentle cubic easing. */
+        private float titleOpacity() {
+            float t = fadeProgress();
+            if (t >= 1f) {
+                return 0f;
+            }
+            float easedT = easeOutCubic(t);
+            return Math.max(0f, 1f - easedT);
+        }
+
+        private float fadeProgress() {
+            if (fadeStartNanos <= 0L) {
+                return 0f;
+            }
+            long elapsedNanos = System.nanoTime() - fadeStartNanos;
+            double durationNanos = FADE_MS * 1_000_000.0;
+            if (durationNanos <= 0.0) {
+                return 1f;
+            }
+            return (float) Math.max(0.0, Math.min(1.0, elapsedNanos / durationNanos));
+        }
+
+        private float easeOutCubic(float t) {
+            float clamped = Math.max(0f, Math.min(1f, t));
+            float u = 1f - clamped;
+            return 1f - (u * u * u);
         }
 
         @Override
@@ -139,6 +169,7 @@ public final class StartupSplashOverlay {
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
                 g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
                 g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, a * 0.4f));
                 g2.setColor(Color.BLACK);
@@ -154,8 +185,84 @@ public final class StartupSplashOverlay {
                 int x = (w - tw) / 2;
                 int y = (h - th) / 2;
                 g2.drawImage(image, x, y, tw, th, null);
+
+                drawTitle(g2, w, h, y + th, titleOpacity());
             } finally {
                 g2.dispose();
+            }
+        }
+
+        private void drawTitle(Graphics2D g2, int w, int h, int imageBottomY, float alpha) {
+            float textAlpha = Math.max(0f, Math.min(1f, alpha));
+            if (textAlpha <= 0.001f) {
+                return;
+            }
+
+            int mainFontSize = Math.max(30, Math.min(84, (int) Math.round(Math.min(w, h) * 0.074)));
+            int subFontSize = Math.max(16, Math.min(42, (int) Math.round(mainFontSize * 0.55)));
+
+            Font mainFont = new Font("Segoe UI", Font.BOLD, mainFontSize);
+            Font subFont = new Font("Segoe UI", Font.BOLD, subFontSize);
+            if (!mainFont.getFamily().toLowerCase().contains("segoe")) {
+                mainFont = new Font(Font.SANS_SERIF, Font.BOLD, mainFontSize);
+                subFont = new Font(Font.SANS_SERIF, Font.BOLD, subFontSize);
+            }
+
+            GlyphVector rhGv = mainFont.createGlyphVector(g2.getFontRenderContext(), "RockHound");
+            java.awt.geom.Rectangle2D rhBounds = rhGv.getOutline().getBounds2D();
+            double rhLeftX = (w - rhBounds.getWidth()) / 2.0;
+            GlyphVector rGv = mainFont.createGlyphVector(g2.getFontRenderContext(), "R");
+            double rWidth = rGv.getOutline().getBounds2D().getWidth();
+            GlyphVector edGv = subFont.createGlyphVector(g2.getFontRenderContext(), "Elite Dangerous");
+            java.awt.geom.Rectangle2D edBounds = edGv.getOutline().getBounds2D();
+
+            // Move Elite Dangerous substantially upward into the icon region.
+            int eliteBaseline = imageBottomY - (int) Math.round(subFontSize * 1.35);
+            eliteBaseline = Math.max(eliteBaseline, subFontSize + 8);
+            double edLeftX = rhLeftX + rWidth - 8;
+
+            // Keep exactly a 20px gap from ED bottom to RH top.
+            int maxY = h - 16;
+            int edBottomY = eliteBaseline + (int) Math.round(edBounds.getHeight());
+            int rockhoundBaseline = Math.min(maxY, edBottomY -6);
+
+            drawStyledLine(g2, "Elite Dangerous", subFont, eliteBaseline, w, textAlpha,
+                    new Color(78, 82, 90), new Color(28, 31, 36), 0.12f, edLeftX);
+            drawStyledLine(g2, "RockHound", mainFont, rockhoundBaseline, w, textAlpha,
+                    new Color(255, 234, 150), new Color(255, 112, 24), 0.38f, rhLeftX);
+        }
+
+        private void drawStyledLine(Graphics2D g2, String text, Font font, int baseline, int width, float alpha,
+                Color topFill, Color bottomFill, float glowAlpha, double leftXOrNegativeCenter) {
+            GlyphVector gv = font.createGlyphVector(g2.getFontRenderContext(), text);
+            java.awt.Shape shape = gv.getOutline();
+            java.awt.geom.Rectangle2D bounds = shape.getBounds2D();
+            double tx = (width - bounds.getWidth()) / 2.0 - bounds.getX();
+            if (leftXOrNegativeCenter >= 0) {
+                tx = leftXOrNegativeCenter - bounds.getX();
+            }
+            double ty = baseline - bounds.getY();
+            g2.translate(tx, ty);
+            try {
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha * glowAlpha));
+                g2.setColor(new Color(255, 145, 36));
+                g2.setStroke(new java.awt.BasicStroke(Math.max(2f, font.getSize2D() * 0.10f),
+                        java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+                g2.draw(shape);
+
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha * 0.90f));
+                g2.setColor(new Color(14, 16, 20));
+                g2.setStroke(new java.awt.BasicStroke(Math.max(1.6f, font.getSize2D() * 0.045f),
+                        java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+                g2.draw(shape);
+
+                GradientPaint gp = new GradientPaint(0, (float) bounds.getMinY(), topFill, 0, (float) bounds.getMaxY(),
+                        bottomFill);
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+                g2.setPaint(gp);
+                g2.fill(shape);
+            } finally {
+                g2.translate(-tx, -ty);
             }
         }
     }
