@@ -3,10 +3,10 @@ package org.dce.ed;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Window;
-
-import org.dce.ed.ui.EdoUi;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+
+import org.dce.ed.ui.EdoUi;
 
 import javax.swing.Box;
 import javax.swing.JLabel;
@@ -20,8 +20,13 @@ import javax.swing.border.EmptyBorder;
 import org.dce.ed.util.GithubMsiUpdater;
 
 /**
- * Shared menu bar layout (glue, status label, Menu) for {@link OverlayFrame} pass-through mode
+ * Shared menu bar layout (glue + status label, optional hammer/gear/pass-through entry) for {@link OverlayFrame}
  * and {@link DecoratedOverlayDialog}.
+ * <p>
+ * {@link OverlayFrame} uses a custom {@link TitleBarPanel} for tools/preferences/pass-through, so it
+ * passes {@code includeToolbarIcons=false} to avoid duplicating those controls on the status row.
+ * {@link DecoratedOverlayDialog} has no custom title strip (only the OS caption), so it passes
+ * {@code true} plus a runnable that switches to the pass-through {@link OverlayFrame}.
  */
 public final class OverlayMenuStatusBar {
 
@@ -31,10 +36,13 @@ public final class OverlayMenuStatusBar {
     public static final class Result {
         public final JMenuBar menuBar;
         public final JLabel statusLabel;
+        /** Standalone Tools menu (not shown on menu bar); used by hammer button and title bar. */
+        public final JMenu toolsMenu;
 
-        public Result(JMenuBar menuBar, JLabel statusLabel) {
+        public Result(JMenuBar menuBar, JLabel statusLabel, JMenu toolsMenu) {
             this.menuBar = menuBar;
             this.statusLabel = statusLabel;
+            this.toolsMenu = toolsMenu;
         }
     }
 
@@ -45,29 +53,28 @@ public final class OverlayMenuStatusBar {
         return new Color(c.getRed(), c.getGreen(), c.getBlue(), 255);
     }
 
-    public static Result build(Window parent, String clientKey) {
+    /**
+     * @param onRequestPassThrough when non-null and {@code includeToolbarIcons} is true, a
+     *                             pass-through entry button is shown (decorated window only).
+     */
+    public static Result build(
+            Window parent,
+            String clientKey,
+            boolean includeToolbarIcons,
+            Runnable onRequestPassThrough) {
         JMenuBar bar = new JMenuBar();
         bar.setOpaque(true);
         bar.setBackground(opaquePlate(EdoUi.User.BACKGROUND));
         bar.setBorder(new EmptyBorder(2, 6, 2, 6));
 
-        JMenu overlayMenu = new JMenu("Menu");
-        overlayMenu.setForeground(EdoUi.Internal.MENU_ACCENT);
-
-        JMenuItem prefs = new JMenuItem("Preferences...");
-        styleMenuItem(prefs);
-        prefs.addActionListener(e -> PreferencesDialog.show(parent, clientKey));
-        overlayMenu.add(prefs);
-
         JMenu toolsMenu = new JMenu("Tools");
         toolsMenu.setForeground(EdoUi.Internal.MENU_ACCENT);
         addSortedToolsMenuItems(toolsMenu, parent);
-        overlayMenu.add(toolsMenu);
-
-        JPopupMenu popup = overlayMenu.getPopupMenu();
-        popup.setOpaque(true);
-        popup.setBackground(MENU_POPUP_BG);
-        popup.setBorder(new EmptyBorder(4, 4, 4, 4));
+        JPopupMenu toolsPopup = toolsMenu.getPopupMenu();
+        toolsPopup.setOpaque(true);
+        toolsPopup.setBackground(MENU_POPUP_BG);
+        toolsPopup.setBorder(new EmptyBorder(4, 4, 4, 4));
+        styleMenuTree(toolsMenu);
 
         JLabel statusLabel = new JLabel("");
         statusLabel.setOpaque(false);
@@ -91,9 +98,99 @@ public final class OverlayMenuStatusBar {
 
         bar.add(Box.createHorizontalGlue());
         bar.add(statusLabel);
-        bar.add(Box.createHorizontalStrut(10));
-        bar.add(overlayMenu);
-        return new Result(bar, statusLabel);
+        bar.add(Box.createHorizontalStrut(includeToolbarIcons ? 10 : 4));
+        if (includeToolbarIcons) {
+            bar.add(createDecoratedToolbar(parent, clientKey, toolsMenu, onRequestPassThrough));
+        }
+        return new Result(bar, statusLabel, toolsMenu);
+    }
+
+    private static javax.swing.JPanel createDecoratedToolbar(
+            Window parent,
+            String clientKey,
+            JMenu toolsMenu,
+            Runnable onRequestPassThrough) {
+        javax.swing.JPanel strip = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 2));
+        strip.setOpaque(false);
+
+        TitleBarPanel.HammerButton hammer = new TitleBarPanel.HammerButton();
+        hammer.setToolTipText(TitleBarPanel.TOOLTIP_HAMMER);
+        hammer.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    showToolsPopup(hammer, toolsMenu);
+                }
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                hammer.setHover(true);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                hammer.setHover(false);
+            }
+        });
+
+        TitleBarPanel.SettingsButton gear = new TitleBarPanel.SettingsButton();
+        gear.setToolTipText(TitleBarPanel.TOOLTIP_GEAR);
+        gear.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    PreferencesDialog.show(parent, clientKey);
+                }
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                gear.setHover(true);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                gear.setHover(false);
+            }
+        });
+
+        strip.add(hammer);
+        strip.add(gear);
+
+        if (onRequestPassThrough != null) {
+            TitleBarPanel.PassThroughToggleButton pt = new TitleBarPanel.PassThroughToggleButton();
+            pt.setPassThroughActive(false);
+            pt.setPassThroughToolTipOverride(TitleBarPanel.TOOLTIP_PASS_THROUGH_SWITCH_TO_PT);
+            pt.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (SwingUtilities.isLeftMouseButton(e)) {
+                        onRequestPassThrough.run();
+                    }
+                }
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    pt.setHover(true);
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    pt.setHover(false);
+                }
+            });
+            strip.add(pt);
+        }
+
+        return strip;
+    }
+
+    public static void showToolsPopup(java.awt.Component invoker, JMenu toolsMenu) {
+        if (invoker == null || toolsMenu == null) {
+            return;
+        }
+        toolsMenu.getPopupMenu().show(invoker, 0, invoker.getHeight());
     }
 
     public static void refreshAccentColors(JMenuBar menuBar) {

@@ -109,6 +109,13 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		this.onRequestSwitchToPassThrough = onRequestSwitchToPassThrough;
 	}
 
+	private void firePassThroughRequest() {
+		Runnable r = onRequestSwitchToPassThrough;
+		if (r != null) {
+			r.run();
+		}
+	}
+
 	public void attachContent() {
 		if (contentPanel.getParent() != null) {
 			contentPanel.getParent().remove(contentPanel);
@@ -248,7 +255,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	}
 
 	private JMenuBar createMenuBar() {
-		OverlayMenuStatusBar.Result r = OverlayMenuStatusBar.build(this, clientKey);
+		OverlayMenuStatusBar.Result r = OverlayMenuStatusBar.build(this, clientKey, true, this::firePassThroughRequest);
 		statusLabel = r.statusLabel;
 		return r.menuBar;
 	}

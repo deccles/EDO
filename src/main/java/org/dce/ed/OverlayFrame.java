@@ -30,11 +30,14 @@ import java.util.prefs.Preferences;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.Timer;
+import javax.swing.BorderFactory;
+import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 
 import org.dce.ed.ui.OverlayBackgroundPanel;
@@ -109,6 +112,8 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private final TitleBarPanel titleBar;
     private final JMenuBar passThroughMenuBar;
     private final JLabel passThroughStatusLabel;
+    /** Same Tools menu as status-bar hammer (Preferences dialog is separate). */
+    private final JMenu toolsMenu;
     private final OverlayContentPanel contentPanel;
 	private final OverlayBackgroundPanel backgroundPanel;
 
@@ -119,6 +124,13 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     // Crosshair overlay and timer to show mouse position in pass-through mode
     private final CrosshairOverlay crosshairOverlay = new CrosshairOverlay();
     private final Timer crosshairTimer;
+    private static final long PASS_THROUGH_CLOSE_DWELL_MS = 900L;
+    private static final long PASS_THROUGH_TOGGLE_DWELL_MS = 700L;
+    private static final long PASS_THROUGH_MENU_DWELL_MS = 900L;
+    private long passThroughCloseHoverStartMs = -1L;
+    private long passThroughToggleHoverStartMs = -1L;
+    private long passThroughHammerHoverStartMs = -1L;
+    private long passThroughSettingsHoverStartMs = -1L;
 
     
     private javax.swing.Timer carrierJumpCountdownTimer;
@@ -285,10 +297,19 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         });
 
         // Custom title bar (draggable, close button) + same menu/status strip as decorated mode
-        titleBar = new TitleBarPanel(this, "Elite Dangerous RockHound");
-        OverlayMenuStatusBar.Result passThroughMenu = OverlayMenuStatusBar.build(this, EliteDangerousOverlay.clientKey);
+        OverlayMenuStatusBar.Result passThroughMenu =
+                OverlayMenuStatusBar.build(this, EliteDangerousOverlay.clientKey, false, null);
         passThroughMenuBar = passThroughMenu.menuBar;
+        this.toolsMenu = passThroughMenu.toolsMenu;
+        titleBar = new TitleBarPanel(this, "Elite Dangerous RockHound", passThroughMenu.toolsMenu);
         passThroughStatusLabel = passThroughMenu.statusLabel;
+
+        // Keep the status row visible even when there is no message (otherwise the label is hidden and
+        // the menu bar can collapse to an unreadable strip in pass-through mode).
+        passThroughMenuBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, EdoUi.Internal.MENU_ACCENT),
+                new EmptyBorder(1, 6, 2, 6)));
+        passThroughMenuBar.setMinimumSize(new Dimension(0, 26));
 
         JPanel northStack = new JPanel(new BorderLayout(0, 0));
         northStack.setOpaque(false);
@@ -776,7 +797,8 @@ private void refreshPassThroughUnifiedStatus() {
             full = right;
         }
 
-        passThroughStatusLabel.setText(full);
+        String display = full.isEmpty() ? "\u2014" : full;
+        passThroughStatusLabel.setText(display);
         if (limpet || showErr || showMiningErr) {
             passThroughStatusLabel.setForeground(EdoUi.User.ERROR);
             passThroughStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
@@ -787,7 +809,7 @@ private void refreshPassThroughUnifiedStatus() {
             passThroughStatusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
             passThroughStatusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
         }
-        passThroughStatusLabel.setVisible(!full.isEmpty());
+        passThroughStatusLabel.setVisible(true);
     };
 
     if (SwingUtilities.isEventDispatchThread()) {
@@ -861,11 +883,14 @@ private void refreshPassThroughUnifiedStatus() {
 
     public void setPassThroughEnabled(boolean enabled) {
         if (this.passThroughEnabled == enabled) {
+            // Keep title-bar controls in sync even when caller re-applies the same mode.
+            titleBar.setPassThrough(this.passThroughEnabled);
             OverlayPreferences.setOverlayMousePassThroughToGame(enabled);
             return;
         }
 
         this.passThroughEnabled = enabled;
+        resetPassThroughCloseHoverState();
         OverlayPreferences.setOverlayMousePassThroughToGame(enabled);
         applyPassThrough(this.passThroughEnabled);
         applyOverlayBackgroundFromPreferences(this.passThroughEnabled);
@@ -1011,6 +1036,9 @@ private void refreshPassThroughUnifiedStatus() {
     public void prepareForShow(boolean passThroughMode) {
         // Make sure we have the right background color/alpha set BEFORE first paint
         applyOverlayBackgroundFromPreferences(passThroughMode);
+        if (titleBar != null) {
+            titleBar.setPassThrough(passThroughMode);
+        }
 
         // Defensive: avoid any default opaque background painting
         setBackground(new java.awt.Color(0, 0, 0, 0));
@@ -1266,6 +1294,7 @@ private void refreshPassThroughUnifiedStatus() {
         // If window isn't showing, don't bother
         if (!isShowing()) {
             crosshairOverlay.setVisible(false);
+            resetPassThroughCloseHoverState();
             return;
         }
 
@@ -1278,6 +1307,7 @@ private void refreshPassThroughUnifiedStatus() {
         PointerInfo pi = MouseInfo.getPointerInfo();
         if (pi == null) {
             crosshairOverlay.setVisible(false);
+            resetPassThroughCloseHoverState();
             return;
         }
 
@@ -1287,6 +1317,7 @@ private void refreshPassThroughUnifiedStatus() {
             frameOnScreen = getLocationOnScreen();
         } catch (IllegalComponentStateException ex) {
             crosshairOverlay.setVisible(false);
+            resetPassThroughCloseHoverState();
             return;
         }
 
@@ -1299,11 +1330,101 @@ private void refreshPassThroughUnifiedStatus() {
             if (!crosshairOverlay.isVisible()) {
                 crosshairOverlay.setVisible(true);
             }
+            updatePassThroughHoverClose(mouseOnScreen);
         } else {
             crosshairOverlay.setCrosshairPoint(null);
             crosshairOverlay.setVisible(false);
+            resetPassThroughCloseHoverState();
         }
 
+    }
+
+    private void updatePassThroughHoverClose(Point mouseOnScreen) {
+        if (!passThroughEnabled || titleBar == null || mouseOnScreen == null) {
+            resetPassThroughCloseHoverState();
+            return;
+        }
+        java.awt.Rectangle closeRect = titleBar.getCloseButtonScreenBounds();
+        java.awt.Rectangle toggleRect = titleBar.getToggleButtonScreenBounds();
+        java.awt.Rectangle hammerRect = titleBar.getHammerButtonScreenBounds();
+        java.awt.Rectangle settingsRect = titleBar.getSettingsButtonScreenBounds();
+        if (closeRect == null || toggleRect == null || hammerRect == null || settingsRect == null) {
+            resetPassThroughCloseHoverState();
+            return;
+        }
+
+        boolean hClose = closeRect.contains(mouseOnScreen);
+        boolean hToggle = toggleRect.contains(mouseOnScreen);
+        boolean hHammer = hammerRect.contains(mouseOnScreen);
+        boolean hSettings = settingsRect.contains(mouseOnScreen);
+
+        titleBar.setCloseHoverProgrammatic(hClose);
+        titleBar.setToggleHoverProgrammatic(hToggle);
+        titleBar.setHammerHoverProgrammatic(hHammer);
+        titleBar.setSettingsHoverProgrammatic(hSettings);
+
+        long now = System.currentTimeMillis();
+
+        if (hClose) {
+            passThroughToggleHoverStartMs = -1L;
+            passThroughHammerHoverStartMs = -1L;
+            passThroughSettingsHoverStartMs = -1L;
+            if (passThroughCloseHoverStartMs < 0L) {
+                passThroughCloseHoverStartMs = now;
+            } else if (now - passThroughCloseHoverStartMs >= PASS_THROUGH_CLOSE_DWELL_MS) {
+                closeOverlay();
+            }
+            return;
+        }
+        passThroughCloseHoverStartMs = -1L;
+
+        if (hToggle) {
+            passThroughHammerHoverStartMs = -1L;
+            passThroughSettingsHoverStartMs = -1L;
+            if (passThroughToggleHoverStartMs < 0L) {
+                passThroughToggleHoverStartMs = now;
+            } else if (now - passThroughToggleHoverStartMs >= PASS_THROUGH_TOGGLE_DWELL_MS) {
+                setPassThroughEnabled(false);
+            }
+            return;
+        }
+        passThroughToggleHoverStartMs = -1L;
+
+        if (hHammer) {
+            passThroughSettingsHoverStartMs = -1L;
+            if (passThroughHammerHoverStartMs < 0L) {
+                passThroughHammerHoverStartMs = now;
+            } else if (now - passThroughHammerHoverStartMs >= PASS_THROUGH_MENU_DWELL_MS) {
+                titleBar.showToolsMenuUnderHammer(toolsMenu);
+                passThroughHammerHoverStartMs = -1L;
+            }
+            return;
+        }
+        passThroughHammerHoverStartMs = -1L;
+
+        if (hSettings) {
+            if (passThroughSettingsHoverStartMs < 0L) {
+                passThroughSettingsHoverStartMs = now;
+            } else if (now - passThroughSettingsHoverStartMs >= PASS_THROUGH_MENU_DWELL_MS) {
+                PreferencesDialog.show(this, EliteDangerousOverlay.clientKey);
+                passThroughSettingsHoverStartMs = -1L;
+            }
+            return;
+        }
+        passThroughSettingsHoverStartMs = -1L;
+    }
+
+    private void resetPassThroughCloseHoverState() {
+        passThroughCloseHoverStartMs = -1L;
+        passThroughToggleHoverStartMs = -1L;
+        passThroughHammerHoverStartMs = -1L;
+        passThroughSettingsHoverStartMs = -1L;
+        if (titleBar != null) {
+            titleBar.setCloseHoverProgrammatic(false);
+            titleBar.setToggleHoverProgrammatic(false);
+            titleBar.setHammerHoverProgrammatic(false);
+            titleBar.setSettingsHoverProgrammatic(false);
+        }
     }
 
     private static class CrosshairOverlay extends JComponent {
