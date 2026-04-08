@@ -70,6 +70,8 @@ import javax.swing.JTable;
 import javax.swing.JToggleButton;
 import javax.swing.JViewport;
 import javax.swing.ListCellRenderer;
+import javax.swing.RowSorter;
+import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import java.awt.Window;
@@ -84,6 +86,7 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
+import javax.swing.table.TableRowSorter;
 
 import org.dce.ed.edsm.UtilTable;
 import org.dce.ed.logreader.EliteLogFileLocator;
@@ -523,8 +526,11 @@ private final JLayer<JTable> cargoLayer;
 					float flare = getFlareAlpha(tbl, row);
 					l.setForeground(applyRevealAndFlare(base, reveal, flare));
 					if (isSummaryRow(tbl, row)) {
-						l.setFont(l.getFont().deriveFont(Font.BOLD));
-						c.setForeground(Color.green.darker());
+						JTableHeader hdr = tbl.getTableHeader();
+						l.setFont(hdr != null ? hdr.getFont() : l.getFont().deriveFont(Font.BOLD));
+						Color headerLike = EdoUi.User.MAIN_TEXT;
+						l.setForeground(headerLike);
+						c.setForeground(headerLike);
 					}
 					l.setHorizontalAlignment(column == 0 ? SwingConstants.LEFT : SwingConstants.RIGHT);
 					l.setBorder(new EmptyBorder(3, 4, 3, 4));
@@ -580,10 +586,11 @@ private final JLayer<JTable> cargoLayer;
 		materialsScroller.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		// ----- Cargo table -----
-		cargoModel = new MiningTableModel("Tons");
+		cargoModel = new MiningTableModel("Tons", true);
 		cargoTable = new JTable(cargoModel);
 
-		cargoTable.setAutoCreateRowSorter(true);
+		cargoTable.setAutoCreateRowSorter(false);
+		cargoTable.setRowSorter(new CargoInventoryRowSorter(cargoModel));
 		cargoTable.putClientProperty("JTable.autoStartsEdit", Boolean.FALSE);
 
 		cargoTable.setOpaque(false);
@@ -623,6 +630,11 @@ private final JLayer<JTable> cargoLayer;
 
 		for (int c = 0; c < cargoTable.getColumnModel().getColumnCount(); c++) {
 			cargoTable.getColumnModel().getColumn(c).setCellRenderer(defaultRenderer);
+		}
+		// Hidden model column: sort tier (0 = cargo line, 1 = Total) so sorting keeps Total at the bottom.
+		int tierCol = cargoModel.getSortTierModelColumnIndex();
+		if (tierCol >= 0 && cargoTable.getColumnModel().getColumnCount() > tierCol) {
+			cargoTable.removeColumn(cargoTable.getColumnModel().getColumn(tierCol));
 		}
 
 		cargoScan = new TableScanState(cargoTable);
@@ -2911,9 +2923,16 @@ String getName() {
 		 private final NumberFormat tonsFmt = NumberFormat.getNumberInstance(Locale.US);
 		 private final NumberFormat pctFmt = NumberFormat.getNumberInstance(Locale.US);
 
+		 private final boolean sortTierColumn;
+
 		 private List<Row> rows = List.of();
 
 		 MiningTableModel(String tonsLabel) {
+			 this(tonsLabel, false);
+		 }
+
+		 MiningTableModel(String tonsLabel, boolean sortTierColumn) {
+			 this.sortTierColumn = sortTierColumn;
 			 String tl = (tonsLabel == null || tonsLabel.isBlank()) ? "Est. Tons" : tonsLabel;
 
 			 cols = new String[] {
@@ -2930,6 +2949,11 @@ String getName() {
 		 
 			 pctFmt.setMaximumFractionDigits(1);
 			 pctFmt.setMinimumFractionDigits(0);
+		 }
+
+		 /** Model column index used only for row sorting (ship inventory Total row last); {@code -1} if disabled. */
+		 int getSortTierModelColumnIndex() {
+			 return sortTierColumn ? cols.length : -1;
 		 }
 
 		 void setRows(List<Row> newRows) {
@@ -2951,17 +2975,23 @@ String getName() {
 
 		 @Override
 		 public int getColumnCount() {
-			 return cols.length;
+			 return sortTierColumn ? cols.length + 1 : cols.length;
 		 }
 
 		 @Override
 		 public String getColumnName(int column) {
+			 if (sortTierColumn && column == cols.length) {
+				 return "";
+			 }
 			 return cols[column];
 		 }
 
 		 @Override
 		 public Object getValueAt(int rowIndex, int columnIndex) {
 			 Row r = rows.get(rowIndex);
+			 if (sortTierColumn && columnIndex == cols.length) {
+				 return r.isSummary() ? 1 : 0;
+			 }
 			 if (r.isSummary()) {
 				 switch (columnIndex) {
 				 case 0:
@@ -3000,10 +3030,48 @@ String getName() {
 
 		 @Override
 		 public Class<?> getColumnClass(int columnIndex) {
+			 if (sortTierColumn && columnIndex == cols.length) {
+				 return Integer.class;
+			 }
 			 return String.class;
 		 }
 	 }
 
+	/**
+	 * Keeps the ship inventory {@linkplain Row#isSummary() summary} row at the bottom when sorting by any
+	 * visible column, using a hidden model column (0 = data, 1 = Total) prepended as the primary sort key.
+	 */
+	private static final class CargoInventoryRowSorter extends TableRowSorter<MiningTableModel> {
+		CargoInventoryRowSorter(MiningTableModel model) {
+			super(model);
+		}
+
+		@Override
+		public void toggleSortOrder(int column) {
+			MiningTableModel m = getModel();
+			int tier = m.getSortTierModelColumnIndex();
+			if (tier < 0) {
+				super.toggleSortOrder(column);
+				return;
+			}
+			if (column == tier) {
+				return;
+			}
+			// DefaultRowSorter only toggles ASC/DESC when the clicked column is sort key index 0. We always keep
+			// the tier key first, so the data column sits at index 1 — super would reset to ASCENDING instead of
+			// reversing. Build keys explicitly: same column again flips order, new column starts ascending.
+			SortOrder order = SortOrder.ASCENDING;
+			for (RowSorter.SortKey k : getSortKeys()) {
+				if (k.getColumn() == column) {
+					order = k.getSortOrder() == SortOrder.ASCENDING ? SortOrder.DESCENDING : SortOrder.ASCENDING;
+					break;
+				}
+			}
+			setSortKeys(List.of(
+					new RowSorter.SortKey(tier, SortOrder.ASCENDING),
+					new RowSorter.SortKey(column, order)));
+		}
+	}
 
 
 	/** Match Route/System tabs: subtle scrollbar UI on the prospector log table only. */

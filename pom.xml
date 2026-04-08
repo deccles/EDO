@@ -345,6 +345,7 @@
 										<argument>--win-shortcut</argument>
 										<argument>--win-dir-chooser</argument>
 
+										<!-- Windows jpackage requires .ico; convert RockHound.jpg and replace edo.ico to match the in-app icon. -->
 										<argument>--icon</argument>
 										<argument>
 											${project.basedir}\src\main\resources\edo.ico</argument>
