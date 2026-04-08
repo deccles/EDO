@@ -26,6 +26,7 @@ import org.dce.ed.logreader.RescanJournalsMain;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.ui.ConsoleMonitor;
+import org.dce.ed.ui.StartupSplashOverlay;
 import org.dce.ed.util.AppIconUtil;
 import org.dce.ed.util.GithubMsiUpdater;
 
@@ -77,7 +78,7 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
         UIManager.put("TitlePane.background", EdoUi.User.BACKGROUND);
         UIManager.put("TitlePane.foreground", EdoUi.User.MAIN_TEXT);
         
-        AppIconUtil.applyAppIcon(passThroughFrame, "/org/dce/ed/edsm/locate_icon.png");
+        AppIconUtil.applyAppIcon(passThroughFrame, AppIconUtil.APP_ICON_RESOURCE);
         // Normal interactive startup check (dialog-based).
         GithubMsiUpdater.checkForUpdatesOnStartup(passThroughFrame);
         // Background check for status bar hint (immediate).
@@ -180,6 +181,7 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
             // Start directly in pass-through frame mode.
             passThroughFrame.showOverlay();
             prewarmDecoratedDialog();
+            StartupSplashOverlay.install(passThroughFrame);
         } else {
             // Start directly in decorated non-pass-through mode (no startup mode flip).
             java.awt.Rectangle bounds = passThroughFrame.getBounds();
@@ -192,6 +194,7 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
             decoratedDialog.applyOverlayBackgroundFromPreferences(false);
             decoratedDialog.setVisible(true);
             decoratedDialog.toFront();
+            StartupSplashOverlay.install(decoratedDialog);
         }
 
         // Save bounds and clean up on close

@@ -80,7 +80,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private static final String PREF_KEY_WIDTH = "overlay.width";
     private static final String PREF_KEY_HEIGHT = "overlay.height";
 
-    private static final String DEFAULT_TITLE_BAR_TITLE = "Elite Dangerous Overlay";
+    private static final String DEFAULT_TITLE_BAR_TITLE = "Elite Dangerous RockHound";
 
     /** Cooldown duration after fleet jump countdown expires (seconds). */
     private static final int CARRIER_JUMP_COOLDOWN_SECONDS = 5 * 60;
@@ -225,7 +225,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     public static OverlayFrame overlayFrame = null;
     
     public OverlayFrame(OverlayContentPanel contentPanel) {
-        super("Elite Dangerous Overlay");
+        super("Elite Dangerous RockHound");
 
         overlayFrame = this;
 
@@ -285,7 +285,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         });
 
         // Custom title bar (draggable, close button) + same menu/status strip as decorated mode
-        titleBar = new TitleBarPanel(this, "Elite Dangerous Overlay");
+        titleBar = new TitleBarPanel(this, "Elite Dangerous RockHound");
         OverlayMenuStatusBar.Result passThroughMenu = OverlayMenuStatusBar.build(this, EliteDangerousOverlay.clientKey);
         passThroughMenuBar = passThroughMenu.menuBar;
         passThroughStatusLabel = passThroughMenu.statusLabel;

@@ -36,7 +36,6 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 	private static final long serialVersionUID = 1L;
 
-	private static final String APP_ICON_RESOURCE = "/org/dce/ed/edsm/locate_icon.png";
 
 	private final OverlayContentPanel contentPanel;
 	private final String clientKey;
@@ -70,7 +69,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 
 	public DecoratedOverlayDialog(OverlayContentPanel contentPanel, String clientKey) {
-		super("Elite Dangerous Overlay");
+		super("Elite Dangerous RockHound");
 
 		this.contentPanel = contentPanel;
 		this.clientKey = clientKey;
@@ -83,7 +82,7 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		this.menuBar = createMenuBar();
 		setJMenuBar(menuBar);
 
-		AppIconUtil.applyAppIcon(this, APP_ICON_RESOURCE);
+		AppIconUtil.applyAppIcon(this, AppIconUtil.APP_ICON_RESOURCE);
 
 		addWindowListener(new WindowAdapter() {
 
