@@ -2580,6 +2580,16 @@ matches.sort(Comparator.comparingDouble(Row::getProportionPercent).reversed());
 			return;
 		}
 
+		// If journals never delivered a docked→undocked transition (overlay started in space, or Status lagged),
+		// {@link #onUndocked()} never ran — seed a trip-start instant from this limpet's journal time so the first
+		// cargo upsert still fills "Start time" (same column as a real undock would use).
+		if (isDockedSupplier != null && !isDockedSupplier.getAsBoolean() && lastUndockTime == null) {
+			lastUndockTime = event.getTimestamp() != null ? event.getTimestamp() : Instant.now();
+			if (sessionStateChangeCallback != null) {
+				sessionStateChangeCallback.run();
+			}
+		}
+
 		// Prospector events now act as asteroid boundaries and update percent estimates,
 		// but do not directly write spreadsheet rows. Cargo changes drive logging.
 		miningLoggingArmed = true;
@@ -5722,11 +5732,11 @@ String getName() {
 					return (core != null && !core.isEmpty() && !"-".equals(core)) ? core : "";
 				case 10: return r.getDuds() == 0 ? "" : r.getDuds();
 				case 11: {
-					String[] sb = splitSystemAndBodyForDisplay(r.getFullBodyName());
+					String[] sb = GoogleSheetsBackend.splitSystemAndBody(r.getFullBodyName());
 					return sb[0];
 				}
 				case 12: {
-					String[] sb = splitSystemAndBodyForDisplay(r.getFullBodyName());
+					String[] sb = GoogleSheetsBackend.splitSystemAndBody(r.getFullBodyName());
 					return sb[1];
 				}
 				default: return "";
@@ -5737,9 +5747,6 @@ String getName() {
 			if (rowIndex < 0 || rowIndex >= displayRows.size()) return null;
 			Object item = displayRows.get(rowIndex);
 			return (item instanceof RunSummary) ? (RunSummary) item : null;
-		}
-		private static String[] splitSystemAndBodyForDisplay(String fullBodyName) {
-			return GoogleSheetsBackend.splitSystemAndBody(fullBodyName);
 		}
 	}
 

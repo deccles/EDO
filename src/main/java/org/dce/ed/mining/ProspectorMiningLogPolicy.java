@@ -14,7 +14,8 @@ import java.util.Objects;
  *   <li><strong>Upsert run start (column N / index 13):</strong> never overwrite a non-blank cell — cargo
  *       updates after a new undock must not replace the original trip start.</li>
  *   <li><strong>Run end placement:</strong> only one sheet row per run should receive end time on dock —
- *       prefer asteroid {@code A} with a start time, else the first data row with a start time.</li>
+ *       prefer asteroid {@code A} with a meaningful start time, else the first data row with a meaningful start
+ *       (empty or legacy {@code "-"} start cells do not count).</li>
  * </ul>
  * <p>
  * Regressions here have shipped when logic was inlined in {@code GoogleSheetsBackend} without re-reading
@@ -29,13 +30,24 @@ public final class ProspectorMiningLogPolicy {
     /**
      * When upserting an existing sheet row, write run start into column 13 only if the incoming row carries
      * a start instant and the cell is still empty. Preserves the canonical start time across later cargo upserts.
+     * Legacy sheets used {@code "-"} in optional columns; treat that like blank so a real timestamp can be written.
      */
     public static boolean shouldWriteRunStartOnUpsertExistingRow(String existingStartCellText, Instant incomingRunStart) {
         if (incomingRunStart == null) {
             return false;
         }
-        String s = existingStartCellText != null ? existingStartCellText.trim() : "";
-        return s.isEmpty();
+        return !hasMeaningfulRunStartCell(existingStartCellText);
+    }
+
+    /**
+     * True when column N already holds a substantive run start (not empty and not a legacy {@code "-"} placeholder).
+     */
+    static boolean hasMeaningfulRunStartCell(String cell) {
+        if (cell == null) {
+            return false;
+        }
+        String t = cell.trim();
+        return !t.isEmpty() && !"-".equals(t);
     }
 
     /**
@@ -66,7 +78,7 @@ public final class ProspectorMiningLogPolicy {
             int rowRun = parseInt(row.get(0), 0);
             String rowCommander = str(row.get(12));
             String rowStart = row.size() > 13 ? str(row.get(13)) : "";
-            if (rowRun != run || !Objects.equals(rowCommander, cmdr) || rowStart.isEmpty()) {
+            if (rowRun != run || !Objects.equals(rowCommander, cmdr) || !hasMeaningfulRunStartCell(rowStart)) {
                 continue;
             }
             if (requireAsteroidA) {

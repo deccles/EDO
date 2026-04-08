@@ -48,14 +48,23 @@ class GoogleSheetsBackendSplitAndTimestampTest {
         // Regression: old logic used body.startsWith(system) and turned "1 B Ring" into "B".
         String[] p = GoogleSheetsBackend.splitSystemAndBody("1 > 1 B Ring");
         assertEquals("1", p[0]);
-        assertEquals("1 B", p[1]);
+        assertEquals("1", p[1]);
     }
 
     @Test
     void splitSystemAndBody_stripsDuplicateLongSystemPrefixBeforeRing() {
         String[] p = GoogleSheetsBackend.splitSystemAndBody("Achenar > Achenar 3 A Ring");
         assertEquals("Achenar", p[0]);
-        assertEquals("3 A", p[1]);
+        assertEquals("3", p[1]);
+    }
+
+    @Test
+    void stripEliteAbRingSuffix_stripsInnerOrOuterBeltOnly() {
+        assertEquals("6", GoogleSheetsBackend.stripEliteAbRingSuffix("6 B Ring"));
+        assertEquals("6", GoogleSheetsBackend.stripEliteAbRingSuffix("6 A Ring"));
+        assertEquals("3", GoogleSheetsBackend.stripEliteAbRingSuffix("3 a ring"));
+        // Moons (lowercase letter, no " Ring") unchanged
+        assertEquals("6 b", GoogleSheetsBackend.stripEliteAbRingSuffix("6 b"));
     }
 
     @Test
@@ -104,6 +113,6 @@ class GoogleSheetsBackendSplitAndTimestampTest {
                                 "")),
                 "CMDR UkeBard");
         assertEquals(1, rows.size());
-        assertEquals("UkeBard > 2 A", rows.get(0).getFullBodyName());
+        assertEquals("UkeBard > 2", rows.get(0).getFullBodyName());
     }
 }

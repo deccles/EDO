@@ -37,6 +37,13 @@ class ProspectorMiningLogPolicyTest {
     }
 
     @Test
+    void shouldWriteRunStart_dashPlaceholderExisting_writes() {
+        Instant st = Instant.parse("2026-04-02T15:19:04Z");
+        assertTrue(ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow("-", st));
+        assertTrue(ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow("  -  ", st));
+    }
+
+    @Test
     void findCanonicalRunEndRow_prefersAsteroidAWithStart() {
         List<List<Object>> values = new ArrayList<>();
         values.add(Arrays.asList("Run", "Asteroid", "T", "Mat", "P", "Bef", "Af", "Act", "Core", "D", "Sys", "Body", "Cmdr", "Start", "End"));
@@ -93,14 +100,12 @@ class ProspectorMiningLogPolicyTest {
         assertEquals(-1, ProspectorMiningLogPolicy.findDataRowIndexForCanonicalRunEnd(values, 6, "Z"));
     }
 
-    /**
-     * Policy uses plain trim/empty check for start cell (not sheet "-" placeholder); a literal dash preserves cell.
-     */
+    /** Legacy "-" in Start time is not a real run anchor; do not pick that row for run end. */
     @Test
-    void findCanonicalRunEndRow_dashStartCell_treatedAsPresent() {
+    void findCanonicalRunEndRow_dashStartCell_skipped() {
         List<List<Object>> values = new ArrayList<>();
         values.add(Arrays.asList("Run", "Asteroid", "T", "Mat", "P", "Bef", "Af", "Act", "Core", "D", "Sys", "Body", "Cmdr", "Start", "End"));
         values.add(Arrays.asList(7, "A", "t", "m", 0, 0, 0, 0, "-", 0, "S", "B", "Z", "-", ""));
-        assertEquals(1, ProspectorMiningLogPolicy.findDataRowIndexForCanonicalRunEnd(values, 7, "Z"));
+        assertEquals(-1, ProspectorMiningLogPolicy.findDataRowIndexForCanonicalRunEnd(values, 7, "Z"));
     }
 }

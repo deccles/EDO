@@ -192,7 +192,7 @@ class GoogleSheetsBackendUpsertAndCellTest {
             assertEquals("Sys A > 3 B Ring", enc);
             String[] p = GoogleSheetsBackend.splitSystemAndBody(enc);
             assertEquals("Sys A", p[0]);
-            assertEquals("3 B", p[1]);
+            assertEquals("3", p[1]);
         }
 
         @Test

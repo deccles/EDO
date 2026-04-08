@@ -61,6 +61,11 @@ import com.google.api.services.sheets.v4.model.ValueRange;
 public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
     private static final Pattern SPREADSHEET_ID_PATTERN = Pattern.compile("/d/([a-zA-Z0-9_-]+)");
+    /**
+     * Elite ring belt suffix: inner {@code A Ring}, outer {@code B Ring} (single-ring bodies often use A only).
+     * Stripped from the body token after split so mining tables show the parent body index (e.g. {@code 6 B Ring} → {@code 6}).
+     */
+    private static final Pattern ELITE_AB_RING_SUFFIX = Pattern.compile("\\s+[AB]\\s+Ring$", Pattern.CASE_INSENSITIVE);
     private static final String VALUE_INPUT_OPTION_USER_ENTERED = "USER_ENTERED";
     private static final DateTimeFormatter[] TIMESTAMP_PARSERS = {
         // Common US-style 24h date-times with and without seconds
@@ -1377,11 +1382,16 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         if (system.length() >= 3 && body.startsWith(system + " ")) {
             body = body.substring(system.length() + 1).trim();
         }
-        // Drop trailing \"Ring\" suffix to get just the orbital identifier (e.g. \"6 B\").
-        if (body.endsWith(" Ring")) {
-            body = body.substring(0, body.length() - " Ring".length()).trim();
-        }
+        body = stripEliteAbRingSuffix(body);
         return new String[] {system, body};
+    }
+
+    /** Removes trailing Elite {@code A Ring} / {@code B Ring} from the body fragment (inner vs outer belt). */
+    static String stripEliteAbRingSuffix(String body) {
+        if (body == null || body.isEmpty()) {
+            return "";
+        }
+        return ELITE_AB_RING_SUFFIX.matcher(body.trim()).replaceFirst("").trim();
     }
 
     private static String buildFullBodyName(String system, String body) {
