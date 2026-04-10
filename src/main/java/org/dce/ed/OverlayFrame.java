@@ -340,9 +340,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     static void updateFleetCarrierTimeBadgeExternal(JPanel host, JLabel label) {
         OverlayFrame f = overlayFrame;
         if (f == null) {
-            if (host != null) {
-                host.setVisible(false);
-            }
+            OverlayMenuStatusBar.applyFleetBadgePlaceholderLayout(host, label);
             return;
         }
         f.applyFleetCarrierTimeBadge(host, label);
@@ -352,11 +350,14 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         if (host == null || label == null) {
             return;
         }
+        label.setFont(OverlayMenuStatusBar.statusRowFontFromPreferences());
         String token = getFleetCarrierTimeBadgeTextOnly();
         if (token == null || token.isBlank()) {
-            host.setVisible(false);
+            OverlayMenuStatusBar.applyFleetBadgePlaceholderLayout(host, label);
             return;
         }
+        host.setPreferredSize(null);
+        host.setMinimumSize(null);
         label.setText(token);
         Color border = carrierJumpDepartureTime != null ? EdoUi.User.ERROR : EdoUi.User.CORE_BLUE;
         host.setBorder(BorderFactory.createCompoundBorder(
@@ -366,6 +367,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         label.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
         host.setVisible(true);
         host.revalidate();
+        OverlayMenuStatusBar.cacheFleetBadgeSlotFromPreferred(host);
     }
     
     public static OverlayFrame overlayFrame = null;
@@ -1118,6 +1120,13 @@ private void refreshPassThroughUnifiedStatus() {
     public void applyUiFontPreferences() {
         OverlayPreferences.clearUiFontLivePreview();
         contentPanel.applyUiFontPreferences();
+        if (passThroughStatusLabel != null && fleetCarrierTimeLabel != null) {
+            java.awt.Font rowFont = OverlayMenuStatusBar.statusRowFontFromPreferences();
+            passThroughStatusLabel.setFont(rowFont);
+            fleetCarrierTimeLabel.setFont(rowFont);
+            OverlayMenuStatusBar.clearFleetBadgeSlotCache(fleetCarrierTimeBadgeHost);
+            applyFleetCarrierTimeBadge(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
+        }
         revalidate();
         repaint();
     }
@@ -1149,6 +1158,13 @@ private void refreshPassThroughUnifiedStatus() {
         }
         OverlayPreferences.setUiFontLivePreview(font);
         contentPanel.applyUiFont(font);
+        if (passThroughStatusLabel != null && fleetCarrierTimeLabel != null) {
+            java.awt.Font rowFont = OverlayMenuStatusBar.statusRowFontFromPreferences();
+            passThroughStatusLabel.setFont(rowFont);
+            fleetCarrierTimeLabel.setFont(rowFont);
+            OverlayMenuStatusBar.clearFleetBadgeSlotCache(fleetCarrierTimeBadgeHost);
+            applyFleetCarrierTimeBadge(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
+        }
         revalidate();
         repaint();
     }
@@ -1158,6 +1174,13 @@ private void refreshPassThroughUnifiedStatus() {
         OverlayPreferences.clearUiFontLivePreview();
         if (savedFont != null) {
             contentPanel.applyUiFont(savedFont);
+        }
+        if (savedFont != null && passThroughStatusLabel != null && fleetCarrierTimeLabel != null) {
+            java.awt.Font rowFont = OverlayMenuStatusBar.statusRowFontFromPreferences();
+            passThroughStatusLabel.setFont(rowFont);
+            fleetCarrierTimeLabel.setFont(rowFont);
+            OverlayMenuStatusBar.clearFleetBadgeSlotCache(fleetCarrierTimeBadgeHost);
+            applyFleetCarrierTimeBadge(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
         }
         revalidate();
         repaint();

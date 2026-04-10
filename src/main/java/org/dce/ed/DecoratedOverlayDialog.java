@@ -309,6 +309,13 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	public void applyUiFontPreferences() {
 		OverlayPreferences.clearUiFontLivePreview();
 		contentPanel.applyUiFontPreferences();
+		if (statusLabel != null && fleetCarrierTimeLabel != null) {
+			Font rowFont = OverlayMenuStatusBar.statusRowFontFromPreferences();
+			statusLabel.setFont(rowFont);
+			fleetCarrierTimeLabel.setFont(rowFont);
+			OverlayMenuStatusBar.clearFleetBadgeSlotCache(fleetCarrierTimeBadgeHost);
+			OverlayFrame.updateFleetCarrierTimeBadgeExternal(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
+		}
 		revalidate();
 		repaint();
 	}
@@ -345,6 +352,13 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		}
 		OverlayPreferences.setUiFontLivePreview(font);
 		contentPanel.applyUiFont(font);
+		if (statusLabel != null && fleetCarrierTimeLabel != null) {
+			Font rowFont = OverlayMenuStatusBar.statusRowFontFromPreferences();
+			statusLabel.setFont(rowFont);
+			fleetCarrierTimeLabel.setFont(rowFont);
+			OverlayMenuStatusBar.clearFleetBadgeSlotCache(fleetCarrierTimeBadgeHost);
+			OverlayFrame.updateFleetCarrierTimeBadgeExternal(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
+		}
 		revalidate();
 		repaint();
 	}
@@ -354,6 +368,13 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 		OverlayPreferences.clearUiFontLivePreview();
 		if (savedFont != null) {
 			contentPanel.applyUiFont(savedFont);
+		}
+		if (savedFont != null && statusLabel != null && fleetCarrierTimeLabel != null) {
+			Font rowFont = OverlayMenuStatusBar.statusRowFontFromPreferences();
+			statusLabel.setFont(rowFont);
+			fleetCarrierTimeLabel.setFont(rowFont);
+			OverlayMenuStatusBar.clearFleetBadgeSlotCache(fleetCarrierTimeBadgeHost);
+			OverlayFrame.updateFleetCarrierTimeBadgeExternal(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
 		}
 		revalidate();
 		repaint();

@@ -42,6 +42,9 @@ public final class OverlayMenuStatusBar {
      */
     private static final int STATUS_BAR_MIN_HEIGHT_PX = 32;
 
+    /** Client property on the fleet badge host: last measured {@link Dimension} so the slot stays fixed when the badge is empty. */
+    public static final String CLIENT_KEY_FLEET_BADGE_SLOT_DIM = "edo.fleetBadgeSlotDim";
+
     public static final Color MENU_POPUP_BG = EdoUi.Internal.DARK_14;
     public static final Color MENU_POPUP_FG = EdoUi.Internal.MENU_FG_LIGHT;
 
@@ -79,11 +82,82 @@ public final class OverlayMenuStatusBar {
     }
 
     /**
+     * Bold font for the status row (main status label + fleet time badge): uses {@link OverlayPreferences}
+     * name/size, including font preview while the preferences dialog is open.
+     */
+    public static Font statusRowFontFromPreferences() {
+        Font base = OverlayPreferences.getUiFont();
+        if (base == null) {
+            return new JLabel().getFont().deriveFont(Font.BOLD);
+        }
+        return base.deriveFont(Font.BOLD);
+    }
+
+    /**
      * Inner padding for the fleet-carrier time badge. Slightly more top than bottom offsets cap-height
      * glyphs (e.g. {@code T-15:14}) so they read visually centered in the bordered box.
      */
     public static EmptyBorder fleetTimeBadgeInnerPadding() {
         return new EmptyBorder(5, 4, 4, 4);
+    }
+
+    /**
+     * Same total insets as {@code 1px line + fleetTimeBadgeInnerPadding()} so width/height stay constant when the
+     * colored border is removed (timer idle).
+     */
+    public static EmptyBorder fleetTimeBadgePlaceholderBorder() {
+        return new EmptyBorder(6, 5, 5, 5);
+    }
+
+    /**
+     * Minimum slot size when no live measurement exists yet (matches status font; wide sample for {@code T-h:mm:ss}).
+     */
+    public static Dimension computeFleetBadgeSlotSize(Font font) {
+        JLabel probe = new JLabel("T-0:00:00");
+        if (font != null) {
+            probe.setFont(font);
+        }
+        Dimension ps = probe.getPreferredSize();
+        int w = ps.width + 10;
+        int h = ps.height + 11;
+        return new Dimension(Math.max(w, 52), Math.max(h, 24));
+    }
+
+    public static void clearFleetBadgeSlotCache(JPanel host) {
+        if (host != null) {
+            host.putClientProperty(CLIENT_KEY_FLEET_BADGE_SLOT_DIM, null);
+        }
+    }
+
+    public static void cacheFleetBadgeSlotFromPreferred(JPanel host) {
+        if (host == null) {
+            return;
+        }
+        Dimension d = host.getPreferredSize();
+        if (d != null && d.width > 0 && d.height > 0) {
+            host.putClientProperty(CLIENT_KEY_FLEET_BADGE_SLOT_DIM, new Dimension(d.width, d.height));
+        }
+    }
+
+    /**
+     * Empty, borderless-looking slot: same outer size as the active badge so the menu bar does not jump horizontally.
+     */
+    public static void applyFleetBadgePlaceholderLayout(JPanel host, JLabel label) {
+        if (host == null || label == null) {
+            return;
+        }
+        label.setFont(statusRowFontFromPreferences());
+        label.setText("");
+        host.setBorder(fleetTimeBadgePlaceholderBorder());
+        host.setBackground(opaquePlate(EdoUi.User.BACKGROUND));
+        Dimension slot = (Dimension) host.getClientProperty(CLIENT_KEY_FLEET_BADGE_SLOT_DIM);
+        if (slot == null || slot.width < 8 || slot.height < 8) {
+            slot = computeFleetBadgeSlotSize(label.getFont());
+        }
+        host.setPreferredSize(new Dimension(slot.width, slot.height));
+        host.setMinimumSize(new Dimension(slot.width, slot.height));
+        host.setVisible(true);
+        host.revalidate();
     }
 
     /**
@@ -127,22 +201,20 @@ public final class OverlayMenuStatusBar {
         JLabel statusLabel = new JLabel("");
         statusLabel.setOpaque(false);
         statusLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
-        statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
+        Font statusRowFont = statusRowFontFromPreferences();
+        statusLabel.setFont(statusRowFont);
 
         FleetCarrierTimeBadgePanel fleetCarrierTimeBadgeHost = new FleetCarrierTimeBadgePanel();
         fleetCarrierTimeBadgeHost.setOpaque(true);
         fleetCarrierTimeBadgeHost.setBackground(opaquePlate(EdoUi.User.BACKGROUND));
-        fleetCarrierTimeBadgeHost.setVisible(false);
         JLabel fleetCarrierTimeLabel = new JLabel("");
         fleetCarrierTimeLabel.setOpaque(false);
         fleetCarrierTimeLabel.setForeground(EdoUi.Internal.MENU_FG_LIGHT);
-        fleetCarrierTimeLabel.setFont(fleetCarrierTimeLabel.getFont().deriveFont(Font.BOLD));
+        fleetCarrierTimeLabel.setFont(statusRowFont);
         fleetCarrierTimeLabel.setHorizontalAlignment(SwingConstants.LEADING);
         fleetCarrierTimeLabel.setVerticalAlignment(SwingConstants.CENTER);
         fleetCarrierTimeBadgeHost.add(fleetCarrierTimeLabel, BorderLayout.CENTER);
-        fleetCarrierTimeBadgeHost.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(EdoUi.Internal.MENU_FG_LIGHT, 1),
-                fleetTimeBadgeInnerPadding()));
+        applyFleetBadgePlaceholderLayout(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
 
         if (parent != null) {
             statusLabel.addMouseListener(new MouseAdapter() {
