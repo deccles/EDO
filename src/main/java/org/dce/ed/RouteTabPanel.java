@@ -6,6 +6,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
@@ -31,6 +32,7 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 
 import javax.swing.Icon;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -40,6 +42,7 @@ import javax.swing.JTable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.BorderFactory;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -126,6 +129,10 @@ public class RouteTabPanel extends JPanel {
 	/** Keep current system row at this offset from top when auto-scrolling (e.g. one jump = one row scroll). */
 	private static final int TARGET_CURRENT_ROW_OFFSET = 4;
 	private final JLabel headerLabel;
+	/** Title strip: route summary (west) + Ly column mode toggles (east). */
+	private final JPanel routeTitleRow;
+	private final JButton lyModeFromCurrentButton;
+	private final JButton lyModePerLegButton;
 	private JTable table=null;
 	private JScrollPane routeScrollPane;
 	private final RouteTableModel tableModel;
@@ -254,6 +261,28 @@ public class RouteTabPanel extends JPanel {
 		headerLabel.setBorder(new EmptyBorder(4, 4, 4, 4));
 		headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
 		tableModel = new RouteTableModel();
+
+		routeTitleRow = new JPanel(new BorderLayout(0, 0));
+		routeTitleRow.setOpaque(false);
+		routeTitleRow.add(headerLabel, BorderLayout.WEST);
+		JPanel lyToggleEast = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		lyToggleEast.setOpaque(false);
+		lyModeFromCurrentButton = new JButton(new LyFromCurrentSystemIcon(18));
+		lyModePerLegButton = new JButton(new LyPerLegIcon(18));
+		configureLyModeToggleButton(lyModeFromCurrentButton, "Show distance from your current system along the route");
+		configureLyModeToggleButton(lyModePerLegButton, "Show each jump length from the previous system");
+		lyModeFromCurrentButton.addActionListener(e -> {
+			tableModel.setLyFromCurrentSystem(true);
+			updateLyModeToggleAppearance();
+		});
+		lyModePerLegButton.addActionListener(e -> {
+			tableModel.setLyFromCurrentSystem(false);
+			updateLyModeToggleAppearance();
+		});
+		lyToggleEast.add(lyModeFromCurrentButton);
+		lyToggleEast.add(lyModePerLegButton);
+		routeTitleRow.add(lyToggleEast, BorderLayout.EAST);
+		updateLyModeToggleAppearance();
 		table = new JTable(tableModel) {
 			private static final long serialVersionUID = 1L;
 			@Override
@@ -465,7 +494,7 @@ public class RouteTabPanel extends JPanel {
 		}
 		routeScrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-		add(headerLabel, BorderLayout.NORTH);
+		add(routeTitleRow, BorderLayout.NORTH);
 		add(routeScrollPane, BorderLayout.CENTER);
 
 		routeScrollPane.setColumnHeaderView(null);
@@ -666,11 +695,41 @@ public class RouteTabPanel extends JPanel {
 			headerLabel.setText(text);
 		}
 	}
-	public void setDistanceSumMode(boolean sum) {
-		tableModel.setSumDistances(sum);
+	/**
+	 * @param fromCurrent {@code true} = cumulative Ly from your current system along the route;
+	 *                    {@code false} = Ly of each hop from the previous row.
+	 */
+	public void setDistanceSumMode(boolean fromCurrent) {
+		tableModel.setLyFromCurrentSystem(fromCurrent);
+		updateLyModeToggleAppearance();
 	}
+
 	public boolean isDistanceSumMode() {
-		return tableModel.isSumDistances();
+		return tableModel.isLyFromCurrentSystem();
+	}
+
+	private void configureLyModeToggleButton(JButton b, String tooltip) {
+		b.setToolTipText(tooltip);
+		b.setMargin(new java.awt.Insets(2, 4, 2, 4));
+		b.setBorderPainted(true);
+		b.setContentAreaFilled(false);
+		b.setFocusPainted(false);
+		b.setOpaque(false);
+		b.setForeground(EdoUi.User.MAIN_TEXT);
+	}
+
+	private void updateLyModeToggleAppearance() {
+		if (lyModeFromCurrentButton == null || lyModePerLegButton == null || tableModel == null) {
+			return;
+		}
+		boolean fromCur = tableModel.isLyFromCurrentSystem();
+		Color activeOutline = EdoUi.User.MAIN_TEXT;
+		lyModeFromCurrentButton.setBorder(fromCur ? BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(activeOutline, 1),
+				new EmptyBorder(2, 4, 2, 4)) : new EmptyBorder(3, 5, 3, 5));
+		lyModePerLegButton.setBorder(!fromCur ? BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(activeOutline, 1),
+				new EmptyBorder(2, 4, 2, 4)) : new EmptyBorder(3, 5, 3, 5));
 	}
 	private void reloadFromNavRouteFile() {
 		Path dir = OverlayPreferences.resolveJournalDirectory(EliteDangerousOverlay.clientKey);
@@ -1336,7 +1395,8 @@ public class RouteTabPanel extends JPanel {
 	private static final class RouteTableModel extends AbstractTableModel {
 		private static final long serialVersionUID = 1L;
 		private final List<RouteEntry> entries = new ArrayList<>();
-		private boolean sumDistances = true;
+		/** {@code true} = cumulative Ly from current system; {@code false} = per-leg Ly from previous hop. */
+		private boolean lyFromCurrentSystem = true;
 		private String currentSystemName;
 		private long currentSystemAddress;
 
@@ -1364,14 +1424,15 @@ public class RouteTabPanel extends JPanel {
 			return RouteGeometry.findSystemRow(entries, currentSystemName, currentSystemAddress);
 		}
 
-		void setSumDistances(boolean sumDistances) {
-			if (this.sumDistances != sumDistances) {
-				this.sumDistances = sumDistances;
+		void setLyFromCurrentSystem(boolean lyFromCurrentSystem) {
+			if (this.lyFromCurrentSystem != lyFromCurrentSystem) {
+				this.lyFromCurrentSystem = lyFromCurrentSystem;
 				fireTableDataChanged();
 			}
 		}
-		boolean isSumDistances() {
-			return sumDistances;
+
+		boolean isLyFromCurrentSystem() {
+			return lyFromCurrentSystem;
 		}
 		@Override
 		public int getRowCount() {
@@ -1436,40 +1497,26 @@ public class RouteTabPanel extends JPanel {
 				if (e.isBodyRow) {
 					return "";
 				}
-				// Toggle locally while you iterate:
-				// true  = along-track distance (sum of legs between current row and this row)
-				// false = straight-line distance from current system to this system (uses StarPos)
-				final boolean useAlongTrackDistance = true;
+				if (!lyFromCurrentSystem) {
+					Double leg = e.distanceLy;
+					if (leg == null) {
+						return "";
+					}
+					return String.format("%.2f Ly", leg.doubleValue());
+				}
 				int currentRow = findCurrentSystemRow();
-				// If we truly don't know where we are, don't guess.
 				if (currentRow < 0) {
 					return "";
 				}
-				// Current system row: show blank
 				if (rowIndex == currentRow) {
 					return "";
-				}
-				if (!useAlongTrackDistance) {
-					RouteEntry cur = entries.get(currentRow);
-					RouteEntry dst = entries.get(rowIndex);
-					if (cur.x == null || cur.y == null || cur.z == null
-							|| dst.x == null || dst.y == null || dst.z == null) {
-						return "";
-					}
-					double dx = dst.x.doubleValue() - cur.x.doubleValue();
-					double dy = dst.y.doubleValue() - cur.y.doubleValue();
-					double dz = dst.z.doubleValue() - cur.z.doubleValue();
-					double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-					return String.format("%.2f Ly", dist);
 				}
 				int from = Math.min(rowIndex, currentRow);
 				int to = Math.max(rowIndex, currentRow);
 				double total = 0.0;
-				// distanceLy at index i is the distance from (i-1) -> i
 				for (int i = from + 1; i <= to; i++) {
 					Double d = entries.get(i).distanceLy;
 					if (d == null) {
-						// If any leg along the path is unknown, we can't compute the total
 						return "";
 					}
 					total += d.doubleValue();
@@ -2167,6 +2214,86 @@ public class RouteTabPanel extends JPanel {
 			g2.dispose();
 		}
 	}
+	/** Concentric ring + dot: Ly measured from your current system along the route. */
+	private static final class LyFromCurrentSystemIcon implements Icon {
+		private final int size;
+
+		LyFromCurrentSystemIcon(int size) {
+			this.size = size;
+		}
+
+		@Override
+		public void paintIcon(Component c, Graphics g, int x, int y) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				Color fg = c != null ? c.getForeground() : Color.WHITE;
+				g2.setColor(fg);
+				int pad = 2;
+				int d = size - pad * 2;
+				int ox = x + pad;
+				int oy = y + pad;
+				g2.setStroke(new BasicStroke(1.4f));
+				g2.drawOval(ox, oy, d, d);
+				int inner = Math.max(4, d / 2);
+				int cx = ox + d / 2 - inner / 2;
+				int cy = oy + d / 2 - inner / 2;
+				g2.fillOval(cx, cy, inner, inner);
+			} finally {
+				g2.dispose();
+			}
+		}
+
+		@Override
+		public int getIconWidth() {
+			return size;
+		}
+
+		@Override
+		public int getIconHeight() {
+			return size;
+		}
+	}
+
+	/** Two nodes and a link: Ly of the jump from the previous system. */
+	private static final class LyPerLegIcon implements Icon {
+		private final int size;
+
+		LyPerLegIcon(int size) {
+			this.size = size;
+		}
+
+		@Override
+		public void paintIcon(Component c, Graphics g, int x, int y) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				Color fg = c != null ? c.getForeground() : Color.WHITE;
+				g2.setColor(fg);
+				g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				int midY = y + size / 2;
+				int x1 = x + size / 4;
+				int x2 = x + 3 * size / 4;
+				g2.drawLine(x1, midY, x2, midY);
+				int r = Math.max(2, size / 7);
+				g2.fillOval(x1 - r, midY - r, r * 2, r * 2);
+				g2.fillOval(x2 - r, midY - r, r * 2, r * 2);
+			} finally {
+				g2.dispose();
+			}
+		}
+
+		@Override
+		public int getIconWidth() {
+			return size;
+		}
+
+		@Override
+		public int getIconHeight() {
+			return size;
+		}
+	}
+
 	public void applyUiFontPreferences() {
 		applyUiFont(OverlayPreferences.getUiFont());
 	}
@@ -2179,6 +2306,11 @@ public class RouteTabPanel extends JPanel {
 		applyFontRecursively(this, uiFont);
 		if (headerLabel != null) {
 			headerLabel.setFont(uiFont.deriveFont(Font.BOLD));
+		}
+		if (lyModeFromCurrentButton != null) {
+			lyModeFromCurrentButton.setForeground(EdoUi.User.MAIN_TEXT);
+			lyModePerLegButton.setForeground(EdoUi.User.MAIN_TEXT);
+			updateLyModeToggleAppearance();
 		}
 		if (table != null) {
 			table.setFont(uiFont);
