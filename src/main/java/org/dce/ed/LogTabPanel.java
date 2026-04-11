@@ -43,6 +43,7 @@ import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
@@ -62,9 +63,14 @@ import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.JViewport;
 import javax.swing.KeyStroke;
+import javax.swing.Popup;
+import javax.swing.PopupFactory;
+import javax.swing.Timer;
+import javax.swing.UIManager;
 import javax.swing.RowFilter;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -308,7 +314,7 @@ public class LogTabPanel extends JPanel {
         });
 
         JButton reloadButton = new JButton("Reload");
-        JButton copyJournalPathButton = new JButton("Copy path");
+        JButton copyJournalPathButton = new JButton("Copy Journal File");
         copyJournalPathButton.setToolTipText(
                 "Copy the selected journal file's path (text and file reference where supported).");
         JButton filterButton = new JButton("Filter...");
@@ -515,7 +521,7 @@ simPlayButton.addActionListener(e -> startSimulation());
 
         // Wire actions
         reloadButton.addActionListener(e -> reloadLogs());
-        copyJournalPathButton.addActionListener(e -> copyJournalFileReferencesToClipboard());
+        copyJournalPathButton.addActionListener(e -> copyJournalFileReferencesToClipboard((Component) e.getSource()));
         filterButton.addActionListener(e -> showFilterDialog());
 
         prevDayButton.addActionListener(e -> moveToRelativeDate(-1));
@@ -850,7 +856,7 @@ simPlayButton.addActionListener(e -> startSimulation());
 
     /* ---------- Reload & formatting of rows ---------- */
 
-    private void copyJournalFileReferencesToClipboard() {
+    private void copyJournalFileReferencesToClipboard(Component feedbackAnchor) {
         final String title = "Copy path";
         Path selected = getSelectedJournalFilePath();
         if (selected == null) {
@@ -861,6 +867,38 @@ simPlayButton.addActionListener(e -> startSimulation());
             return;
         }
         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new JournalPathTransferable(selected), null);
+        showCopiedFeedback(feedbackAnchor);
+    }
+
+    /** Tooltip-like transient popup (does not use the button's real tool tip text). */
+    private void showCopiedFeedback(Component anchor) {
+        if (anchor == null || !anchor.isShowing()) {
+            return;
+        }
+        JLabel label = new JLabel("Copied");
+        label.setOpaque(true);
+        Color tipFg = UIManager.getColor("ToolTip.foreground");
+        Color tipBg = UIManager.getColor("ToolTip.background");
+        label.setForeground(tipFg != null ? tipFg : JOURNAL_TEXT);
+        label.setBackground(tipBg != null ? tipBg : new Color(0xffffe1));
+        Border tipBorder = UIManager.getBorder("ToolTip.border");
+        label.setBorder(tipBorder != null ? tipBorder : BorderFactory.createEmptyBorder(3, 8, 3, 8));
+        label.setFont(anchor.getFont());
+
+        Dimension d = label.getPreferredSize();
+        label.setSize(d);
+
+        Point screen = anchor.getLocationOnScreen();
+        int x = screen.x + (anchor.getWidth() - d.width) / 2;
+        int y = screen.y + anchor.getHeight();
+        Popup popup = PopupFactory.getSharedInstance().getPopup(this, label, x, y);
+        popup.show();
+        Timer hideTimer = new Timer(1000, ev -> {
+            popup.hide();
+            ((Timer) ev.getSource()).stop();
+        });
+        hideTimer.setRepeats(false);
+        hideTimer.start();
     }
 
     private Path getSelectedJournalFilePath() {

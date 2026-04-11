@@ -58,6 +58,8 @@ import org.dce.ed.util.SpanshBodyExobiologyInfo;
 import org.dce.ed.util.SpanshLandmark;
 import org.dce.ed.util.SpanshLandmarkCache;
 import org.dce.ed.mining.GoogleSheetsBackend;
+import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 
 import com.google.gson.JsonObject;
 import com.sun.jna.Native;
@@ -95,6 +97,8 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private static final int CARRIER_JUMP_COOLDOWN_END_CORRECTION_SECONDS = -10;
     private static final int CARRIER_JUMP_COOLDOWN_SECONDS_EFFECTIVE =
             CARRIER_JUMP_COOLDOWN_SECONDS + CARRIER_JUMP_COOLDOWN_END_CORRECTION_SECONDS;
+
+    private static final TtsSprintf CARRIER_JUMP_TTS = new TtsSprintf(new PollyTtsCached());
 
     private final LineBorder overlayBorder = new LineBorder(
             new java.awt.Color(200, 200, 255, 180),
@@ -142,6 +146,12 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     /** Cooldown phase (5 min) after fleet jump countdown expires. */
     private Instant carrierJumpCooldownEndTime;
     private javax.swing.Timer carrierJumpCooldownTimer;
+
+    /**
+     * Suppress duplicate "Jump complete" speech when both the scheduled countdown and {@code CarrierJump}
+     * journal handling start the same cooldown window.
+     */
+    private boolean carrierJumpCompleteSpokenForCurrentJump;
 
     private long exoCreditsTotal;
 
@@ -743,6 +753,7 @@ private void installCarrierJumpTitleUpdater() {
 private void startCarrierJumpCountdown(Instant departureTime, String targetSystem) {
     carrierJumpDepartureTime = departureTime;
     carrierJumpTargetSystem = targetSystem;
+    carrierJumpCompleteSpokenForCurrentJump = false;
 
     if (carrierJumpCountdownTimer != null) {
         carrierJumpCountdownTimer.stop();
@@ -798,6 +809,10 @@ private void startCarrierJumpCooldown(Instant startTime) {
     carrierJumpCooldownTimer.setRepeats(true);
     carrierJumpCooldownTimer.start();
     updateCarrierJumpCooldown();
+    if (!carrierJumpCompleteSpokenForCurrentJump) {
+        carrierJumpCompleteSpokenForCurrentJump = true;
+        CARRIER_JUMP_TTS.speakf("Jump complete");
+    }
     saveSessionState();
 }
 
@@ -812,6 +827,7 @@ private void updateCarrierJumpCooldown() {
             carrierJumpCooldownTimer = null;
         }
         carrierJumpCooldownEndTime = null;
+        CARRIER_JUMP_TTS.speakf("Cooldown complete");
         setTitleBarText(DEFAULT_TITLE_BAR_TITLE);
         updateRightStatusDefault();
         saveSessionState();
@@ -825,6 +841,7 @@ private void clearCarrierJumpCountdown() {
         carrierJumpCooldownTimer = null;
     }
     carrierJumpCooldownEndTime = null;
+    carrierJumpCompleteSpokenForCurrentJump = false;
 
     setTitleBarText(DEFAULT_TITLE_BAR_TITLE);
     updateRightStatusDefault();
