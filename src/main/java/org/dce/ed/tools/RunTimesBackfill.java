@@ -226,6 +226,7 @@ public final class RunTimesBackfill {
 				canonical.getAfterAmount(),
 				canonical.getDifference(),
 				canonical.getCommanderName(),
+				canonical.getShipType(),
 				canonical.getCoreType(),
 				canonical.getDuds(),
 				newStart,

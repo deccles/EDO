@@ -55,13 +55,13 @@ class MiningSheetTitlesTest {
 
     @Test
     void quoteSheetNameForRange_escapesSingleQuotes() {
-        assertEquals("'It''s fine'!A:O", MiningSheetTitles.rangeA1O("It's fine"));
+        assertEquals("'It''s fine'", MiningSheetTitles.quoteSheetNameForRange("It's fine"));
     }
 
     @Test
-    void rangeA1O_prefixesQuotedName() {
-        assertTrue(MiningSheetTitles.rangeA1O("Sheet1").startsWith("'"));
-        assertTrue(MiningSheetTitles.rangeA1O("Sheet1").endsWith("!A:O"));
+    void rangeA1P_prefixesQuotedName() {
+        assertTrue(MiningSheetTitles.rangeA1P("Sheet1").startsWith("'"));
+        assertTrue(MiningSheetTitles.rangeA1P("Sheet1").endsWith("!A:P"));
     }
 
     @Test

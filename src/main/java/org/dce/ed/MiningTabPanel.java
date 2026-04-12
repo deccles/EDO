@@ -227,6 +227,9 @@ public class MiningTabPanel extends JPanel {
 	private volatile String lastNonEmptySystemName = "";
 	private volatile String lastNonEmptyBodyName = "";
 
+	/** Journal {@code Ship} field ({@code LoadGame} / {@code Loadout}); recorded on each prospector log row. */
+	private volatile String currentShipType = "";
+
 	private static final EliteLogParser MINING_STATUS_PARSER = new EliteLogParser();
 	private final Object statusBodyReadLock = new Object();
 	private long statusBodyCacheMtime = -1L;
@@ -1054,7 +1057,7 @@ private final JLayer<JTable> cargoLayer;
 	private static void applyProspectorLogColumnVisibility(JTable tbl) {
 		if (tbl == null) return;
 		TableColumnModel cm = tbl.getColumnModel();
-		if (cm == null || cm.getColumnCount() < 13) return;
+		if (cm == null || cm.getColumnCount() < 14) return;
 		for (int i : new int[] { 6, 7 }) {
 			TableColumn col = cm.getColumn(i);
 			col.setMinWidth(0);
@@ -1610,7 +1613,7 @@ return EdoUi.User.MAIN_TEXT;
 			//   MiningRunNumberResolver class docs and mining package tests.
 			Instant runStart = !wroteRowsThisRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
 			Instant runEnd = null;
-			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
+			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, shipTypeForProspectorLog(), coreType, duds, runStart, runEnd));
 		}
 
 		if (!rows.isEmpty()) {
@@ -1705,6 +1708,18 @@ return EdoUi.User.MAIN_TEXT;
 
 	public void setSessionStateChangeCallback(Runnable callback) {
 		this.sessionStateChangeCallback = callback;
+	}
+
+	/** Updates ship model from the journal (e.g. after {@code LoadGame} or {@code Loadout}). */
+	public void updateCurrentShipType(String shipInternalName) {
+		if (shipInternalName != null && !shipInternalName.isBlank()) {
+			currentShipType = shipInternalName.trim();
+		}
+	}
+
+	private String shipTypeForProspectorLog() {
+		String s = currentShipType;
+		return s != null ? s.trim() : "";
 	}
 
 	public void fillSessionState(EdoSessionState state) {
@@ -2167,7 +2182,7 @@ return EdoUi.User.MAIN_TEXT;
 			// Same run-start semantics as the cargo-driven path (see comment above new ProspectorLogRow in onCargoChanged).
 			Instant runStart = !wroteRowsThisRun ? (lastUndockTime != null ? lastUndockTime : ts) : null;
 			Instant runEnd = null;
-			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, coreType, duds, runStart, runEnd));
+			rows.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, pct, beforeAdjusted, afterAdjusted, difference, commander, shipTypeForProspectorLog(), coreType, duds, runStart, runEnd));
 		}
 		if (rows.isEmpty()) {
 			return false;
@@ -5422,14 +5437,14 @@ String getName() {
 
 	/**
 	 * Table model for prospector log rows. Display order: Commander first, then Run, …
-	 * Sheet/API row layout is still 15 columns with Run in column A.
+	 * Sheet/API row layout is 16 columns with Run in column A.
 	 */
 	private static final class ProspectorLogTableModel extends AbstractTableModel {
 		private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("h:mma", Locale.US);
 		private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("M/d/yyyy", Locale.US);
 		private static final String[] COLUMNS = {
 				"Commander", "Run", "Asteroid", "Time", "Type", "Percentage",
-				"Before Amount", "After Amount", "Tons", "Core", "Duds", "System", "Body"
+				"Before Amount", "After Amount", "Tons", "Core", "Duds", "System", "Body", "Ship"
 		};
 		private List<Object> displayRows = new ArrayList<>();
 
@@ -5806,6 +5821,10 @@ String getName() {
 				case 12: {
 					String[] sb = GoogleSheetsBackend.splitSystemAndBody(r.getFullBodyName());
 					return sb[1];
+				}
+				case 13: {
+					String st = r.getShipType();
+					return (st != null && !st.isBlank() && !"-".equals(st)) ? st : "";
 				}
 				default: return "";
 			}

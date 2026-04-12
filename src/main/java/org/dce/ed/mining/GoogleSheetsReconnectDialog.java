@@ -14,6 +14,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.WindowConstants;
 
+import org.dce.ed.OverlayFrame;
 import org.dce.ed.OverlayPreferences;
 import org.dce.ed.PreferencesDialog;
 
@@ -117,10 +118,17 @@ public final class GoogleSheetsReconnectDialog {
                         JOptionPane.INFORMATION_MESSAGE);
                 dlg.dispose();
             } else {
-                JOptionPane.showMessageDialog(dlg,
-                        "Could not complete sign-in. Check Client ID and Secret in Mining preferences.",
-                        "Connection failed",
-                        JOptionPane.ERROR_MESSAGE);
+                String failureMsg = "Could not complete sign-in. Check Client ID and Secret in Mining preferences.";
+                OverlayFrame frame = OverlayFrame.overlayFrame;
+                if (frame != null) {
+                    frame.setMiningSheetsStatusError("Google Sheets reconnect: " + failureMsg);
+                    JOptionPane.showMessageDialog(dlg,
+                            "Could not complete sign-in. Details are shown in the overlay status bar.",
+                            "Connection failed",
+                            JOptionPane.WARNING_MESSAGE);
+                } else {
+                    JOptionPane.showMessageDialog(dlg, failureMsg, "Connection failed", JOptionPane.ERROR_MESSAGE);
+                }
             }
         });
 

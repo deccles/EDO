@@ -99,9 +99,10 @@ public class PollyTtsCached implements Closeable {
     /** Avoid spamming the same modal when many TTS calls fail for the same reason. */
     private static final AtomicBoolean AWS_CREDENTIAL_POPUP_SHOWN = new AtomicBoolean(false);
 
-    // Trim leading/trailing silence from Polly PCM before writing cache WAVs.
+    // Trim leading/trailing silence from Polly PCM before writing cache WAVs (full-utterance path only).
     private static final int TRIM_ABS_THRESHOLD = 250;  // 16-bit PCM amplitude threshold (0..32767)
-    private static final int TRIM_KEEP_MS = 1;          // you tuned this down and liked it
+    /** Padding kept beyond last "loud" sample so quiet word tails (s, f, th, …) are not clipped. */
+    private static final int TRIM_KEEP_MS = 80;
 
     // Speech-mark parsing (JSON lines)
 
@@ -334,11 +335,17 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
 
             int startByte = Math.max(0, Math.min(fullPcm.length, startSample * 2));
             int endByte = Math.max(startByte, Math.min(fullPcm.length, endSample * 2));
+            // Last chunk: ms↔sample rounding can shave a few ms; always run to end of Polly PCM.
+            if (idx + 1 >= markNames.size()) {
+                endByte = fullPcm.length;
+            }
 
             byte[] slice = java.util.Arrays.copyOfRange(fullPcm, startByte, endByte);
 
             Path wavOut = paths.get(idx);
-            writePcmBytesAsWav(slice, wavOut, s.sampleRate);
+            // Do not trim silence on mark slices: quiet phoneme endings sit below TRIM_ABS_THRESHOLD and were
+            // being cut off; slices are already bounded by SSML mark times.
+            writePcmBytesAsWav(slice, wavOut, s.sampleRate, false);
 
             // Manifest uses what was spoken, not the cache key.
             writeManifestLine(voiceDir, voiceDir.relativize(wavOut).toString(), chunkTexts.get(idx));
@@ -506,6 +513,8 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
                         + "|e=" + s.engine.toString()
                         + "|sr=" + s.sampleRate
                         + "|t=" + normalize(text)
+                        // Bust cache when PCM handling changes (e.g. slice trim policy, last-chunk length).
+                        + "|pcm=v2"
         );
 
         return bucketDir.resolve(key + ".wav");
@@ -889,17 +898,24 @@ private static void showMissingSpeechCachePopup(String voiceName, Path voiceDir,
 
     private static void writePcmAsWav(InputStream pcm, Path wavOut, int sampleRate) throws IOException {
         byte[] pcmBytes = pcm.readAllBytes();
-        writePcmBytesAsWav(pcmBytes, wavOut, sampleRate);
+        writePcmBytesAsWav(pcmBytes, wavOut, sampleRate, true);
     }
 
     private static void writePcmBytesAsWav(byte[] pcmBytes, Path wavOut, int sampleRate) throws IOException {
+        writePcmBytesAsWav(pcmBytes, wavOut, sampleRate, true);
+    }
+
+    private static void writePcmBytesAsWav(byte[] pcmBytes, Path wavOut, int sampleRate, boolean trimSilence)
+            throws IOException {
         if (pcmBytes == null) {
             pcmBytes = new byte[0];
         }
 
         Files.createDirectories(wavOut.getParent());
-        
-        pcmBytes = trimSilencePcm16leMono(pcmBytes, sampleRate, TRIM_ABS_THRESHOLD, TRIM_KEEP_MS);
+
+        if (trimSilence) {
+            pcmBytes = trimSilencePcm16leMono(pcmBytes, sampleRate, TRIM_ABS_THRESHOLD, TRIM_KEEP_MS);
+        }
 
         int numChannels = 1;
         int bitsPerSample = 16;

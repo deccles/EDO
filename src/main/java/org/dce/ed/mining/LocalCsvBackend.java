@@ -20,12 +20,12 @@ import org.dce.ed.MiningTabPanel;
 
 /**
  * Prospector log backend that writes to and reads from a local CSV file.
- * Column order: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander, Start time, End time (14 columns).
- * Legacy 7-, 9-, and 12-column files are supported on read.
+ * Column order: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander, Ship, Start time, End time (15 columns).
+ * Legacy 7-, 9-, 12-, and 14-column files are supported on read.
  */
 public final class LocalCsvBackend implements ProspectorLogBackend {
 
-    private static final String HEADER = "run,asteroid,timestamp,material,percent,before amount,after amount,actual,core,body,duds,commander,start time,end time";
+    private static final String HEADER = "run,asteroid,timestamp,material,percent,before amount,after amount,actual,core,body,duds,commander,ship,start time,end time";
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("M/d/yyyy H:mm:ss", Locale.US);
 
     private final Path csvPath;
@@ -106,6 +106,8 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                 if (core.isEmpty()) core = "-";
                 String startStr = r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(TIMESTAMP_FORMAT) : "";
                 String endStr = r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(TIMESTAMP_FORMAT) : "";
+                String ship = r.getShipType();
+                if (ship == null || ship.isEmpty()) ship = "-";
                 String line = r.getRun() + ","
                     + MiningTabPanel.csvEscape(asteroid) + ","
                     + MiningTabPanel.csvEscape(tsStr) + ","
@@ -118,6 +120,7 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                     + MiningTabPanel.csvEscape(body) + ","
                     + r.getDuds() + ","
                     + MiningTabPanel.csvEscape(commander) + ","
+                    + MiningTabPanel.csvEscape(ship) + ","
                     + MiningTabPanel.csvEscape(startStr) + ","
                     + MiningTabPanel.csvEscape(endStr);
                 Files.writeString(csvPath, line + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -134,15 +137,20 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
         return String.format(Locale.US, "%.2f", v);
     }
 
-    /** Build a 14-column CSV line with proper escaping (for updateRunEndTime). */
-    private static String buildCsvLine14(List<String> cols) {
+    /** Start time column: index 13 when Ship is present (15+ cols), else 12 (legacy 14-col). */
+    private static int csvRunStartColumnIndex(List<String> cols) {
+        return cols != null && cols.size() >= 15 ? 13 : 12;
+    }
+
+    /** Build a 15-column CSV line with proper escaping (for updateRunEndTime). */
+    private static String buildCsvLine15(List<String> cols) {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 14; i++) {
+        for (int i = 0; i < 15; i++) {
             if (i > 0) sb.append(',');
             String v = i < cols.size() ? cols.get(i) : "";
             if (i == 0) sb.append(v); // run number
             else if (i == 4 || i == 5 || i == 6 || i == 7) sb.append(v); // numeric
-            else if (i == 9) sb.append(v); // duds
+            else if (i == 10) sb.append(v); // duds
             else sb.append(MiningTabPanel.csvEscape(v != null ? v : ""));
         }
         return sb.toString();
@@ -190,7 +198,8 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                 }
                 out.addAll(inferRunsFromLegacy(rawRows));
             } else {
-                // New 14-column: run,asteroid,timestamp,material,percent,before,after,actual,core,body,duds,commander,start time,end time
+                // New 15-column: ... commander, ship, start time, end time
+                // Legacy 14-column: ... commander, start time, end time (no ship)
                 // 12-column: run,asteroid,timestamp,material,percent,before,after,actual,core,body,duds,commander
                 // Legacy 9-column: run,timestamp,material,percent,before,after,actual,body,commander (no asteroid, core, duds)
                 String line;
@@ -215,9 +224,22 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                             String fullBodyName = cols.get(9).trim();
                             int duds = parseInt(cols.get(10), 0);
                             String commander = cols.get(11).trim();
-                            Instant runStart = (cols.size() >= 14 && cols.get(12) != null && !cols.get(12).trim().isEmpty()) ? parseTimestamp(cols.get(12).trim()) : null;
-                            Instant runEnd = (cols.size() >= 14 && cols.get(13) != null && !cols.get(13).trim().isEmpty()) ? parseTimestamp(cols.get(13).trim()) : null;
-                            out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds, runStart, runEnd));
+                            String shipType = "";
+                            int startIdx = 12;
+                            int endIdx = 13;
+                            if (cols.size() >= 15) {
+                                shipType = cols.get(12).trim();
+                                if ("-".equals(shipType)) {
+                                    shipType = "";
+                                }
+                                startIdx = 13;
+                                endIdx = 14;
+                            }
+                            Instant runStart = (cols.size() > startIdx && cols.get(startIdx) != null && !cols.get(startIdx).trim().isEmpty())
+                                    ? parseTimestamp(cols.get(startIdx).trim()) : null;
+                            Instant runEnd = (cols.size() > endIdx && cols.get(endIdx) != null && !cols.get(endIdx).trim().isEmpty())
+                                    ? parseTimestamp(cols.get(endIdx).trim()) : null;
+                            out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, shipType, core, duds, runStart, runEnd));
                         } else {
                             Instant ts = parseTimestamp(cols.get(1).trim());
                             String material = cols.get(2).trim();
@@ -272,7 +294,8 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                 }
                 int rowRun = parseInt(cols.get(0).trim(), 0);
                 String rowCommander = cols.get(11).trim();
-                String rowStart = cols.get(12).trim();
+                int si = csvRunStartColumnIndex(cols);
+                String rowStart = cols.size() > si ? cols.get(si).trim() : "";
                 String asteroid = cols.get(1).trim();
                 if (rowRun == run && rowCommander.equals(cmdr) && !rowStart.isEmpty()
                         && "A".equalsIgnoreCase(asteroid)) {
@@ -292,7 +315,8 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
                     }
                     int rowRun = parseInt(cols.get(0).trim(), 0);
                     String rowCommander = cols.get(11).trim();
-                    String rowStart = cols.get(12).trim();
+                    int si = csvRunStartColumnIndex(cols);
+                    String rowStart = cols.size() > si ? cols.get(si).trim() : "";
                     if (rowRun == run && rowCommander.equals(cmdr) && !rowStart.isEmpty()) {
                         updateLineIndex = li;
                         break;
@@ -301,11 +325,14 @@ public final class LocalCsvBackend implements ProspectorLogBackend {
             }
             if (updateLineIndex >= 0) {
                 List<String> cols = parseCsvLine(lines.get(updateLineIndex));
-                while (cols.size() < 14) {
+                if (cols.size() == 14) {
+                    cols.add(12, "");
+                }
+                while (cols.size() < 15) {
                     cols.add("");
                 }
-                cols.set(13, endStr);
-                lines.set(updateLineIndex, buildCsvLine14(cols));
+                cols.set(14, endStr);
+                lines.set(updateLineIndex, buildCsvLine15(cols));
             }
             try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING)) {
                 for (String l : lines) {

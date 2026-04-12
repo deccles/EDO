@@ -49,7 +49,7 @@ import com.google.api.services.sheets.v4.model.ValueRange;
 /**
  * Prospector log backend that writes to and reads from a Google Sheet.
  * <p>
- * Layout is the 15-column model (run through end time). Invariants for <strong>run start on upsert</strong> and
+ * Layout is the 16-column model (Run … Ship, Start time, End time). Invariants for <strong>run start on upsert</strong> and
  * <strong>which row receives run end on dock</strong> are centralized in {@link ProspectorMiningLogPolicy} with
  * unit tests — keep those rules out of ad-hoc conditionals here.
  * </p>
@@ -179,9 +179,38 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             .build();
     }
 
-    /** Sheet range: Run … End time (A–O) for a named worksheet. */
-    static String rangeA1OForSheetTitle(String sheetTitle) {
-        return MiningSheetTitles.rangeA1O(sheetTitle);
+    /** Sheet range: Run … End time (A–P) for a named worksheet. */
+    static String rangeA1PForSheetTitle(String sheetTitle) {
+        return MiningSheetTitles.rangeA1P(sheetTitle);
+    }
+
+    /**
+     * Legacy rows had Commander (12), Start (13), End (14). Insert empty Ship at 13 so Start/End shift to 14/15.
+     */
+    static void normalizeProspectorSheetRowForShipColumn(List<Object> row) {
+        if (row == null) {
+            return;
+        }
+        if (row.size() == 15) {
+            row.add(13, "");
+            return;
+        }
+        if (row.size() == 14) {
+            row.add(13, "");
+            while (row.size() < 16) {
+                row.add("");
+            }
+            return;
+        }
+        ensureRowSize(row, 16);
+    }
+
+    static int sheetRunStartColumnIndex(List<Object> row) {
+        return row != null && row.size() >= 16 ? 14 : 13;
+    }
+
+    static int sheetRunEndColumnIndex(List<Object> row) {
+        return row != null && row.size() >= 16 ? 15 : 14;
     }
 
     private static String truncateMsg(String m) {
@@ -241,15 +270,15 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         BatchUpdateSpreadsheetRequest batch = new BatchUpdateSpreadsheetRequest()
             .setRequests(Collections.singletonList(req));
         sheets.spreadsheets().batchUpdate(spreadsheetId, batch).execute();
-        ValueRange headerOnly = new ValueRange().setValues(Collections.singletonList(headerRow15()));
+        ValueRange headerOnly = new ValueRange().setValues(Collections.singletonList(headerRow16()));
         sheets.spreadsheets().values()
-            .update(spreadsheetId, rangeA1OForSheetTitle(title), headerOnly)
+            .update(spreadsheetId, rangeA1PForSheetTitle(title), headerOnly)
             .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
             .execute();
         ENSURED_SHEET_WITH_HEADER_KEYS.add(cacheKey);
     }
 
-    private static List<Object> headerRow15() {
+    private static List<Object> headerRow16() {
         List<Object> h = new ArrayList<>();
         h.add("Run");
         h.add("Asteroid");
@@ -264,6 +293,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         h.add("System");
         h.add("Body");
         h.add("Commander");
+        h.add("Ship");
         h.add("Start time");
         h.add("End time");
         return h;
@@ -302,6 +332,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         String system = sysBody[0];
         String body = sysBody[1];
         String commander = (r.getCommanderName() != null && !r.getCommanderName().isEmpty()) ? r.getCommanderName() : "-";
+        String ship = (r.getShipType() != null && !r.getShipType().isEmpty()) ? r.getShipType() : "-";
         String material = (r.getMaterial() != null && !r.getMaterial().isEmpty()) ? r.getMaterial() : "-";
         String asteroid = (r.getAsteroidId() != null && !r.getAsteroidId().isEmpty()) ? r.getAsteroidId() : "-";
         String core = (r.getCoreType() != null && !r.getCoreType().isEmpty()) ? r.getCoreType() : "-";
@@ -319,6 +350,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
         row.add(system);
         row.add(body);
         row.add(commander);
+        row.add(ship);
         row.add(r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");
         row.add(r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");
         return row;
@@ -349,7 +381,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             }
             ValueRange bodyRange = new ValueRange().setValues(values);
             sheets.spreadsheets().values()
-                .append(spreadsheetId, rangeA1OForSheetTitle(sheetTitle), bodyRange)
+                .append(spreadsheetId, rangeA1PForSheetTitle(sheetTitle), bodyRange)
                 .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                 .setInsertDataOption("INSERT_ROWS")
                 .execute();
@@ -387,7 +419,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             }
             ensureSheetWithHeader(sheets, sheetTitle);
             ValueRange response = sheets.spreadsheets().values()
-                .get(spreadsheetId, rangeA1OForSheetTitle(sheetTitle))
+                .get(spreadsheetId, rangeA1PForSheetTitle(sheetTitle))
                 .execute();
             List<List<Object>> values = response.getValues();
             if (values == null || values.isEmpty()) {
@@ -412,6 +444,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 String incSystem = sysBody[0].trim();
                 String incBody = sysBody[1].trim();
                 String commander = (r.getCommanderName() != null && !r.getCommanderName().isEmpty()) ? r.getCommanderName() : "-";
+                String shipCell = (r.getShipType() != null && !r.getShipType().isEmpty()) ? r.getShipType() : "-";
                 String material = (r.getMaterial() != null && !r.getMaterial().isEmpty()) ? r.getMaterial() : "-";
                 String asteroid = (r.getAsteroidId() != null && !r.getAsteroidId().isEmpty()) ? r.getAsteroidId() : "-";
                 String core = (r.getCoreType() != null && !r.getCoreType().isEmpty()) ? r.getCoreType() : "-";
@@ -425,7 +458,8 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 if (matchIdx >= 0) {
                     List<Object> row = values.get(matchIdx);
                     // Short rows from legacy edits or API trimming would make set(10..12) throw or misalign columns.
-                    ensureRowSize(row, 15);
+                    normalizeProspectorSheetRowForShipColumn(row);
+                    ensureRowSize(row, 16);
                     String existingSystem = str(row.get(10));
                     String existingBody = str(row.get(11));
 
@@ -451,12 +485,15 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                     row.set(10, outSystem);
                     row.set(11, outBody);
                     row.set(12, commander);
-                    String existingStart = row.size() > 13 ? str(row.get(13)) : "";
+                    row.set(13, shipCell);
+                    int startCol = sheetRunStartColumnIndex(row);
+                    int endCol = sheetRunEndColumnIndex(row);
+                    String existingStart = row.size() > startCol ? str(row.get(startCol)) : "";
                     if (ProspectorMiningLogPolicy.shouldWriteRunStartOnUpsertExistingRow(existingStart, r.getRunStartTime())) {
-                        row.set(13, r.getRunStartTime().atZone(zone).format(fmt));
+                        row.set(startCol, r.getRunStartTime().atZone(zone).format(fmt));
                     }
                     if (r.getRunEndTime() != null) {
-                        row.set(14, r.getRunEndTime().atZone(zone).format(fmt));
+                        row.set(endCol, r.getRunEndTime().atZone(zone).format(fmt));
                     }
                     updated = true;
                 }
@@ -478,6 +515,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                     newRow.add(outSystem);
                     newRow.add(outBody);
                     newRow.add(commander);
+                    newRow.add(shipCell);
                     newRow.add(r.getRunStartTime() != null ? r.getRunStartTime().atZone(zone).format(fmt) : "");
                     newRow.add(r.getRunEndTime() != null ? r.getRunEndTime().atZone(zone).format(fmt) : "");
                     values.add(newRow);
@@ -486,7 +524,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
             ValueRange bodyRange = new ValueRange().setValues(values);
             sheets.spreadsheets().values()
-                .update(spreadsheetId, rangeA1OForSheetTitle(sheetTitle), bodyRange)
+                .update(spreadsheetId, rangeA1PForSheetTitle(sheetTitle), bodyRange)
                 .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                 .execute();
             return ProspectorWriteResult.ok();
@@ -547,7 +585,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             }
             List<String> ranges = new ArrayList<>(cmdrTitles.size());
             for (String title : cmdrTitles) {
-                ranges.add(rangeA1OForSheetTitle(title));
+                ranges.add(rangeA1PForSheetTitle(title));
             }
             BatchGetValuesResponse batchResponse;
             try {
@@ -602,7 +640,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             ValueRange response;
             try {
                 response = sheets.spreadsheets().values()
-                    .get(spreadsheetId, rangeA1OForSheetTitle(sheetTitle))
+                    .get(spreadsheetId, rangeA1PForSheetTitle(sheetTitle))
                     .execute();
             } catch (Exception ex) {
                 String m = ex.getMessage() != null ? ex.getMessage() : "";
@@ -667,12 +705,21 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                         }
                     }
                     String commander = commanderWithWorksheetDefault(str(row.get(12)), worksheetTitle);
-                    String rawStart = (row.size() >= 14 && row.get(13) != null) ? row.get(13).toString() : "";
-                    String rawEnd = (row.size() >= 15 && row.get(14) != null) ? row.get(14).toString() : "";
-                    Instant runStart = (!rawStart.isBlank()) ? parseTimestampCell(row.get(13)) : null;
-                    Instant runEnd = (!rawEnd.isBlank()) ? parseTimestampCell(row.get(14)) : null;
+                    int startCol = sheetRunStartColumnIndex(row);
+                    int endCol = sheetRunEndColumnIndex(row);
+                    String shipType = "";
+                    if (row.size() >= 16) {
+                        shipType = str(row.get(13));
+                        if (isBlankSheetCell(shipType) || "-".equals(shipType.trim())) {
+                            shipType = "";
+                        }
+                    }
+                    String rawStart = (row.size() > startCol && row.get(startCol) != null) ? row.get(startCol).toString() : "";
+                    String rawEnd = (row.size() > endCol && row.get(endCol) != null) ? row.get(endCol).toString() : "";
+                    Instant runStart = (!rawStart.isBlank()) ? parseTimestampCell(row.get(startCol)) : null;
+                    Instant runEnd = (!rawEnd.isBlank()) ? parseTimestampCell(row.get(endCol)) : null;
                     String fullBodyName = buildFullBodyName(system, body);
-                    out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, core, duds, runStart, runEnd));
+                    out.add(new ProspectorLogRow(run, asteroidId, fullBodyName, ts, material, percent, before, after, diff, commander, shipType, core, duds, runStart, runEnd));
                 } else if (row.size() >= 12) {
                     String asteroidId = str(row.get(1));
                     Instant ts = parseTimestampCell(row.get(2));
@@ -805,7 +852,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
     private int[] renumberOneSheet(Sheets sheets, String sheetTitle) throws IOException {
         ValueRange response = sheets.spreadsheets().values()
-            .get(spreadsheetId, rangeA1OForSheetTitle(sheetTitle))
+            .get(spreadsheetId, rangeA1PForSheetTitle(sheetTitle))
             .execute();
         List<List<Object>> values = response.getValues();
         if (values == null || values.size() <= 1) {
@@ -888,7 +935,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
 
         ValueRange body = new ValueRange().setValues(updated);
         sheets.spreadsheets().values()
-            .update(spreadsheetId, rangeA1OForSheetTitle(sheetTitle), body)
+            .update(spreadsheetId, rangeA1PForSheetTitle(sheetTitle), body)
             .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
             .execute();
 
@@ -1020,7 +1067,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 return authFailure();
             }
             ValueRange response = sheets.spreadsheets().values()
-                .get(spreadsheetId, rangeA1OForSheetTitle(sheetTitle))
+                .get(spreadsheetId, rangeA1PForSheetTitle(sheetTitle))
                 .execute();
             List<List<Object>> values = response.getValues();
             if (values == null || values.size() < 2) {
@@ -1033,11 +1080,12 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             int rowIndex = ProspectorMiningLogPolicy.findDataRowIndexForCanonicalRunEnd(values, run, cmdr);
             if (rowIndex >= 0) {
                 List<Object> row = values.get(rowIndex);
-                ensureRowSize(row, 15);
-                row.set(14, endStr);
+                normalizeProspectorSheetRowForShipColumn(row);
+                ensureRowSize(row, 16);
+                row.set(sheetRunEndColumnIndex(row), endStr);
                 ValueRange bodyRange = new ValueRange().setValues(values);
                 sheets.spreadsheets().values()
-                        .update(spreadsheetId, rangeA1OForSheetTitle(sheetTitle), bodyRange)
+                        .update(spreadsheetId, rangeA1PForSheetTitle(sheetTitle), bodyRange)
                         .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                         .execute();
             }
@@ -1153,7 +1201,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 legacyTitle = "Sheet1";
             }
             ValueRange vr = sheets.spreadsheets().values()
-                .get(spreadsheetId, rangeA1OForSheetTitle(legacyTitle))
+                .get(spreadsheetId, rangeA1PForSheetTitle(legacyTitle))
                 .execute();
             List<List<Object>> values = vr.getValues();
             if (legacySheetIsEmptyOrHeaderOnly(values)) {
@@ -1188,7 +1236,9 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 if (cmdr.isBlank()) {
                     cmdr = "-";
                 }
-                byCmdr.computeIfAbsent(cmdr, k -> new ArrayList<>()).add(new ArrayList<>(row));
+                List<Object> migrated = new ArrayList<>(row);
+                normalizeProspectorSheetRowForShipColumn(migrated);
+                byCmdr.computeIfAbsent(cmdr, k -> new ArrayList<>()).add(migrated);
             }
             if (byCmdr.isEmpty()) {
                 OverlayPreferences.setMiningGoogleSheetsLayoutVersion(LAYOUT_VERSION_PER_COMMANDER);
@@ -1196,7 +1246,7 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
             }
             for (Map.Entry<String, List<List<Object>>> e : byCmdr.entrySet()) {
                 List<List<Object>> sheetGrid = new ArrayList<>();
-                sheetGrid.add(headerRow15());
+                sheetGrid.add(headerRow16());
                 sheetGrid.addAll(e.getValue());
                 List<List<Object>> renumbered = renumberSheetValuesInMemory(sheetGrid);
                 String wantTitle = MiningSheetTitles.sheetTitleForCommander(e.getKey());
@@ -1205,19 +1255,19 @@ public final class GoogleSheetsBackend implements ProspectorLogBackend {
                 ensureSheetWithHeader(sheets, unique);
                 ValueRange body = new ValueRange().setValues(renumbered);
                 sheets.spreadsheets().values()
-                    .update(spreadsheetId, rangeA1OForSheetTitle(unique), body)
+                    .update(spreadsheetId, rangeA1PForSheetTitle(unique), body)
                     .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                     .execute();
             }
             List<List<Object>> cleared = new ArrayList<>();
-            cleared.add(headerRow15());
+            cleared.add(headerRow16());
             List<Object> noteRow = new ArrayList<>();
-            for (int c = 0; c < 15; c++) {
+            for (int c = 0; c < 16; c++) {
                 noteRow.add(c == 0 ? ("Migrated to per-commander tabs — " + LocalDate.now()) : "");
             }
             cleared.add(noteRow);
             sheets.spreadsheets().values()
-                .update(spreadsheetId, rangeA1OForSheetTitle(legacyTitle), new ValueRange().setValues(cleared))
+                .update(spreadsheetId, rangeA1PForSheetTitle(legacyTitle), new ValueRange().setValues(cleared))
                 .setValueInputOption(VALUE_INPUT_OPTION_USER_ENTERED)
                 .execute();
             OverlayPreferences.setMiningGoogleSheetsLayoutVersion(LAYOUT_VERSION_PER_COMMANDER);

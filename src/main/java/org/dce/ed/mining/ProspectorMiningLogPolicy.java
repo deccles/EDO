@@ -11,7 +11,7 @@ import java.util.Objects;
  * See {@link MiningRunNumberResolver} for run <em>number</em> selection. This class covers:
  * </p>
  * <ul>
- *   <li><strong>Upsert run start (column N / index 13):</strong> never overwrite a non-blank cell — cargo
+ *   <li><strong>Upsert run start (column O / index 14 when Ship column is present, else 13):</strong> never overwrite a non-blank cell — cargo
  *       updates after a new undock must not replace the original trip start.</li>
  *   <li><strong>Run end placement:</strong> only one sheet row per run should receive end time on dock —
  *       prefer asteroid {@code A} with a meaningful start time, else the first data row with a meaningful start
@@ -77,7 +77,8 @@ public final class ProspectorMiningLogPolicy {
             }
             int rowRun = parseInt(row.get(0), 0);
             String rowCommander = str(row.get(12));
-            String rowStart = row.size() > 13 ? str(row.get(13)) : "";
+            int startCol = row.size() >= 16 ? 14 : 13;
+            String rowStart = row.size() > startCol ? str(row.get(startCol)) : "";
             if (rowRun != run || !Objects.equals(rowCommander, cmdr) || !hasMeaningfulRunStartCell(rowStart)) {
                 continue;
             }

@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import javax.swing.BorderFactory;
@@ -50,6 +51,8 @@ import org.dce.ed.mining.GoogleSheetsAuth;
 import org.dce.ed.mining.GoogleSheetsBackend;
 import org.dce.ed.mining.ProspectorWriteResult;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.tts.PollyTtsCached;
+import org.dce.ed.tts.TtsSprintf;
 import org.dce.ed.tts.VoicePackManager;
 
 /**
@@ -180,6 +183,9 @@ public class PreferencesDialog extends JDialog {
 
 	/** Root tabbed pane (Colors, Exobiology, …); used to jump to a specific tab from helpers. */
 	private JTabbedPane preferenceTabs;
+
+	/** Lazy shared TTS for Speech-tab “sample prospector” preview (avoids constructing Polly clients per click). */
+	private static volatile TtsSprintf speechPreferencesPreviewTts;
 
 	private boolean okPressed;
 	private final Font originalUiFont;
@@ -888,10 +894,7 @@ public class PreferencesDialog extends JDialog {
 		gbcLog.weightx = 1.0;
 		miningGoogleSheetsUrlField = new JTextField(40);
 		miningGoogleSheetsUrlField.setText(OverlayPreferences.getMiningGoogleSheetsUrl());
-		miningGoogleSheetsUrlField.setEnabled(useGoogle);
 		logBackendBox.add(miningGoogleSheetsUrlField, gbcLog);
-		miningLogBackendGoogleRadio.addActionListener(e -> miningGoogleSheetsUrlField.setEnabled(miningLogBackendGoogleRadio.isSelected()));
-		miningLogBackendLocalRadio.addActionListener(e -> miningGoogleSheetsUrlField.setEnabled(miningLogBackendGoogleRadio.isSelected()));
 
 		gbcLog.gridx = 0;
 		gbcLog.gridy++;
@@ -904,7 +907,6 @@ public class PreferencesDialog extends JDialog {
 		gbcLog.weightx = 1.0;
 		miningGoogleClientIdField = new JTextField(36);
 		miningGoogleClientIdField.setText(OverlayPreferences.getMiningGoogleSheetsClientId());
-		miningGoogleClientIdField.setEnabled(useGoogle);
 		logBackendBox.add(miningGoogleClientIdField, gbcLog);
 		gbcLog.gridx = 0;
 		gbcLog.gridy++;
@@ -917,7 +919,6 @@ public class PreferencesDialog extends JDialog {
 		gbcLog.weightx = 1.0;
 		miningGoogleClientSecretField = new JTextField(24);
 		miningGoogleClientSecretField.setText(OverlayPreferences.getMiningGoogleSheetsClientSecret());
-		miningGoogleClientSecretField.setEnabled(useGoogle);
 		logBackendBox.add(miningGoogleClientSecretField, gbcLog);
 		gbcLog.gridx = 0;
 		gbcLog.gridy++;
@@ -958,24 +959,9 @@ public class PreferencesDialog extends JDialog {
 				updateMiningGoogleMigrateLegacyButtonEnabled();
 			}
 		});
-		miningLogBackendGoogleRadio.addActionListener(ev -> {
-			boolean on = miningLogBackendGoogleRadio.isSelected();
-			miningGoogleSheetsUrlField.setEnabled(on);
-			miningGoogleClientIdField.setEnabled(on);
-			miningGoogleClientSecretField.setEnabled(on);
-			miningGoogleConnectButton.setEnabled(on);
-			miningGoogleSetupHelpButton.setEnabled(on);
-			updateMiningGoogleMigrateLegacyButtonEnabled();
-		});
-		miningLogBackendLocalRadio.addActionListener(ev -> {
-			boolean on = miningLogBackendGoogleRadio.isSelected();
-			miningGoogleSheetsUrlField.setEnabled(on);
-			miningGoogleClientIdField.setEnabled(on);
-			miningGoogleClientSecretField.setEnabled(on);
-			miningGoogleConnectButton.setEnabled(on);
-			miningGoogleSetupHelpButton.setEnabled(on);
-			updateMiningGoogleMigrateLegacyButtonEnabled();
-		});
+		applyMiningGoogleSpreadsheetFieldEditability(useGoogle);
+		miningLogBackendGoogleRadio.addActionListener(ev -> applyMiningGoogleSpreadsheetFieldEditability(miningLogBackendGoogleRadio.isSelected()));
+		miningLogBackendLocalRadio.addActionListener(ev -> applyMiningGoogleSpreadsheetFieldEditability(miningLogBackendGoogleRadio.isSelected()));
 
 		outer.add(logBackendBox);
 		outer.add(Box.createVerticalStrut(10));
@@ -1222,6 +1208,20 @@ public class PreferencesDialog extends JDialog {
 		((OverlayUiPreviewHost) getOwner()).applyUiFontPreview(font);
 	}
 
+	private static TtsSprintf speechPreferencesPreviewTts() {
+		TtsSprintf t = speechPreferencesPreviewTts;
+		if (t == null) {
+			synchronized (PreferencesDialog.class) {
+				t = speechPreferencesPreviewTts;
+				if (t == null) {
+					t = new TtsSprintf(new PollyTtsCached());
+					speechPreferencesPreviewTts = t;
+				}
+			}
+		}
+		return t;
+	}
+
 	private void revertLivePreviewIfNeeded() {
 		if (okPressed) {
 			return;
@@ -1388,6 +1388,21 @@ public class PreferencesDialog extends JDialog {
 		speechSampleRateField.setText(Integer.toString(OverlayPreferences.getSpeechSampleRateHz()));
 		content.add(speechSampleRateField, gbc);
 
+		gbc.gridx = 0;
+		gbc.gridy++;
+		JLabel prospectorSampleLabel = new JLabel("Sample (prospector line):");
+		content.add(prospectorSampleLabel, gbc);
+		gbc.gridx = 1;
+		JButton previewProspectorSpeechButton = new JButton("Speak: Tritium at 11%");
+		previewProspectorSpeechButton.setToolTipText(
+				"Same template as a real prospector hit. Voice, cache folder, Polly engine/region, and sample rate come from preferences saved with OK.");
+		previewProspectorSpeechButton.addActionListener(e -> speechPreferencesPreviewTts().speakfWithSpeechGate(
+				speechEnabledCheckBox.isSelected(),
+				"Prospector found {material} at {n} percent.",
+				"Tritium",
+				11));
+		content.add(previewProspectorSpeechButton, gbc);
+
 		// --- AWS / Polly (bottom block) ---
 		gbc.gridx = 0;
 		gbc.gridy++;
@@ -1462,6 +1477,8 @@ public class PreferencesDialog extends JDialog {
 			clearSpeechCacheButton.setEnabled(speechOn);
 			rateLabel.setEnabled(speechOn);
 			speechSampleRateField.setEnabled(speechOn);
+			prospectorSampleLabel.setEnabled(speechOn);
+			previewProspectorSpeechButton.setEnabled(speechOn);
 
 			useAwsLabel.setEnabled(speechOn);
 			speechUseAwsCheckBox.setEnabled(speechOn);
@@ -1520,6 +1537,62 @@ public class PreferencesDialog extends JDialog {
 		return panel;
 	}
 
+	/**
+	 * Google Sheet URL / OAuth fields stay enabled for reliable {@link JTextField#getText()} and visible text.
+	 * When Local CSV is selected they are read-only; choosing Google again restores the URL from prefs if the box is empty.
+	 */
+	private void applyMiningGoogleSpreadsheetFieldEditability(boolean googleSelected) {
+		if (googleSelected) {
+			refillGoogleSheetUrlFromPrefsIfBlank();
+		}
+		if (miningGoogleSheetsUrlField != null) {
+			miningGoogleSheetsUrlField.setEditable(googleSelected);
+			miningGoogleSheetsUrlField.setFocusable(googleSelected);
+			miningGoogleSheetsUrlField.setEnabled(true);
+		}
+		if (miningGoogleClientIdField != null) {
+			miningGoogleClientIdField.setEditable(googleSelected);
+			miningGoogleClientIdField.setFocusable(googleSelected);
+			miningGoogleClientIdField.setEnabled(true);
+		}
+		if (miningGoogleClientSecretField != null) {
+			miningGoogleClientSecretField.setEditable(googleSelected);
+			miningGoogleClientSecretField.setFocusable(googleSelected);
+			miningGoogleClientSecretField.setEnabled(true);
+		}
+		if (miningGoogleConnectButton != null) {
+			miningGoogleConnectButton.setEnabled(googleSelected);
+		}
+		if (miningGoogleSetupHelpButton != null) {
+			miningGoogleSetupHelpButton.setEnabled(true);
+		}
+		updateMiningGoogleMigrateLegacyButtonEnabled();
+	}
+
+	private void refillGoogleSheetUrlFromPrefsIfBlank() {
+		if (miningGoogleSheetsUrlField == null) {
+			return;
+		}
+		String cur = miningGoogleSheetsUrlField.getText();
+		if (cur != null && !cur.trim().isEmpty()) {
+			return;
+		}
+		String fromPrefs = OverlayPreferences.getMiningGoogleSheetsUrl();
+		if (fromPrefs != null && !fromPrefs.isBlank()) {
+			miningGoogleSheetsUrlField.setText(fromPrefs);
+		}
+	}
+
+	private static void persistNonBlankMiningGoogleField(JTextField field, Consumer<String> prefsSet) {
+		if (field == null) {
+			return;
+		}
+		String raw = field.getText();
+		if (raw != null && !raw.trim().isEmpty()) {
+			prefsSet.accept(raw);
+		}
+	}
+
 	private void showGoogleSheetsSetupInstructions() {
 		String msg = "To use Google Sheets for the prospector log:\n\n"
 				+ "1. Open Google Cloud Console: https://console.cloud.google.com/\n"
@@ -1529,7 +1602,7 @@ public class PreferencesDialog extends JDialog {
 				+ "5. Create credentials: APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID.\n"
 				+ "6. Application type: \"Desktop app\". Name it (e.g. \"RockHound\") and click Create.\n"
 				+ "7. Copy the Client ID and Client Secret from the credentials page into the fields above.\n"
-				+ "8. Paste your Google Sheet edit URL (from the browser) into the URL field. The sheet should have a header row: Run, Body, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Email Address (or the app will append it).\n"
+				+ "8. Paste your Google Sheet edit URL (from the browser) into the URL field. The sheet should have a header row: Run, Asteroid, Timestamp, Type, %, Before, After, Actual, Core, Duds, System, Body, Commander, Ship, Start time, End time (or the app will append missing columns).\n"
 				+ "   Mining data is read only from worksheets whose names start with \"CMDR \" (letters CMDR + space) followed by the commander name, e.g. CMDR Villunus. Other tabs in the same file are ignored.\n"
 				+ "9. Click \"Connect to Google\". A browser will open; sign in and allow access. The refresh token is stored so you only need to do this once.\n\n"
 				+ "No cost: creating a project and using the Sheets API within normal quotas is free.";
@@ -1551,7 +1624,17 @@ public class PreferencesDialog extends JDialog {
 		if (ok) {
 			JOptionPane.showMessageDialog(this, "Connected. Your prospector log will sync to the selected Google Sheet.", "Success", JOptionPane.INFORMATION_MESSAGE);
 		} else {
-			JOptionPane.showMessageDialog(this, "Could not complete sign-in. Check Client ID and Secret, and try again.", "Connection failed", JOptionPane.ERROR_MESSAGE);
+			String detail = "Could not complete sign-in. Check Client ID and Secret, and try again.";
+			OverlayFrame frame = OverlayFrame.overlayFrame;
+			if (frame != null) {
+				frame.setMiningSheetsStatusError("Mining preferences: " + detail);
+				JOptionPane.showMessageDialog(this,
+						"Could not complete sign-in. Details are shown in the overlay status bar.",
+						"Connection failed",
+						JOptionPane.WARNING_MESSAGE);
+			} else {
+				JOptionPane.showMessageDialog(this, detail, "Connection failed", JOptionPane.ERROR_MESSAGE);
+			}
 		}
 	}
 
@@ -1812,30 +1895,11 @@ public class PreferencesDialog extends JDialog {
         if (miningLogBackendLocalRadio != null && miningLogBackendGoogleRadio != null) {
             OverlayPreferences.setMiningLogBackend(miningLogBackendGoogleRadio.isSelected() ? "google" : "local");
         }
-        // Persist sheet URL and OAuth client fields only when Google Sheets is selected. Saving while "Local CSV"
-        // is selected used to overwrite stored values with empty text from disabled fields (platform/LAF dependent).
-        boolean googleSheetsSelected = miningLogBackendGoogleRadio != null && miningLogBackendGoogleRadio.isSelected();
-        if (googleSheetsSelected && miningGoogleSheetsUrlField != null) {
-            String rawUrl = miningGoogleSheetsUrlField.getText();
-            String trimmedUrl = rawUrl != null ? rawUrl.trim() : "";
-            if (trimmedUrl.isEmpty()) {
-                String previous = OverlayPreferences.getMiningGoogleSheetsUrl();
-                if (previous != null && !previous.isBlank()) {
-                    // Avoid wiping the stored sheet link when OK is pressed with an empty URL field (mis-click, focus loss).
-                    miningGoogleSheetsUrlField.setText(previous);
-                } else {
-                    OverlayPreferences.setMiningGoogleSheetsUrl(rawUrl);
-                }
-            } else {
-                OverlayPreferences.setMiningGoogleSheetsUrl(rawUrl);
-            }
-        }
-        if (googleSheetsSelected && miningGoogleClientIdField != null) {
-            OverlayPreferences.setMiningGoogleSheetsClientId(miningGoogleClientIdField.getText());
-        }
-        if (googleSheetsSelected && miningGoogleClientSecretField != null) {
-            OverlayPreferences.setMiningGoogleSheetsClientSecret(miningGoogleClientSecretField.getText());
-        }
+        // Merge-save: never persist an empty field over an existing stored URL/credentials (disabled fields on some
+        // LAFs used to yield blank text; Local CSV vs Google must not wipe the saved sheet link).
+        persistNonBlankMiningGoogleField(miningGoogleSheetsUrlField, OverlayPreferences::setMiningGoogleSheetsUrl);
+        persistNonBlankMiningGoogleField(miningGoogleClientIdField, OverlayPreferences::setMiningGoogleSheetsClientId);
+        persistNonBlankMiningGoogleField(miningGoogleClientSecretField, OverlayPreferences::setMiningGoogleSheetsClientSecret);
 
         if (miningLowLimpetReminderEnabledCheckBox != null) {
             OverlayPreferences.setMiningLowLimpetReminderEnabled(miningLowLimpetReminderEnabledCheckBox.isSelected());

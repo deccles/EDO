@@ -48,6 +48,9 @@ import com.google.gson.JsonParser;
  *
  * <p>Bump {@link #SPEECH_PACK_REVISION} whenever you publish new pack zips so clients with
  * “Use AWS” disabled refresh their cache on next startup.
+ *
+ * <p>Packs must be rebuilt whenever {@link PollyTtsCached} changes how cache file names are derived
+ * (e.g. {@code |pcm=v2} in the SHA input): old zips contain {@code *.wav} keys the app no longer looks up.
  */
 public final class VoicePackManager {
 
@@ -63,8 +66,10 @@ public final class VoicePackManager {
     /**
      * Increment when GitHub {@code voice-*.zip} assets change. Users with speech enabled and
      * AWS synthesis off will auto re-download and replace the selected voice’s cache at startup.
+     * After TTS cache-key changes (e.g. {@code |pcm=v2} in {@link PollyTtsCached}), republish all
+     * {@code voice-*.zip} assets and bump this in the same release so clients replace stale clips.
      */
-    public static final int SPEECH_PACK_REVISION = 1;
+    public static final int SPEECH_PACK_REVISION = 2;
 
     private static final String VOICE_PACK_PREFIX = "voice-";
     private static final String VOICE_PACK_SUFFIX = ".zip";

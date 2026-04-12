@@ -98,9 +98,18 @@ public class TtsSprintf {
      * Non-blocking: queues speech (delegates to PollyTtsCached.speak()).
      */
     public void speakf(String template, Object... args) {
+        speakfWithSpeechGate(OverlayPreferences.isSpeechEnabled(), template, args);
+    }
+
+    /**
+     * Like {@link #speakf(String, Object...)} but uses {@code speechEnabled} instead of
+     * {@link OverlayPreferences#isSpeechEnabled()} for the gate. Used by the Speech preferences tab so a
+     * sample can play when the user has turned speech on in the dialog but not yet pressed OK.
+     */
+    public void speakfWithSpeechGate(boolean speechEnabled, String template, Object... args) {
         // Double-gate: most callers already check speech enabled, but tests (and any missed call sites)
         // must never produce console spam or invoke TTS side effects.
-        if (!OverlayPreferences.isSpeechEnabled()) {
+        if (!speechEnabled) {
             return;
         }
         SpeechPlan plan = formatToSpeechPlan(template, args);

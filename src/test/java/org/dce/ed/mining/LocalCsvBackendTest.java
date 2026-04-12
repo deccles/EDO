@@ -78,11 +78,11 @@ class LocalCsvBackendTest {
     @Test
     void updateRunEndTime_writesEndOnlyOnCanonicalRow_preferAsteroidA(@TempDir Path dir) throws Exception {
         Path csv = dir.resolve("prospector.csv");
-        String header = "run,asteroid,timestamp,material,percent,before amount,after amount,actual,core,body,duds,commander,start time,end time\n";
+        String header = "run,asteroid,timestamp,material,percent,before amount,after amount,actual,core,body,duds,commander,ship,start time,end time\n";
         // Two materials on A (both with start) + B without start — only first A row should get end time.
-        String rA1 = "19,A,4/2/2026 15:19:04,Bromellite,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,4/2/2026 15:19:04,\n";
-        String rA2 = "19,A,4/2/2026 15:19:10,Tritium,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,4/2/2026 15:19:04,\n";
-        String rB = "19,B,4/2/2026 15:25:00,Bromellite,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,,\n";
+        String rA1 = "19,A,4/2/2026 15:19:04,Bromellite,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,-,4/2/2026 15:19:04,\n";
+        String rA2 = "19,A,4/2/2026 15:19:10,Tritium,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,-,4/2/2026 15:19:04,\n";
+        String rB = "19,B,4/2/2026 15:25:00,Bromellite,10.00,0.00,1.00,1.00,-,Ring,0,Villunus,-,,\n";
         Files.writeString(csv, header + rA1 + rA2 + rB, StandardCharsets.UTF_8);
 
         LocalCsvBackend backend = new LocalCsvBackend(csv);
@@ -106,9 +106,9 @@ class LocalCsvBackendTest {
         Instant t1 = Instant.parse("2026-02-16T14:30:00Z");
         Instant t2 = Instant.parse("2026-02-16T14:31:00Z");
         backend.appendRows(List.of(
-                new ProspectorLogRow(1, "A", "S > B", t1, "A", 1, 0, 1, 1, "C1", "", 0, null, null)));
+                new ProspectorLogRow(1, "A", "S > B", t1, "A", 1, 0, 1, 1, "C1", "", "", 0, null, null)));
         backend.appendRows(List.of(
-                new ProspectorLogRow(1, "B", "S > B", t2, "B", 1, 0, 1, 1, "C1", "", 0, null, null)));
+                new ProspectorLogRow(1, "B", "S > B", t2, "B", 1, 0, 1, 1, "C1", "", "", 0, null, null)));
         List<ProspectorLogRow> loaded = backend.loadRows();
         assertEquals(2, loaded.size());
         assertEquals("A", loaded.get(0).getMaterial());
@@ -146,6 +146,7 @@ class LocalCsvBackendTest {
                 1.0,
                 1.0,
                 "Cmdr",
+                "",
                 "Painite",
                 3,
                 ts,

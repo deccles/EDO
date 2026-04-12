@@ -3,8 +3,9 @@ package org.dce.ed.mining;
 import java.time.Instant;
 
 /**
- * One row of prospector log data (run, asteroid, body, timestamp, material, amounts, core, commander, duds).
- * Column order: Run, Asteroid, Timestamp, Type, Percentage, Before Amount, After Amount, Actual, Core, Body, Duds, Commander, Start time, End time.
+ * One row of prospector log data (run, asteroid, body, timestamp, material, amounts, core, commander, ship, duds).
+ * Sheet/CSV column order: Run, Asteroid, Timestamp, Type, Percentage, Before, After, Actual, Core, Duds, System, Body,
+ * Commander, Ship, Start time, End time.
  */
 public final class ProspectorLogRow {
 
@@ -18,6 +19,8 @@ public final class ProspectorLogRow {
     private final double afterAmount;
     private final double difference;
     private final String commanderName;
+    /** Journal {@code Ship} (e.g. {@code python}); empty if unknown. */
+    private final String shipType;
     private final String coreType;
     private final int duds;
     private final Instant runStartTime;
@@ -27,18 +30,18 @@ public final class ProspectorLogRow {
     public ProspectorLogRow(int run, String fullBodyName, Instant timestamp, String material,
                            double percent, double beforeAmount, double afterAmount, double difference,
                            String commanderName) {
-        this(run, "", fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, "", 0, null, null);
+        this(run, "", fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, "", "", 0, null, null);
     }
 
     public ProspectorLogRow(int run, String asteroidId, String fullBodyName, Instant timestamp, String material,
                            double percent, double beforeAmount, double afterAmount, double difference,
                            String commanderName, String coreType, int duds) {
-        this(run, asteroidId, fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, coreType, duds, null, null);
+        this(run, asteroidId, fullBodyName, timestamp, material, percent, beforeAmount, afterAmount, difference, commanderName, "", coreType, duds, null, null);
     }
 
     public ProspectorLogRow(int run, String asteroidId, String fullBodyName, Instant timestamp, String material,
                            double percent, double beforeAmount, double afterAmount, double difference,
-                           String commanderName, String coreType, int duds, Instant runStartTime, Instant runEndTime) {
+                           String commanderName, String shipType, String coreType, int duds, Instant runStartTime, Instant runEndTime) {
         this.run = run;
         this.asteroidId = asteroidId != null ? asteroidId : "";
         this.fullBodyName = fullBodyName != null ? fullBodyName : "";
@@ -49,6 +52,7 @@ public final class ProspectorLogRow {
         this.afterAmount = afterAmount;
         this.difference = difference;
         this.commanderName = commanderName != null ? commanderName : "";
+        this.shipType = shipType != null ? shipType : "";
         this.coreType = coreType != null ? coreType : "";
         this.duds = duds;
         this.runStartTime = runStartTime;
@@ -94,6 +98,11 @@ public final class ProspectorLogRow {
 
     public String getCommanderName() {
         return commanderName;
+    }
+
+    /** Ship model from the journal ({@code LoadGame}/{@code Loadout} {@code Ship} field), or empty. */
+    public String getShipType() {
+        return shipType;
     }
 
     /** Core (motherlode) material type if this was a core asteroid, otherwise empty. */

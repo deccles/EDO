@@ -54,6 +54,7 @@ import org.dce.ed.logreader.EliteLogEvent;
 import org.dce.ed.logreader.EliteLogFileLocator;
 import org.dce.ed.logreader.event.FsdJumpEvent;
 import org.dce.ed.logreader.event.FssDiscoveryScanEvent;
+import org.dce.ed.logreader.event.LoadGameEvent;
 import org.dce.ed.logreader.event.LoadoutEvent;
 import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.ProspectedAsteroidEvent;
@@ -232,6 +233,10 @@ public class EliteOverlayTabbedPane extends JPanel {
 				new TtsSprintf(new PollyTtsCached()),
 				ProspectorLogBackendFactory::create,
 				systemTab::getState);
+		LoadoutEvent initialLoadout = getLatestLoadout();
+		if (initialLoadout != null && initialLoadout.getShip() != null && !initialLoadout.getShip().isBlank()) {
+			miningTab.updateCurrentShipType(initialLoadout.getShip());
+		}
 		// Treat docking as the end of a mining "trip": when we transition to docked,
 		// flush any pending mining gains and advance the run counter if needed.
 		addDockedStateListener(docked -> {
@@ -397,6 +402,13 @@ public class EliteOverlayTabbedPane extends JPanel {
 	 */
 	public void processJournalEvent(EliteLogEvent event) {
 		this.handleLogEvent(event);
+
+		if (event instanceof LoadGameEvent lg) {
+			miningTab.updateCurrentShipType(lg.getShip());
+		}
+		if (event instanceof LoadoutEvent lo) {
+			miningTab.updateCurrentShipType(lo.getShip());
+		}
 
 		if (event instanceof ProspectedAsteroidEvent) {
 			handleProspectedAsteroid((ProspectedAsteroidEvent) event);

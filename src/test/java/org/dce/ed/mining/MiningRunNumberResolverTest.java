@@ -37,6 +37,7 @@ class MiningRunNumberResolverTest {
                 1.0,
                 CMDR,
                 "",
+                "",
                 0,
                 runStart,
                 runEnd);
@@ -69,7 +70,7 @@ class MiningRunNumberResolverTest {
         Instant end = Instant.parse("2026-04-02T15:40:27Z");
         List<ProspectorLogRow> rows = new ArrayList<>();
         rows.add(mat(19, "A", t1, start, end));
-        rows.add(new ProspectorLogRow(19, "A", LOC, t2, "Tritium", 10, 0, 1, 1, CMDR, "", 0, start, null));
+        rows.add(new ProspectorLogRow(19, "A", LOC, t2, "Tritium", 10, 0, 1, 1, CMDR, "", "", 0, start, null));
         rows.add(mat(19, "B", t3, null, null));
         assertEquals(20, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
     }
@@ -87,7 +88,7 @@ class MiningRunNumberResolverTest {
     void otherCommandersData_doesNotCloseOrContinueOurRun() {
         Instant t = Instant.parse("2026-04-02T15:00:00Z");
         List<ProspectorLogRow> rows = List.of(
-                new ProspectorLogRow(18, "E", LOC, t, "X", 10, 0, 1, 1, "UkeBard", "", 0, t, null));
+                new ProspectorLogRow(18, "E", LOC, t, "X", 10, 0, 1, 1, "UkeBard", "", "", 0, t, null));
         // Per-commander numbering: no rows for Villunus → next run is 1 (UkeBard's 18 does not apply).
         assertEquals(1, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
     }
@@ -99,7 +100,7 @@ class MiningRunNumberResolverTest {
         Instant end = Instant.parse("2026-04-02T15:30:00Z");
         List<ProspectorLogRow> rows = List.of(
                 mat(50, "A", t, start, end),
-                new ProspectorLogRow(3, "A", LOC, t, "X", 10, 0, 1, 1, "UkeBard", "", 0, start, end));
+                new ProspectorLogRow(3, "A", LOC, t, "X", 10, 0, 1, 1, "UkeBard", "", "", 0, start, end));
         assertEquals(51, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
         assertEquals(4, MiningRunNumberResolver.compute("UkeBard", SYS, BODY, false, rows));
     }
@@ -147,7 +148,7 @@ class MiningRunNumberResolverTest {
     void blankCommander_matchesRowsStoredAsDash() {
         Instant t = Instant.parse("2026-04-02T15:00:00Z");
         List<ProspectorLogRow> rows = List.of(
-                new ProspectorLogRow(2, "A", LOC, t, "X", 10, 0, 1, 1, "-", "", 0, t, null));
+                new ProspectorLogRow(2, "A", LOC, t, "X", 10, 0, 1, 1, "-", "", "", 0, t, null));
         assertEquals(2, MiningRunNumberResolver.compute("", SYS, BODY, false, rows));
         assertEquals(2, MiningRunNumberResolver.compute("   ", SYS, BODY, false, rows));
     }
@@ -159,7 +160,7 @@ class MiningRunNumberResolverTest {
         Instant end = Instant.parse("2026-04-02T14:30:00Z");
         String otherLoc = "OtherSys > OtherBody";
         List<ProspectorLogRow> rows = List.of(
-                new ProspectorLogRow(3, "A", otherLoc, t, "X", 10, 0, 1, 1, CMDR, "", 0, start, end));
+                new ProspectorLogRow(3, "A", otherLoc, t, "X", 10, 0, 1, 1, CMDR, "", "", 0, start, end));
         assertEquals(4, MiningRunNumberResolver.compute(CMDR, SYS, BODY, false, rows));
     }
 

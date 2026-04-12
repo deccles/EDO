@@ -35,6 +35,7 @@ class MiningScatterAsteroidModelTest {
 			tons,
 			commander,
 			"",
+			"",
 			0,
 			null,
 			null);
