@@ -14,12 +14,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.dce.ed.OverlayPreferences;
 import org.dce.ed.exobiology.ExobiologyData.SpeciesConstraint;
 import org.dce.ed.exobiology.ExobiologyDataConstraints;
+import org.dce.ed.market.GalacticAveragePrices;
 
 import software.amazon.awssdk.services.polly.model.VoiceId;
 
@@ -30,20 +35,85 @@ import software.amazon.awssdk.services.polly.model.VoiceId;
  * Intended usage:
  *   VoiceCacheWarmer.warmAll("Joanna");
  *
+ * <p>Warms every commodity display name from {@link org.dce.ed.market.GalacticAveragePrices} (bundled INARA CSV),
+ * all exobiology genus/species pairs, and prospector list phrases for adjacent CSV-ordered pairs/triples so offline
+ * voice packs cover Tritium, multi-word materials, and common multi-material prospector lines.
+ *
  * Or from the command line (voice is matched case-insensitively to a Polly {@link VoiceId}):
  *   java ... org.dce.ed.tts.VoiceCacheWarmer salli
  *   java ... org.dce.ed.tts.VoiceCacheWarmer salli -create
  *   java ... org.dce.ed.tts.VoiceCacheWarmer all -create
  * Use {@code all} to warm every voice in {@link PollyTtsCached#STANDARD_US_ENGLISH_VOICES}. With
  * {@code -create} (or {@code --create}), also writes {@code target/voice-&lt;voice&gt;.zip} per voice.
+ *
+ * <p><b>Parallelism:</b> warming runs several worker threads (default {@code min(8, availableProcessors)},
+ * at least 2). Override with JVM flag {@code -Dedo.voiceWarmParallelism=N}. Polly rate limits may require lowering N.
  */
 public final class VoiceCacheWarmer {
 
     private static final Pattern SPEAKF_LITERAL = Pattern.compile("\\.speakf(?:Blocking)?\\s*\\(\\s*\"((?:\\\\.|[^\"\\\\])*)\"", Pattern.MULTILINE);
+    /** Preferences preview uses {@code speakfWithSpeechGate(boolean, "template", args...)} — capture the template string. */
+    private static final Pattern SPEAKF_WITH_GATE_LITERAL = Pattern.compile(
+            "\\.speakfWithSpeechGate\\s*\\(\\s*(?:[^,]+),\\s*\"((?:\\\\.|[^\"\\\\])*)\"",
+            Pattern.MULTILINE);
     private static final Pattern SPEAK_LITERAL = Pattern.compile("\\.speak(?:Blocking)?\\s*\\(\\s*\"((?:\\\\.|[^\"\\\\])*)\"", Pattern.MULTILINE);
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([a-zA-Z0-9_]+)\\}");
 
+    @FunctionalInterface
+    private interface ItemWarm<T> {
+        void accept(T item) throws Exception;
+    }
+
     private VoiceCacheWarmer() {
+    }
+
+    static int warmParallelism() {
+        Integer prop = Integer.getInteger(VOICE_WARM_PARALLELISM_PROPERTY);
+        if (prop != null && prop > 0) {
+            return Math.min(32, prop);
+        }
+        int cores = Runtime.getRuntime().availableProcessors();
+        return Math.max(2, Math.min(8, cores));
+    }
+
+    static final String VOICE_WARM_PARALLELISM_PROPERTY = "edo.voiceWarmParallelism";
+
+    private static <T> void runChunkedParallel(String phase, List<T> items, ItemWarm<T> work) throws Exception {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        int threads = warmParallelism();
+        if (threads <= 1) {
+            for (T t : items) {
+                work.accept(t);
+            }
+            return;
+        }
+        int nThreads = Math.min(threads, items.size());
+        int chunkSize = (items.size() + nThreads - 1) / nThreads;
+        ExecutorService ex = Executors.newFixedThreadPool(nThreads, r -> {
+            Thread t = new Thread(r, "VoiceCacheWarmer-" + phase);
+            t.setDaemon(true);
+            return t;
+        });
+        try {
+            List<Future<Void>> futures = new ArrayList<>();
+            for (int start = 0; start < items.size(); start += chunkSize) {
+                int end = Math.min(items.size(), start + chunkSize);
+                List<T> slice = items.subList(start, end);
+                futures.add(ex.submit(() -> {
+                    for (T item : slice) {
+                        work.accept(item);
+                    }
+                    return null;
+                }));
+            }
+            for (Future<Void> f : futures) {
+                f.get();
+            }
+        } finally {
+            ex.shutdown();
+        }
     }
 
     public static void warmAll(String voiceName) throws Exception {
@@ -87,17 +157,34 @@ public final class VoiceCacheWarmer {
             addWords(speciesWords, sc.getSpecies());
         }
 
+        GalacticAveragePrices commodityPrices = GalacticAveragePrices.loadDefault();
+        List<String> commodityDisplayNames = commodityPrices.getAllDisplayNamesSorted();
+        Set<String> commodityWords = new LinkedHashSet<>();
+        for (String dn : commodityDisplayNames) {
+            addWords(commodityWords, dn);
+        }
+
         Set<String> tokens = new LinkedHashSet<>();
         tokens.addAll(allLetters());
         tokens.addAll(allNumbers());
         tokens.addAll(units);
         tokens.addAll(speciesWords);
+        tokens.addAll(commodityWords);
 
         List<String> sampleBodies = buildSampleBodyNames();
         List<String> sampleSpecies = buildSampleSpeciesNames(constraints);
+        String sampleListTwo = buildSampleProspectorListTwo(commodityDisplayNames);
+        String sampleListOxford = buildSampleProspectorListOxford(commodityDisplayNames);
+        String sampleMaterialA = commodityDisplayNames.isEmpty() ? "Tritium" : commodityDisplayNames.get(0);
+        String sampleMaterialB = commodityDisplayNames.size() > 1 ? commodityDisplayNames.get(1) : sampleMaterialA;
 
         int tokenCount = tokens.size();
-        System.out.println("Warming cache: tokens=" + tokenCount + ", templates=" + templates.size());
+        System.out.println("Warming cache: tokens=" + tokenCount + ", templates=" + templates.size()
+                + ", parallelism=" + warmParallelism() + " (override -D" + VOICE_WARM_PARALLELISM_PROPERTY + "=N)");
+
+        List<String> nVals = List.of("0", "1", "2", "3", "10", "50", "100");
+        List<Long> creditVals = List.of(0L, 1_000L, 50_000L, 1_500_000L, 12_300_000L, 2_000_000_000L);
+        List<Long> meterVals = List.of(0L, 1L, 5L, 10L, 50L, 100L, 500L, 1_000L, 50_000L);
 
         try (PollyTtsCached tts = new PollyTtsCached()) {
             TtsSprintf sprintf = new TtsSprintf(tts, Locale.US);
@@ -108,51 +195,184 @@ public final class VoiceCacheWarmer {
             // Warm body tokens and mixed alphanumeric patterns.
             warmBodies(sprintf, sampleBodies);
 
+            // Full prospector line per commodity display name so multi-word materials match real SSML mark boundaries.
+            warmProspectorSingleMaterialTemplates(sprintf, commodityDisplayNames);
+
             // Warm full templates found in the code with representative placeholder values.
-            warmTemplates(sprintf, templates, sampleBodies, sampleSpecies);
+            warmTemplates(sprintf, templates, sampleBodies, sampleSpecies,
+                    sampleMaterialA, sampleMaterialB, sampleListTwo, sampleListOxford);
+
+            // Every exobiology genus/species phrase with each template that references {species} (e.g. clonal colony lines).
+            warmSpeciesAcrossAllTemplates(sprintf, templates, sampleBodies, sampleSpecies,
+                    nVals, creditVals, meterVals, sampleMaterialA, sampleListTwo);
+
+            warmProspectorListTemplatesAdjacent(sprintf, commodityDisplayNames);
         }
     }
 
-    private static void warmTokens(TtsSprintf sprintf, Set<String> tokens) throws Exception {
-        int i = 0;
-        for (String tok : tokens) {
-            if (tok == null || tok.isBlank()) {
+    private static void warmSpeciesAcrossAllTemplates(TtsSprintf sprintf,
+            List<String> templates,
+            List<String> sampleBodies,
+            List<String> allSpecies,
+            List<String> nVals,
+            List<Long> creditVals,
+            List<Long> meterVals,
+            String sampleMaterialA,
+            String sampleListTwo) throws Exception {
+        if (templates == null || allSpecies == null || allSpecies.isEmpty()) {
+            return;
+        }
+        List<String> speciesTemplates = new ArrayList<>();
+        for (String tmpl : templates) {
+            if (tmpl == null || tmpl.isBlank() || !tmpl.contains("{species}")) {
                 continue;
             }
-
-            // MID variant: token not last chunk.
-            sprintf.ensureCachedChunksBlocking(List.of("test", tok, "continue"));
-            // END variant: token is last chunk.
-            sprintf.ensureCachedChunksBlocking(List.of("test", tok));
-
-            i++;
-            if (i % 250 == 0) {
-                System.out.println("  warmed tokens: " + i);
+            List<String> tags = extractPlaceholderTagsInOrder(tmpl);
+            if (!tags.isEmpty()) {
+                speciesTemplates.add(tmpl);
             }
         }
+        if (speciesTemplates.isEmpty()) {
+            return;
+        }
+        String defaultBody = sampleBodies.isEmpty() ? "A 1" : sampleBodies.get(0);
+        List<String> speciesList = new ArrayList<>();
+        for (String species : allSpecies) {
+            if (species != null && !species.isBlank()) {
+                speciesList.add(species);
+            }
+        }
+        AtomicInteger sp = new AtomicInteger();
+        int total = speciesList.size() * speciesTemplates.size() * 2;
+        runChunkedParallel("species", speciesList, species -> {
+            for (String tmpl : speciesTemplates) {
+                List<String> tags = extractPlaceholderTagsInOrder(tmpl);
+                Object[] args1 = buildArgsForTags(tags, defaultBody, species, nVals.get(3), creditVals.get(3), meterVals.get(3),
+                        sampleMaterialA, sampleListTwo);
+                sprintf.ensureCachedfBlocking(tmpl, args1);
+                Object[] args2 = buildArgsForTags(tags, defaultBody, species, nVals.get(6), creditVals.get(5), meterVals.get(8),
+                        sampleMaterialA, sampleListTwo);
+                sprintf.ensureCachedfBlocking(tmpl, args2);
+                int n = sp.addAndGet(2);
+                if (n % 500 == 0) {
+                    System.out.println("  warmed species-template combos: " + n + "/" + total);
+                }
+            }
+        });
+    }
+
+    private static void warmProspectorSingleMaterialTemplates(TtsSprintf sprintf, List<String> commodityDisplayNames) throws Exception {
+        if (commodityDisplayNames == null || commodityDisplayNames.isEmpty()) {
+            return;
+        }
+        List<String> names = new ArrayList<>();
+        for (String name : commodityDisplayNames) {
+            if (name != null && !name.isBlank()) {
+                names.add(name);
+            }
+        }
+        AtomicInteger warmed = new AtomicInteger();
+        int total = names.size();
+        runChunkedParallel("prospector-material", names, name -> {
+            sprintf.ensureCachedfBlocking("Prospector found {material} at {n} percent.", name, 50);
+            int n = warmed.incrementAndGet();
+            if (n % 200 == 0) {
+                System.out.println("  warmed prospector single-material templates: " + n + "/" + total);
+            }
+        });
+    }
+
+    private static String buildSampleProspectorListTwo(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return "Platinum and Painite";
+        }
+        if (names.size() == 1) {
+            String one = names.get(0);
+            return one + " and " + one;
+        }
+        return names.get(0) + " and " + names.get(1);
+    }
+
+    private static String buildSampleProspectorListOxford(List<String> names) {
+        if (names == null || names.size() < 3) {
+            return buildSampleProspectorListTwo(names);
+        }
+        return names.get(0) + ", " + names.get(1) + ", and " + names.get(2);
+    }
+
+    /**
+     * Warm {@code Prospector found {list} ...} for consecutive commodity pairs and triples so multi-material
+     * prospector lines match cached SSML chunks for many name combinations.
+     */
+    private static void warmProspectorListTemplatesAdjacent(TtsSprintf sprintf, List<String> names) throws Exception {
+        if (names == null || names.size() < 2) {
+            return;
+        }
+        List<Integer> pairStarts = new ArrayList<>();
+        for (int i = 0; i < names.size() - 1; i++) {
+            pairStarts.add(i);
+        }
+        List<Integer> tripleStarts = new ArrayList<>();
+        for (int i = 0; i < names.size() - 2; i++) {
+            tripleStarts.add(i);
+        }
+        AtomicInteger warmed = new AtomicInteger();
+        runChunkedParallel("prospector-list-pairs", pairStarts, i -> {
+            String list = names.get(i) + " and " + names.get(i + 1);
+            sprintf.ensureCachedfBlocking("Prospector found {list} from {min} to {max} percent.", list, 10, 90);
+            warmed.incrementAndGet();
+        });
+        runChunkedParallel("prospector-list-triples", tripleStarts, i -> {
+            String list = names.get(i) + ", " + names.get(i + 1) + ", and " + names.get(i + 2);
+            sprintf.ensureCachedfBlocking("Prospector found {list} from {min} to {max} percent.", list, 5, 95);
+            warmed.incrementAndGet();
+        });
+        System.out.println("  warmed prospector list templates (adjacent pairs/triples): " + warmed.get());
+    }
+
+    private static void warmTokens(TtsSprintf sprintf, Set<String> tokens) throws Exception {
+        List<String> list = new ArrayList<>();
+        for (String tok : tokens) {
+            if (tok != null && !tok.isBlank()) {
+                list.add(tok);
+            }
+        }
+        AtomicInteger i = new AtomicInteger();
+        int total = list.size();
+        runChunkedParallel("tokens", list, tok -> {
+            sprintf.ensureCachedChunksBlocking(List.of("test", tok, "continue"));
+            sprintf.ensureCachedChunksBlocking(List.of("test", tok));
+            int n = i.incrementAndGet();
+            if (n % 250 == 0) {
+                System.out.println("  warmed tokens: " + n + "/" + total);
+            }
+        });
     }
 
     private static void warmBodies(TtsSprintf sprintf, List<String> bodies) throws Exception {
         if (bodies == null || bodies.isEmpty()) {
             return;
         }
-        int i = 0;
-        for (String b : bodies) {
-            // Speak body both as a body tag and as plain text to exercise both paths.
+        AtomicInteger i = new AtomicInteger();
+        int total = bodies.size();
+        runChunkedParallel("bodies", bodies, b -> {
             sprintf.ensureCachedfBlocking("planetary body {body}", b);
             sprintf.ensureCachedfBlocking("planetary body {body}.", b);
-
-            i++;
-            if (i % 50 == 0) {
-                System.out.println("  warmed bodies: " + i);
+            int n = i.incrementAndGet();
+            if (n % 50 == 0) {
+                System.out.println("  warmed bodies: " + n + "/" + total);
             }
-        }
+        });
     }
 
     private static void warmTemplates(TtsSprintf sprintf,
                                      List<String> templates,
                                      List<String> sampleBodies,
-                                     List<String> sampleSpecies) throws Exception {
+                                     List<String> sampleSpecies,
+                                     String sampleMaterialA,
+                                     String sampleMaterialB,
+                                     String sampleListTwo,
+                                     String sampleListOxford) throws Exception {
         if (templates == null || templates.isEmpty()) {
             return;
         }
@@ -165,33 +385,32 @@ public final class VoiceCacheWarmer {
         String defaultBody = sampleBodies.isEmpty() ? "A 1" : sampleBodies.get(0);
         String defaultSpecies = sampleSpecies.isEmpty() ? "Bacterium Acies" : sampleSpecies.get(0);
 
-        int warmed = 0;
+        List<String> tmplList = new ArrayList<>();
         for (String tmpl : templates) {
-            if (tmpl == null || tmpl.isBlank()) {
-                continue;
-            }
-
-            List<String> tags = extractPlaceholderTagsInOrder(tmpl);
-            if (tags.isEmpty()) {
-                // No placeholders, just warm it as both MID-ish and END.
-                sprintf.ensureCachedChunksBlocking(List.of(tmpl, "continue"));
-                sprintf.ensureCachedChunksBlocking(List.of(tmpl));
-                warmed++;
-                continue;
-            }
-
-            // Build one or two representative argument sets.
-            Object[] args1 = buildArgsForTags(tags, defaultBody, defaultSpecies, nVals.get(3), creditVals.get(3), meterVals.get(3));
-            sprintf.ensureCachedfBlocking(tmpl, args1);
-
-            Object[] args2 = buildArgsForTags(tags, defaultBody, defaultSpecies, nVals.get(6), creditVals.get(5), meterVals.get(8));
-            sprintf.ensureCachedfBlocking(tmpl, args2);
-
-            warmed++;
-            if (warmed % 100 == 0) {
-                System.out.println("  warmed templates: " + warmed);
+            if (tmpl != null && !tmpl.isBlank()) {
+                tmplList.add(tmpl);
             }
         }
+        AtomicInteger warmed = new AtomicInteger();
+        int total = tmplList.size();
+        runChunkedParallel("templates", tmplList, tmpl -> {
+            List<String> tags = extractPlaceholderTagsInOrder(tmpl);
+            if (tags.isEmpty()) {
+                sprintf.ensureCachedChunksBlocking(List.of(tmpl, "continue"));
+                sprintf.ensureCachedChunksBlocking(List.of(tmpl));
+            } else {
+                Object[] args1 = buildArgsForTags(tags, defaultBody, defaultSpecies, nVals.get(3), creditVals.get(3), meterVals.get(3),
+                        sampleMaterialA, sampleListTwo);
+                sprintf.ensureCachedfBlocking(tmpl, args1);
+                Object[] args2 = buildArgsForTags(tags, defaultBody, defaultSpecies, nVals.get(6), creditVals.get(5), meterVals.get(8),
+                        sampleMaterialB, sampleListOxford);
+                sprintf.ensureCachedfBlocking(tmpl, args2);
+            }
+            int n = warmed.incrementAndGet();
+            if (n % 100 == 0) {
+                System.out.println("  warmed templates: " + n + "/" + total);
+            }
+        });
     }
 
     private static Object[] buildArgsForTags(List<String> tags,
@@ -199,7 +418,9 @@ public final class VoiceCacheWarmer {
                                             String species,
                                             String n,
                                             long credits,
-                                            long meters) {
+                                            long meters,
+                                            String sampleMaterial,
+                                            String sampleList) {
         Object[] args = new Object[tags.size()];
         for (int i = 0; i < tags.size(); i++) {
             String t = tags.get(i);
@@ -218,6 +439,10 @@ public final class VoiceCacheWarmer {
                 args[i] = credits;
             } else if (t.equals("meters")) {
                 args[i] = meters;
+            } else if (t.equals("material")) {
+                args[i] = sampleMaterial != null && !sampleMaterial.isBlank() ? sampleMaterial : "Tritium";
+            } else if (t.equals("list")) {
+                args[i] = sampleList != null && !sampleList.isBlank() ? sampleList : "Platinum and Painite";
             } else {
                 args[i] = "test";
             }
@@ -271,13 +496,8 @@ public final class VoiceCacheWarmer {
 
         // Preserve insertion order (generated file order is stable).
         List<String> out = new ArrayList<>();
-        int added = 0;
         for (SpeciesConstraint sc : constraints.values()) {
             out.add(sc.getGenus() + " " + sc.getSpecies());
-            added++;
-            if (added >= 25) {
-                break;
-            }
         }
         return out;
     }
@@ -376,6 +596,7 @@ public final class VoiceCacheWarmer {
                             try {
                                 String txt = Files.readString(p, StandardCharsets.UTF_8);
                                 extractStringLiterals(out, txt, SPEAKF_LITERAL);
+                                extractStringLiterals(out, txt, SPEAKF_WITH_GATE_LITERAL);
                                 extractStringLiterals(out, txt, SPEAK_LITERAL);
                             } catch (Exception e) {
                                 // ignore unreadable source file

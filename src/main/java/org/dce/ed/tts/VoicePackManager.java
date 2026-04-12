@@ -69,7 +69,7 @@ public final class VoicePackManager {
      * After TTS cache-key changes (e.g. {@code |pcm=v2} in {@link PollyTtsCached}), republish all
      * {@code voice-*.zip} assets and bump this in the same release so clients replace stale clips.
      */
-    public static final int SPEECH_PACK_REVISION = 2;
+    public static final int SPEECH_PACK_REVISION = 3;
 
     private static final String VOICE_PACK_PREFIX = "voice-";
     private static final String VOICE_PACK_SUFFIX = ".zip";

@@ -14,6 +14,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -119,12 +120,23 @@ public class PollyTtsCached implements Closeable {
 
     private final PollyClient polly;
     private final Object manifestLock = new Object();
+    /** Striped locks so parallel {@link VoiceCacheWarmer} threads cannot corrupt the same output {@code .wav}. */
+    private final Object[] cachePathStripes;
 
     public PollyTtsCached() {
         var b = PollyClient.builder()
                 .region(software.amazon.awssdk.regions.Region.of(OverlayPreferences.getSpeechAwsRegion()));
         b.credentialsProvider(resolveSpeechCredentialsProvider());
         this.polly = b.build();
+        this.cachePathStripes = new Object[64];
+        for (int i = 0; i < cachePathStripes.length; i++) {
+            cachePathStripes[i] = new Object();
+        }
+    }
+
+    private Object stripeFor(Path wav) {
+        int h = wav.hashCode() ^ (wav.hashCode() >>> 16);
+        return cachePathStripes[Math.floorMod(h, cachePathStripes.length)];
     }
 
     private static AwsCredentialsProvider resolveSpeechCredentialsProvider() {
@@ -317,7 +329,6 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
                 String nextMark = markNames.get(idx + 1);
                 Integer endMsObj = markTimesMs.get(nextMark);
                 if (endMsObj == null) {
-                    // If the next mark is missing for some reason, fall back to end of audio.
                     endMs = totalMs;
                 } else {
                     endMs = endMsObj;
@@ -335,21 +346,20 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
 
             int startByte = Math.max(0, Math.min(fullPcm.length, startSample * 2));
             int endByte = Math.max(startByte, Math.min(fullPcm.length, endSample * 2));
-            // Last chunk: ms↔sample rounding can shave a few ms; always run to end of Polly PCM.
             if (idx + 1 >= markNames.size()) {
                 endByte = fullPcm.length;
             }
 
             byte[] slice = java.util.Arrays.copyOfRange(fullPcm, startByte, endByte);
-
             Path wavOut = paths.get(idx);
-            // Do not trim silence on mark slices: quiet phoneme endings sit below TRIM_ABS_THRESHOLD and were
-            // being cut off; slices are already bounded by SSML mark times.
-            writePcmBytesAsWav(slice, wavOut, s.sampleRate, false);
 
-            // Manifest uses what was spoken, not the cache key.
-            writeManifestLine(voiceDir, voiceDir.relativize(wavOut).toString(), chunkTexts.get(idx));
-
+            synchronized (stripeFor(wavOut)) {
+                if (Files.exists(wavOut)) {
+                    continue;
+                }
+                writePcmBytesAsWav(slice, wavOut, s.sampleRate, false);
+                writeManifestLine(voiceDir, voiceDir.relativize(wavOut).toString(), chunkTexts.get(idx));
+            }
         }
 
         return paths;
@@ -439,70 +449,68 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
         Path voiceDir = getVoiceCacheDir(voiceName, engine, sampleRate);
         Files.createDirectories(voiceDir);
 
-        // Preferred location (new structure)
         Path wav = getCachedWavPath(voiceDir, s, text);
-        if (Files.exists(wav)) {
-            return wav;
-        }
 
-        // Make sure the subdir exists (end/ or mid/)
-        Files.createDirectories(wav.getParent());
-if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
-    List<String> missing = new ArrayList<>();
-    String label = isEndOfSentenceKey(text) ? "END" : "MID";
-    missing.add(label + ": " + text);
-    showMissingSpeechCachePopup(voiceName, voiceDir, missing);
-    return null;
-}
-
-
-        // Generate PCM with Polly (TEXT) and cache it.
-        VoiceId voiceId = resolveVoiceId(voiceName);
-        if (voiceId == null) {
-            throw new IllegalArgumentException("Unknown Polly voice: " + voiceName);
-        }
-
-        SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
-                .engine(engine)
-                .voiceId(voiceId)
-                .outputFormat(OutputFormat.PCM) // PCM 16-bit signed little-endian mono
-                .sampleRate(Integer.toString(sampleRate))
-                .textType(TextType.TEXT)
-                .text(text)
-                .build();
-
-        // tmp in the SAME directory as final target (atomic move works on more filesystems)
-        Path tmp = wav.getParent().resolve(wav.getFileName().toString() + ".tmp");
-        try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
-            writePcmAsWav(audio, tmp, sampleRate);
-        } catch (Exception e) {
-            try {
-                Files.deleteIfExists(tmp);
-            } catch (IOException ignored) {
-                // ignore
+        synchronized (stripeFor(wav)) {
+            if (Files.exists(wav)) {
+                return wav;
             }
-            if (isMissingAwsCredentialsError(e)) {
-                reportMissingAwsCredentialsIfNeeded(voiceName);
+
+            Files.createDirectories(wav.getParent());
+
+            if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
+                List<String> missing = new ArrayList<>();
+                String label = isEndOfSentenceKey(text) ? "END" : "MID";
+                missing.add(label + ": " + text);
+                showMissingSpeechCachePopup(voiceName, voiceDir, missing);
                 return null;
             }
-            if (e instanceof IOException ioe) {
-                throw ioe;
-            }
-            if (e instanceof RuntimeException re) {
-                throw re;
-            }
-            throw new IOException(e);
-        }
 
-        try {
-            Files.move(tmp, wav);
-        } catch (IOException moveEx) {
-            Files.copy(tmp, wav);
-            Files.deleteIfExists(tmp);
-        }
+            VoiceId voiceId = resolveVoiceId(voiceName);
+            if (voiceId == null) {
+                throw new IllegalArgumentException("Unknown Polly voice: " + voiceName);
+            }
 
-        appendToManifest(voiceDir, voiceDir.relativize(wav).toString(), text);
-        return wav;
+            SynthesizeSpeechRequest req = SynthesizeSpeechRequest.builder()
+                    .engine(engine)
+                    .voiceId(voiceId)
+                    .outputFormat(OutputFormat.PCM)
+                    .sampleRate(Integer.toString(sampleRate))
+                    .textType(TextType.TEXT)
+                    .text(text)
+                    .build();
+
+            Path tmp = wav.getParent().resolve(wav.getFileName().toString() + ".tmp");
+            try (ResponseInputStream<SynthesizeSpeechResponse> audio = polly.synthesizeSpeech(req)) {
+                writePcmAsWav(audio, tmp, sampleRate);
+            } catch (Exception e) {
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignored) {
+                }
+                if (isMissingAwsCredentialsError(e)) {
+                    reportMissingAwsCredentialsIfNeeded(voiceName);
+                    return null;
+                }
+                if (e instanceof IOException ioe) {
+                    throw ioe;
+                }
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new IOException(e);
+            }
+
+            try {
+                Files.move(tmp, wav, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException moveEx) {
+                Files.copy(tmp, wav, StandardCopyOption.REPLACE_EXISTING);
+                Files.deleteIfExists(tmp);
+            }
+
+            appendToManifest(voiceDir, voiceDir.relativize(wav).toString(), text);
+            return wav;
+        }
     }
 
     private Path getCachedWavPath(Path voiceDir, VoiceSettings s, String text) {

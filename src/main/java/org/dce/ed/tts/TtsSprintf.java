@@ -69,6 +69,7 @@ public class TtsSprintf {
 
         // Default resolvers. Add/override with registerResolver().
         registerResolver("species", TtsSprintf::resolveSpeciesDefault);
+        registerResolver("material", TtsSprintf::resolveMaterialDefault);
         registerResolver("body", TtsSprintf::resolveBodyDefault);
         registerResolver("bodyId", TtsSprintf::resolveBodyDefault);
 
@@ -491,18 +492,18 @@ public class TtsSprintf {
     // Default tag resolvers
     // -----------------------
 
-    private static List<String> resolveSpeciesDefault(String tag, Object value) {
+    /**
+     * Split on whitespace into speakable chunks so single-word clips (e.g. {@code Tritium}, {@code Frutexa}) cache once
+     * and reuse across phrases.
+     */
+    private static List<String> resolveWhitespaceDelimitedSpeech(Object value, String emptyPhrase) {
         if (value == null) {
-            return List.of("unknown species");
+            return List.of(emptyPhrase);
         }
-
-        // Common case: "Frutexa Acus" => ["Frutexa", "Acus"]
         String s = value.toString().trim();
         if (s.isEmpty()) {
-            return List.of("unknown species");
+            return List.of(emptyPhrase);
         }
-
-        // Split on whitespace, but keep each word as its own chunk (better reuse).
         String[] parts = s.split("\\s+");
         List<String> out = new ArrayList<>();
         for (String p : parts) {
@@ -510,7 +511,15 @@ public class TtsSprintf {
                 out.add(p);
             }
         }
-        return out.isEmpty() ? List.of("unknown species") : out;
+        return out.isEmpty() ? List.of(emptyPhrase) : out;
+    }
+
+    private static List<String> resolveSpeciesDefault(String tag, Object value) {
+        return resolveWhitespaceDelimitedSpeech(value, "unknown species");
+    }
+
+    private static List<String> resolveMaterialDefault(String tag, Object value) {
+        return resolveWhitespaceDelimitedSpeech(value, "unknown material");
     }
 
     private static List<String> resolveNumberDefault(String tag, Object value) {

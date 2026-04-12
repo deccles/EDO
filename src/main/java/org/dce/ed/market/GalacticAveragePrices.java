@@ -4,12 +4,14 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
-import java.util.HashSet;
 
 /**
  * Loads INARA commodity "avg sell" values from a bundled CSV (no network calls).
@@ -142,6 +144,24 @@ public final class GalacticAveragePrices {
      */
     public Set<String> getAllNormalizedKeys() {
         return new HashSet<>(avgSellByKey.keySet());
+    }
+
+    /**
+     * Distinct human-readable commodity names from the bundled CSV (INARA {@code name} column), sorted for stable
+     * iteration. Used by {@link org.dce.ed.tts.VoiceCacheWarmer} to pre-warm prospector speech for every tradable
+     * label (e.g. Tritium) without listing them by hand.
+     */
+    public List<String> getAllDisplayNamesSorted() {
+        Set<String> uniq = new HashSet<>();
+        for (String v : displayNameByKey.values()) {
+            if (v == null || v.isBlank()) {
+                continue;
+            }
+            uniq.add(v.trim());
+        }
+        List<String> out = new ArrayList<>(uniq);
+        out.sort(String.CASE_INSENSITIVE_ORDER);
+        return List.copyOf(out);
     }
 
     /**
