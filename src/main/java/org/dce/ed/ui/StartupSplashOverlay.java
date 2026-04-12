@@ -71,6 +71,10 @@ public final class StartupSplashOverlay {
         private final Timer timer;
         private long fadeStartNanos;
         private volatile boolean dismissed;
+        /** Avoid reallocating a scaled ARGB buffer on every fade repaint. */
+        private int cachedSplashTw = -1;
+        private int cachedSplashTh = -1;
+        private BufferedImage cachedSplashScaled;
 
         SplashPanel(JRootPane root, BufferedImage image, Component previousGlass) {
             this.root = root;
@@ -183,6 +187,28 @@ public final class StartupSplashOverlay {
             return 1f - (u * u * u);
         }
 
+        private BufferedImage splashScaledIcon(int tw, int th) {
+            if (cachedSplashScaled != null && tw == cachedSplashTw && th == cachedSplashTh) {
+                return cachedSplashScaled;
+            }
+            BufferedImage scaled = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D sg = scaled.createGraphics();
+            try {
+                sg.setComposite(AlphaComposite.Src);
+                sg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                sg.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION,
+                        RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+                sg.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                sg.drawImage(image, 0, 0, tw, th, null);
+            } finally {
+                sg.dispose();
+            }
+            cachedSplashTw = tw;
+            cachedSplashTh = th;
+            cachedSplashScaled = scaled;
+            return scaled;
+        }
+
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
@@ -213,7 +239,8 @@ public final class StartupSplashOverlay {
                     int th = Math.max(1, (int) Math.round(ih * scale));
                     int x = (w - tw) / 2;
                     int y = (h - th) / 2;
-                    g2.drawImage(image, x, y, tw, th, null);
+                    BufferedImage scaled = splashScaledIcon(tw, th);
+                    g2.drawImage(scaled, x, y, null);
 
                     drawTitle(g2, w, h, y + th, titleOpacity());
                 } finally {

@@ -77,6 +77,7 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
         this.passThroughFrame.setPassThroughEnabled(initialMousePassThrough, false);
 
         this.decoratedDialog = new DecoratedOverlayDialog(passThroughFrame, contentPanel, clientKey);
+        this.decoratedDialog.setPersistenceDelegate(passThroughFrame);
         this.decoratedDialog.setOnRequestSwitchToPassThrough(() -> SwingUtilities.invokeLater(() -> setPassThroughMode(true)));
 
         UIManager.put("TitlePane.background", EdoUi.User.BACKGROUND);

@@ -1,5 +1,7 @@
 package org.dce.ed.util;
 
+import java.awt.AlphaComposite;
+import java.awt.Composite;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.RenderingHints;
@@ -8,6 +10,7 @@ import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,6 +50,21 @@ public final class AppIconUtil {
         if (src == null) {
             src = loadIconBuffered(APP_ICON_RESOURCE);
         }
+        if (src == null) {
+            src = loadIconBuffered(LEGACY_APP_ICON_RESOURCE);
+        }
+        if (src == null) {
+            return null;
+        }
+        return prepareBrandingImage(src);
+    }
+
+    /**
+     * Same artwork pipeline as {@link #applyAppIcon(Window, String)} for {@link #APP_ICON_RESOURCE}
+     * (zoomed window/taskbar branding), for UI that cannot call {@code applyAppIcon} (e.g. title-bar JLabel).
+     */
+    public static BufferedImage loadPreparedWindowIcon() {
+        BufferedImage src = loadIconBuffered(APP_ICON_RESOURCE);
         if (src == null) {
             src = loadIconBuffered(LEGACY_APP_ICON_RESOURCE);
         }
@@ -101,7 +119,119 @@ public final class AppIconUtil {
         if (src == null) {
             return null;
         }
-        return trimTransparentMargins(src, 20);
+        BufferedImage trimmed = trimTransparentMargins(src, 20);
+        // RockHound-window.png ships with an opaque light-gray "matte" filling the square behind the round logo;
+        // trim does nothing until those pixels are cleared.
+        floodRemoveLightMatteFromCorners(trimmed);
+        return trimTransparentMargins(trimmed, 20);
+    }
+
+    /**
+     * Removes a connected light-gray/white region touching any image corner (common bad export: fake "transparency"
+     * as RGB matte). Stops at saturated logo colors. Aborts without changes if the region would cover most of the
+     * image (unusual assets).
+     */
+    private static void floodRemoveLightMatteFromCorners(BufferedImage img) {
+        if (img == null || img.getType() != BufferedImage.TYPE_INT_ARGB) {
+            return;
+        }
+        int w = img.getWidth();
+        int h = img.getHeight();
+        if (w < 2 || h < 2) {
+            return;
+        }
+        boolean[][] seen = new boolean[w][h];
+        ArrayDeque<int[]> q = new ArrayDeque<>();
+        int[][] corners = {{0, 0}, {w - 1, 0}, {0, h - 1}, {w - 1, h - 1}};
+        for (int[] c : corners) {
+            int x = c[0];
+            int y = c[1];
+            if (!seen[x][y] && isLightMatteForFlood(img.getRGB(x, y))) {
+                seen[x][y] = true;
+                q.add(c);
+            }
+        }
+        if (q.isEmpty()) {
+            return;
+        }
+        int maxCells = Math.max(256, (w * h * 9) / 20);
+        ArrayList<int[]> cleared = new ArrayList<>();
+        while (!q.isEmpty()) {
+            int[] p = q.removeFirst();
+            cleared.add(p);
+            if (cleared.size() > maxCells) {
+                return;
+            }
+            int x = p[0];
+            int y = p[1];
+            if (x > 0) {
+                tryEnqueue(img, seen, q, x - 1, y);
+            }
+            if (x + 1 < w) {
+                tryEnqueue(img, seen, q, x + 1, y);
+            }
+            if (y > 0) {
+                tryEnqueue(img, seen, q, x, y - 1);
+            }
+            if (y + 1 < h) {
+                tryEnqueue(img, seen, q, x, y + 1);
+            }
+        }
+        for (int i = 0; i < cleared.size(); i++) {
+            int[] p = cleared.get(i);
+            img.setRGB(p[0], p[1], 0);
+        }
+    }
+
+    private static void tryEnqueue(BufferedImage img, boolean[][] seen, ArrayDeque<int[]> q, int x, int y) {
+        if (seen[x][y]) {
+            return;
+        }
+        if (!isLightMatteForFlood(img.getRGB(x, y))) {
+            return;
+        }
+        seen[x][y] = true;
+        q.addLast(new int[] {x, y});
+    }
+
+    /** Pixels that belong to the flat studio background; not passed through for low-alpha edge blends. */
+    private static boolean isLightMatteForFlood(int argb) {
+        int a = (argb >>> 24) & 0xff;
+        if (a < 170) {
+            return false;
+        }
+        int r = (argb >> 16) & 0xff;
+        int g = (argb >> 8) & 0xff;
+        int b = argb & 0xff;
+        return r >= 198 && g >= 198 && b >= 198;
+    }
+
+    private static void drawImageScaledArgbSrc(Graphics2D g2, BufferedImage src, int dx, int dy, int dw, int dh) {
+        Composite prev = g2.getComposite();
+        try {
+            g2.setComposite(AlphaComposite.Src);
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g2.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.drawImage(src, dx, dy, dw, dh, null);
+        } finally {
+            g2.setComposite(prev);
+        }
+    }
+
+    private static void normalizeFullyTransparentPixels(BufferedImage img) {
+        if (img == null) {
+            return;
+        }
+        int w = img.getWidth();
+        int h = img.getHeight();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (((img.getRGB(x, y) >>> 24) & 0xff) == 0) {
+                    img.setRGB(x, y, 0);
+                }
+            }
+        }
     }
 
     /**
@@ -147,7 +277,7 @@ public final class AppIconUtil {
         BufferedImage copy = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2 = copy.createGraphics();
         try {
-            g2.drawImage(sub, 0, 0, null);
+            drawImageScaledArgbSrc(g2, sub, 0, 0, cw, ch);
         } finally {
             g2.dispose();
         }
@@ -178,12 +308,12 @@ public final class AppIconUtil {
         BufferedImage dst = new BufferedImage(tw, th, type);
         Graphics2D g2 = dst.createGraphics();
         try {
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.drawImage(src, 0, 0, tw, th, null);
+            drawImageScaledArgbSrc(g2, src, 0, 0, tw, th);
         } finally {
             g2.dispose();
+        }
+        if (type == BufferedImage.TYPE_INT_ARGB) {
+            normalizeFullyTransparentPixels(dst);
         }
         return dst;
     }
@@ -194,13 +324,35 @@ public final class AppIconUtil {
                 return null;
             }
             BufferedImage img = ImageIO.read(in);
-            if (img != null) {
-                return img;
+            if (img == null) {
+                return null;
             }
+            return ensureIntArgb(img);
         } catch (IOException e) {
             e.printStackTrace();
             return null;
         }
-        return null;
+    }
+
+    /**
+     * PNGs may decode to types without a usable alpha raster; normalize so scaling and Windows DIB upload keep
+     * transparent corners.
+     */
+    private static BufferedImage ensureIntArgb(BufferedImage img) {
+        if (img == null) {
+            return null;
+        }
+        if (img.getType() == BufferedImage.TYPE_INT_ARGB) {
+            return img;
+        }
+        BufferedImage out = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = out.createGraphics();
+        try {
+            g2.setComposite(AlphaComposite.Src);
+            g2.drawImage(img, 0, 0, null);
+        } finally {
+            g2.dispose();
+        }
+        return out;
     }
 }

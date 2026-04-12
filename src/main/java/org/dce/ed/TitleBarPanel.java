@@ -1,5 +1,6 @@
 package org.dce.ed;
 
+import java.awt.AlphaComposite;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -64,10 +65,9 @@ public class TitleBarPanel extends JPanel {
 
         JLabel iconLabel = new JLabel();
         iconLabel.setBorder(new EmptyBorder(4, 8, 4, 4));
-        java.awt.image.BufferedImage icon = AppIconUtil.loadAppIconForSplash();
+        java.awt.image.BufferedImage icon = AppIconUtil.loadPreparedWindowIcon();
         if (icon != null) {
-            java.awt.Image scaled = icon.getScaledInstance(16, 16, java.awt.Image.SCALE_SMOOTH);
-            iconLabel.setIcon(new ImageIcon(scaled));
+            iconLabel.setIcon(new ImageIcon(scaleTitleBarIcon(icon, 16)));
         }
 
         titleLabel = new JLabel(title);
@@ -692,6 +692,33 @@ public class TitleBarPanel extends JPanel {
                 g2.dispose();
             }
         }
+    }
+
+    /** Match taskbar/window icon pipeline: preserve alpha when scaling for the title strip. */
+    private static BufferedImage scaleTitleBarIcon(BufferedImage src, int maxSide) {
+        int sw = src.getWidth();
+        int sh = src.getHeight();
+        if (sw <= 0 || sh <= 0 || maxSide <= 0) {
+            return src;
+        }
+        double scale = Math.min((double) maxSide / sw, (double) maxSide / sh);
+        int tw = Math.max(1, (int) Math.round(sw * scale));
+        int th = Math.max(1, (int) Math.round(sh * scale));
+        if (tw == sw && th == sh) {
+            return src;
+        }
+        BufferedImage dst = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = dst.createGraphics();
+        try {
+            g2.setComposite(AlphaComposite.Src);
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g2.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.drawImage(src, 0, 0, tw, th, null);
+        } finally {
+            g2.dispose();
+        }
+        return dst;
     }
 
 }

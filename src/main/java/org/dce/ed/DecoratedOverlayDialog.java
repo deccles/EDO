@@ -55,6 +55,12 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 	private OverlayBackgroundPanel decoratedBackgroundPanel;
 
 	/**
+	 * Used on exit to flush session state the same way the pass-through frame does; optional for tests / alternate
+	 * construction paths.
+	 */
+	private OverlayFrame persistenceDelegate;
+
+	/**
 	 * Minimal DWM binding.
 	 */
 	private interface DwmApi extends Library {
@@ -101,6 +107,10 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 		    @Override
 		    public void windowClosing(WindowEvent e) {
+		        if (persistenceDelegate != null) {
+		            persistenceDelegate.flushSessionStateNow();
+		        }
+		        OverlayFrame.persistOuterBounds(DecoratedOverlayDialog.this);
 		        dispose();
 		        System.exit(0);
 		    }
@@ -110,6 +120,10 @@ public class DecoratedOverlayDialog extends JFrame implements OverlayUiPreviewHo
 
 	public void setOnRequestSwitchToPassThrough(Runnable onRequestSwitchToPassThrough) {
 		this.onRequestSwitchToPassThrough = onRequestSwitchToPassThrough;
+	}
+
+	public void setPersistenceDelegate(OverlayFrame overlayFrame) {
+		this.persistenceDelegate = overlayFrame;
 	}
 
 	private void firePassThroughRequest() {

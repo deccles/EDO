@@ -1421,6 +1421,22 @@ private void refreshPassThroughUnifiedStatus() {
     }
 
     /**
+     * Writes {@code w}'s bounds to the same keys {@link #loadBoundsFromPreferences} reads at startup. The decorated
+     * (non-pass-through) host must call this on exit; otherwise only {@link #closeOverlay()} from the pass-through
+     * frame persisted geometry.
+     */
+    public static void persistOuterBounds(Window w) {
+        if (w == null) {
+            return;
+        }
+        Preferences p = Preferences.userNodeForPackage(OverlayFrame.class);
+        p.putInt(PREF_KEY_X, w.getX());
+        p.putInt(PREF_KEY_Y, w.getY());
+        p.putInt(PREF_KEY_WIDTH, w.getWidth());
+        p.putInt(PREF_KEY_HEIGHT, w.getHeight());
+    }
+
+    /**
      * Centralized close method: saves bounds then exits.
      */
     public void closeOverlay() {

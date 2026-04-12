@@ -1,5 +1,7 @@
 package org.dce.ed.util;
 
+import java.awt.AlphaComposite;
+import java.awt.Composite;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.Window;
@@ -12,7 +14,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.SwingUtilities;
 
 import com.sun.jna.Library;
-import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.GDI32;
@@ -25,21 +26,20 @@ import com.sun.jna.platform.win32.WinDef.LPARAM;
 import com.sun.jna.platform.win32.WinDef.WPARAM;
 import com.sun.jna.platform.win32.WinGDI;
 import com.sun.jna.platform.win32.WinUser;
+import com.sun.jna.ptr.PointerByReference;
 import com.sun.jna.win32.W32APIOptions;
 
 /**
  * Windows does not support {@link java.awt.Taskbar.Feature#ICON_IMAGE}; the shell often uses per-HWND icons from
  * {@code WM_SETICON} instead. Undecorated frames in particular may never get a correct taskbar glyph from AWT alone.
+ * <p>
+ * Icons are built with {@link GDI32#CreateDIBSection} (32-bpp BGRA + alpha) and {@code ICONINFO.hbmMask = null},
+ * which Vista+ uses for alpha-blended taskbar pins. The older {@code CreateBitmap(32bpp)} path ignores alpha and
+ * an uninitialized monochrome mask produces white/opaque corners.
  */
 final class WindowsWindowIcons {
 
     private static final int WM_SETICON = 0x0080;
-
-    private interface Gdi32Extra extends Library {
-        Gdi32Extra INSTANCE = Native.load("gdi32", Gdi32Extra.class, W32APIOptions.DEFAULT_OPTIONS);
-
-        HBITMAP CreateBitmap(int nWidth, int nHeight, int cPlanes, int cBitsPerPel, Pointer lpBits);
-    }
 
     private interface User32Extra extends Library {
         User32Extra INSTANCE = Native.load("user32", User32Extra.class, W32APIOptions.DEFAULT_OPTIONS);
@@ -139,9 +139,16 @@ final class WindowsWindowIcons {
         BufferedImage dst = new BufferedImage(tw, th, type);
         Graphics2D g2 = dst.createGraphics();
         try {
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            g2.drawImage(src, 0, 0, tw, th, null);
+            Composite prev = g2.getComposite();
+            try {
+                g2.setComposite(AlphaComposite.Src);
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g2.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                g2.drawImage(src, 0, 0, tw, th, null);
+            } finally {
+                g2.setComposite(prev);
+            }
         } finally {
             g2.dispose();
         }
@@ -149,7 +156,7 @@ final class WindowsWindowIcons {
     }
 
     /**
-     * Builds an {@link HICON} from a 32-bpp ARGB image (bottom-up DIB layout for {@code CreateBitmap}).
+     * 32-bpp top-down DIB with per-pixel alpha; {@code hbmMask} is null (Vista+).
      */
     private static HICON createArgbIcon(BufferedImage img) {
         int w = img.getWidth();
@@ -162,46 +169,50 @@ final class WindowsWindowIcons {
             argb = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
             Graphics2D g = argb.createGraphics();
             try {
+                g.setComposite(AlphaComposite.Src);
                 g.drawImage(img, 0, 0, null);
             } finally {
                 g.dispose();
             }
         }
-        Memory pixels = new Memory((long) w * h * 4);
-        for (int y = 0; y < h; y++) {
-            int srcRow = h - 1 - y;
-            for (int x = 0; x < w; x++) {
-                pixels.setInt((long) (y * w + x) * 4, argb.getRGB(x, srcRow));
-            }
-        }
-        HBITMAP hbmColor = Gdi32Extra.INSTANCE.CreateBitmap(w, h, 1, 32, pixels);
+
+        WinGDI.BITMAPINFO bmi = new WinGDI.BITMAPINFO(0);
+        bmi.bmiHeader.biWidth = w;
+        bmi.bmiHeader.biHeight = -h;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = WinGDI.BI_RGB;
+
+        PointerByReference ppvBits = new PointerByReference();
+        HBITMAP hbmColor = GDI32.INSTANCE.CreateDIBSection(null, bmi, WinGDI.DIB_RGB_COLORS, ppvBits, null, 0);
         if (hbmColor == null || Pointer.nativeValue(hbmColor.getPointer()) == 0) {
             return null;
         }
-        HDC hdc = User32.INSTANCE.GetDC(null);
-        if (hdc == null) {
+        Pointer bits = ppvBits.getValue();
+        if (bits == null) {
             GDI32.INSTANCE.DeleteObject(hbmColor);
             return null;
         }
-        HBITMAP hbmMask = null;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int offset = (y * w + x) * 4;
+                bits.setInt(offset, argb.getRGB(x, y));
+            }
+        }
+
+        WinGDI.ICONINFO ii = new WinGDI.ICONINFO();
+        ii.fIcon = true;
+        ii.xHotspot = 0;
+        ii.yHotspot = 0;
+        ii.hbmMask = null;
+        ii.hbmColor = hbmColor;
+
+        HICON icon;
         try {
-            hbmMask = GDI32.INSTANCE.CreateCompatibleBitmap(hdc, w, h);
-            if (hbmMask == null || Pointer.nativeValue(hbmMask.getPointer()) == 0) {
-                return null;
-            }
-            WinGDI.ICONINFO ii = new WinGDI.ICONINFO();
-            ii.fIcon = true;
-            ii.xHotspot = 0;
-            ii.yHotspot = 0;
-            ii.hbmMask = hbmMask;
-            ii.hbmColor = hbmColor;
-            return User32Extra.INSTANCE.CreateIconIndirect(ii);
+            icon = User32Extra.INSTANCE.CreateIconIndirect(ii);
         } finally {
-            User32.INSTANCE.ReleaseDC(null, hdc);
-            if (hbmMask != null) {
-                GDI32.INSTANCE.DeleteObject(hbmMask);
-            }
             GDI32.INSTANCE.DeleteObject(hbmColor);
         }
+        return icon;
     }
 }

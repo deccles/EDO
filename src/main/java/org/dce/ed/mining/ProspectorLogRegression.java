@@ -5,9 +5,20 @@ import java.util.List;
 
 /**
  * Linear regression of prospector log data: percentage (X) vs actual tons collected (Y),
- * matching the Mining tab scatter trend lines. Used for live tons estimates on the prospector table.
+ * matching the Mining tab scatter trend lines (per-commander OLS for the chart).
+ * <p>
+ * Live prospector <strong>surface</strong> tons on the Mining tab use a single global line (same for every
+ * commander), hardcoded from the calibrated overlay trend tooltip (Villunus, n=69, R²≈0.87, pct 0…37.1%).
  */
 public final class ProspectorLogRegression {
+
+	/**
+	 * Global surface-material estimate: {@code tons = slope × pct + intercept} for all commanders.
+	 * Source: overlay scatter trend tooltip — Villunus series, Mar 2026 (n=69, R²=0.8696, pct axis 0…37.107).
+	 */
+	public static final double GLOBAL_SURFACE_TONS_SLOPE = 0.9745255779;
+	/** Companion to {@link #GLOBAL_SURFACE_TONS_SLOPE}; same calibration. */
+	public static final double GLOBAL_SURFACE_TONS_INTERCEPT = -0.7264508360;
 
 	private ProspectorLogRegression() {
 	}
@@ -118,14 +129,13 @@ public final class ProspectorLogRegression {
 	}
 
 	/**
-	 * Estimated tons for one surface material at {@code percent}% from the linear trend (same as scatter trend line).
+	 * Estimated tons for one surface material at {@code percent}% using the global calibration line
+	 * ({@link #GLOBAL_SURFACE_TONS_SLOPE}, {@link #GLOBAL_SURFACE_TONS_INTERCEPT}). Commander and history are
+	 * ignored so estimates match one shared formula for everyone.
 	 */
+	@SuppressWarnings("unused")
 	public static double estimateTonsForMaterialPercent(double percent, String commander, List<ProspectorLogRow> history) {
-		Result r = regressionForEstimate(commander, history != null ? history : List.of());
-		if (r.valid) {
-			return Math.max(0.0, r.slope * percent + r.intercept);
-		}
-		return Math.max(0.0, percent * 0.75);
+		return Math.max(0.0, GLOBAL_SURFACE_TONS_SLOPE * percent + GLOBAL_SURFACE_TONS_INTERCEPT);
 	}
 
 	/**
