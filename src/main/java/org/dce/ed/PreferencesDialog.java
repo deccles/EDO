@@ -53,6 +53,7 @@ import org.dce.ed.mining.ProspectorWriteResult;
 import org.dce.ed.ui.EdoUi;
 import org.dce.ed.tts.PollyTtsCached;
 import org.dce.ed.tts.TtsSprintf;
+import org.dce.ed.tts.VoiceCacheWarmer;
 import org.dce.ed.tts.VoicePackManager;
 
 /**
@@ -186,6 +187,50 @@ public class PreferencesDialog extends JDialog {
 
 	/** Lazy shared TTS for Speech-tab “sample prospector” preview (avoids constructing Polly clients per click). */
 	private static volatile TtsSprintf speechPreferencesPreviewTts;
+
+	/**
+	 * Verbatim {@code speakf} templates and args from production code (same strings VoiceCacheWarmer scrapes), so
+	 * each click exercises phrases that offline packs should already contain.
+	 */
+	private static final class PreferenceSpeechTestClip {
+		final String template;
+		final Object[] args;
+
+		PreferenceSpeechTestClip(String template, Object... args) {
+			this.template = template;
+			this.args = (args == null || args.length == 0) ? new Object[0] : args.clone();
+		}
+	}
+
+	private static final PreferenceSpeechTestClip[] PREFERENCE_SPEECH_TEST_CLIPS;
+	static {
+		// Match VoiceCacheWarmer: list must be an adjacent pair from sorted INARA names + 10/90 or that chunk is missing offline.
+		String prospectorListTwo = VoiceCacheWarmer.sampleProspectorListTwoForVoicePack();
+		PREFERENCE_SPEECH_TEST_CLIPS = new PreferenceSpeechTestClip[] {
+				new PreferenceSpeechTestClip("Welcome commander"),
+				new PreferenceSpeechTestClip("Did you forget your limpets again commander?"),
+				new PreferenceSpeechTestClip("Jump complete"),
+				new PreferenceSpeechTestClip("Cooldown complete"),
+				new PreferenceSpeechTestClip("Prospector found {material} at {n} percent.", "Tritium", Integer.valueOf(50)),
+				new PreferenceSpeechTestClip("Prospector found {list} from {min} to {max} percent.",
+						prospectorListTwo, Integer.valueOf(10), Integer.valueOf(90)),
+				new PreferenceSpeechTestClip("Entering clonal colony range of {species}. Minimum {meters} meters.",
+						"Bacterium Acies", Integer.valueOf(10)),
+				new PreferenceSpeechTestClip("Leaving clonal colony range of {species}. Minimum {meters} meters.",
+						"Bacterium Acies", Integer.valueOf(10)),
+				new PreferenceSpeechTestClip(
+						"{n} signals on planetary body {body} with guaranteed exobiology value of {credits} credits",
+						Integer.valueOf(3), "A 1", Long.valueOf(1_500_000L)),
+				new PreferenceSpeechTestClip(
+						"{n} signals on planetary body {body} with estimated exobiology value from {mm} to {mm} million credits",
+						Integer.valueOf(3), "A 1", Long.valueOf(2L), Long.valueOf(12L)),
+				new PreferenceSpeechTestClip(
+						"{n} signals on planetary body {body} with estimated value between {credits} and {credits} credits",
+						Integer.valueOf(3), "A 1", Long.valueOf(1_000L), Long.valueOf(50_000L)),
+		};
+	}
+
+	private int speechPreferenceTestClipIndex;
 
 	private boolean okPressed;
 	private final Font originalUiFont;
@@ -1390,17 +1435,24 @@ public class PreferencesDialog extends JDialog {
 
 		gbc.gridx = 0;
 		gbc.gridy++;
-		JLabel prospectorSampleLabel = new JLabel("Sample (prospector line):");
+		JLabel prospectorSampleLabel = new JLabel("Speech test (cycles in-app phrases):");
 		content.add(prospectorSampleLabel, gbc);
 		gbc.gridx = 1;
-		JButton previewProspectorSpeechButton = new JButton("Speak: Tritium at 11%");
+		JButton previewProspectorSpeechButton = new JButton("Test Speech");
 		previewProspectorSpeechButton.setToolTipText(
-				"Same template as a real prospector hit. Voice, cache folder, Polly engine/region, and sample rate come from preferences saved with OK.");
-		previewProspectorSpeechButton.addActionListener(e -> speechPreferencesPreviewTts().speakfWithSpeechGate(
-				speechEnabledCheckBox.isSelected(),
-				"Prospector found {material} at {n} percent.",
-				"Tritium",
-				11));
+				"Each click plays the next sample. Strings match speakf() calls in the source (same set VoiceCacheWarmer warms) "
+						+ "so offline packs should already have clips. Uses voice, cache folder, engine, region, and sample rate from this dialog.");
+		previewProspectorSpeechButton.addActionListener(e -> {
+			if (!speechEnabledCheckBox.isSelected()) {
+				return;
+			}
+			PreferenceSpeechTestClip clip = PREFERENCE_SPEECH_TEST_CLIPS[
+					Math.floorMod(speechPreferenceTestClipIndex++, PREFERENCE_SPEECH_TEST_CLIPS.length)];
+			speechPreferencesPreviewTts().speakfWithSpeechGateArray(
+					speechEnabledCheckBox.isSelected(),
+					clip.template,
+					clip.args);
+		});
 		content.add(previewProspectorSpeechButton, gbc);
 
 		// --- AWS / Polly (bottom block) ---

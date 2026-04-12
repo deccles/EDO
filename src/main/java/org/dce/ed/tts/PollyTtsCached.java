@@ -8,8 +8,8 @@ import java.io.BufferedOutputStream;
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.io.SequenceInputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,14 +19,12 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Vector;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -279,7 +277,7 @@ public class PollyTtsCached implements Closeable {
                 keyText = spoken;
             }
 
-            Path wav = getCachedWavPath(voiceDir, s, keyText);
+            Path wav = resolveCachedWavPathWithFallbacks(voiceDir, s, keyText, spoken);
             paths.add(wav);
             if (!Files.exists(wav)) {
                 missingIdx.add(i);
@@ -371,72 +369,132 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
     /**
      * Plays a list of WAV files as one continuous stream using a single Clip.
      * All WAVs must share the same AudioFormat.
+     * Adjacent chunks are merged with a short linear crossfade to reduce clicks when sample
+     * levels jump between separately cached clips.
      */
     void playCombinedWavsBlocking(List<Path> wavPaths) throws Exception {
         if (wavPaths == null || wavPaths.isEmpty()) {
             return;
         }
 
-        List<AudioInputStream> streams = new ArrayList<>();
+        List<byte[]> pcmChunks = new ArrayList<>();
         AudioFormat format = null;
 
-        try {
-            for (Path p : wavPaths) {
-                if (p == null) {
-                    continue;
-                }
-                if (!Files.exists(p)) {
-                    continue;
-                }
-
-                AudioInputStream ais = AudioSystem.getAudioInputStream(p.toFile());
+        for (Path p : wavPaths) {
+            if (p == null || !Files.exists(p)) {
+                continue;
+            }
+            try (AudioInputStream ais = AudioSystem.getAudioInputStream(p.toFile())) {
                 AudioFormat f = ais.getFormat();
-
                 if (format == null) {
                     format = f;
                 } else if (!formatsEquivalent(format, f)) {
-                    ais.close();
                     throw new IllegalArgumentException("WAV format mismatch: " + p);
                 }
-
-                streams.add(ais);
-            }
-
-            if (streams.isEmpty()) {
-                return;
-            }
-
-            Vector<InputStream> inputs = new Vector<>();
-            for (AudioInputStream ais : streams) {
-                inputs.add(ais);
-            }
-            Enumeration<InputStream> en = inputs.elements();
-            SequenceInputStream seq = new SequenceInputStream(en);
-
-            // Frame length unknown is fine for Clip in practice; compute if available.
-            long totalFrames = 0;
-            boolean anyKnown = false;
-            for (AudioInputStream ais : streams) {
-                long fl = ais.getFrameLength();
-                if (fl > 0) {
-                    anyKnown = true;
-                    totalFrames += fl;
-                }
-            }
-            long combinedFrames = anyKnown ? totalFrames : AudioSystem.NOT_SPECIFIED;
-
-            try (AudioInputStream combined = new AudioInputStream(seq, format, combinedFrames)) {
-                playAudioBlocking(combined);
-            }
-        } finally {
-            for (AudioInputStream ais : streams) {
-                try {
-                    ais.close();
-                } catch (Exception ignore) {
-                    // ignore
-                }
+                pcmChunks.add(ais.readAllBytes());
             }
         }
+
+        if (pcmChunks.isEmpty()) {
+            return;
+        }
+
+        int frameSize = format.getFrameSize();
+        if (frameSize <= 0) {
+            throw new IllegalArgumentException("Unsupported AudioFormat frame size");
+        }
+
+        byte[] mergedPcm;
+        if (pcmChunks.size() == 1) {
+            mergedPcm = pcmChunks.get(0);
+        } else {
+            mergedPcm = mergePcm16ChunksWithCrossfade(pcmChunks, format,
+                    Math.max(4, Math.min((int) (format.getSampleRate() * 4L / 1000L), 512)));
+        }
+
+        long frames = mergedPcm.length / frameSize;
+        try (AudioInputStream combined = new AudioInputStream(
+                new ByteArrayInputStream(mergedPcm), format, frames)) {
+            playAudioBlocking(combined);
+        }
+    }
+
+    /**
+     * Linear crossfade at each join: last {@code overlapSamples} of the accumulated buffer
+     * with the first {@code overlapSamples} of the next chunk (16-bit PCM, format endianness).
+     */
+    private static byte[] mergePcm16ChunksWithCrossfade(List<byte[]> chunks, AudioFormat format, int overlapSamples)
+            throws IOException {
+        if (chunks == null || chunks.isEmpty()) {
+            return new byte[0];
+        }
+        if (format.getSampleSizeInBits() != 16 || format.getChannels() != 1) {
+            throw new IOException("Crossfade merge requires 16-bit mono PCM");
+        }
+        boolean bigEndian = format.isBigEndian();
+
+        short[] acc = pcmBytesToShorts16Mono(chunks.get(0), bigEndian);
+        for (int ci = 1; ci < chunks.size(); ci++) {
+            short[] nxt = pcmBytesToShorts16Mono(chunks.get(ci), bigEndian);
+            if (nxt.length == 0) {
+                continue;
+            }
+            if (acc.length == 0) {
+                acc = nxt;
+                continue;
+            }
+            int ol = Math.min(overlapSamples, Math.min(acc.length, nxt.length));
+            int accLen = acc.length;
+            for (int i = 0; i < ol; i++) {
+                float w = (i + 1f) / (ol + 1f);
+                int a = acc[accLen - ol + i];
+                int b = nxt[i];
+                int blended = Math.round(a * (1f - w) + b * w);
+                if (blended > Short.MAX_VALUE) {
+                    blended = Short.MAX_VALUE;
+                } else if (blended < Short.MIN_VALUE) {
+                    blended = Short.MIN_VALUE;
+                }
+                acc[accLen - ol + i] = (short) blended;
+            }
+            short[] merged = new short[accLen + nxt.length - ol];
+            System.arraycopy(acc, 0, merged, 0, accLen);
+            System.arraycopy(nxt, ol, merged, accLen, nxt.length - ol);
+            acc = merged;
+        }
+        return shortsToPcmBytes16Mono(acc, bigEndian);
+    }
+
+    private static short[] pcmBytesToShorts16Mono(byte[] pcm, boolean bigEndian) {
+        int len = pcm.length & ~1;
+        int n = len / 2;
+        short[] out = new short[n];
+        if (bigEndian) {
+            for (int i = 0; i < n; i++) {
+                out[i] = (short) ((pcm[i * 2] << 8) | (pcm[i * 2 + 1] & 0xff));
+            }
+        } else {
+            for (int i = 0; i < n; i++) {
+                out[i] = (short) (((pcm[i * 2 + 1] << 8) | (pcm[i * 2] & 0xff)));
+            }
+        }
+        return out;
+    }
+
+    private static byte[] shortsToPcmBytes16Mono(short[] samples, boolean bigEndian) {
+        byte[] b = new byte[samples.length * 2];
+        if (bigEndian) {
+            for (int i = 0; i < samples.length; i++) {
+                b[i * 2] = (byte) (samples[i] >> 8);
+                b[i * 2 + 1] = (byte) (samples[i] & 0xff);
+            }
+        } else {
+            for (int i = 0; i < samples.length; i++) {
+                b[i * 2] = (byte) (samples[i] & 0xff);
+                b[i * 2 + 1] = (byte) (samples[i] >> 8);
+            }
+        }
+        return b;
     }
 
     // ------------------------------
@@ -454,6 +512,10 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
         synchronized (stripeFor(wav)) {
             if (Files.exists(wav)) {
                 return wav;
+            }
+            Path resolved = resolveCachedWavPathWithFallbacks(voiceDir, s, text, text);
+            if (Files.exists(resolved)) {
+                return resolved;
             }
 
             Files.createDirectories(wav.getParent());
@@ -535,7 +597,123 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
         return t.endsWith("|END");
     }
 
-    
+    /**
+     * Offline packs warm digit tokens ({@code N|12|MID}) but not English number words ({@code T|twelve|MID}).
+     * Map a spoken chunk to the numeric string used in those digit keys (0–99).
+     */
+    private static String spokenEnglishNumberToNumericToken(String spoken) {
+        if (spoken == null) {
+            return null;
+        }
+        switch (spoken.trim().toLowerCase(Locale.ROOT)) {
+            case "zero":
+                return "0";
+            case "one":
+                return "1";
+            case "two":
+                return "2";
+            case "three":
+                return "3";
+            case "four":
+                return "4";
+            case "five":
+                return "5";
+            case "six":
+                return "6";
+            case "seven":
+                return "7";
+            case "eight":
+                return "8";
+            case "nine":
+                return "9";
+            case "ten":
+                return "10";
+            case "eleven":
+                return "11";
+            case "twelve":
+                return "12";
+            case "thirteen":
+                return "13";
+            case "fourteen":
+                return "14";
+            case "fifteen":
+                return "15";
+            case "sixteen":
+                return "16";
+            case "seventeen":
+                return "17";
+            case "eighteen":
+                return "18";
+            case "nineteen":
+                return "19";
+            case "twenty":
+                return "20";
+            case "thirty":
+                return "30";
+            case "forty":
+                return "40";
+            case "fifty":
+                return "50";
+            case "sixty":
+                return "60";
+            case "seventy":
+                return "70";
+            case "eighty":
+                return "80";
+            case "ninety":
+                return "90";
+            default:
+                return null;
+        }
+    }
+
+    /** {@code |END} only when {@code keyText} ends with {@code |END}; otherwise {@code |MID} (incl. plain keys). */
+    private static String midEndSuffixForDigitFallback(String keyText) {
+        if (keyText != null && keyText.trim().endsWith("|END")) {
+            return "|END";
+        }
+        return "|MID";
+    }
+
+    /** Middle segment of {@code T|spoken|…} keys; otherwise the whole string (e.g. raw {@code one}). */
+    private static String extractSpokenFromTypedCacheKey(String keyText) {
+        if (keyText == null) {
+            return "";
+        }
+        String t = keyText.trim();
+        if (t.startsWith("T|")) {
+            int a = t.indexOf('|');
+            int b = t.indexOf('|', a + 1);
+            if (b > a) {
+                return t.substring(a + 1, b);
+            }
+        }
+        return t;
+    }
+
+    /**
+     * Prefer the exact cache path; else a digit clip for the same English number word (packs warm {@code N|0}–{@code N|99}
+     * with matching {@code |MID}/{@code |END} — never the other position).
+     */
+    private Path resolveCachedWavPathWithFallbacks(Path voiceDir, VoiceSettings s, String keyText, String spokenChunk) {
+        Path primary = getCachedWavPath(voiceDir, s, keyText);
+        if (Files.exists(primary)) {
+            return primary;
+        }
+        String spoken = spokenChunk != null && !spokenChunk.isBlank()
+                ? spokenChunk.trim()
+                : extractSpokenFromTypedCacheKey(keyText);
+        String numTok = spokenEnglishNumberToNumericToken(spoken);
+        if (numTok != null) {
+            String sfx = midEndSuffixForDigitFallback(keyText);
+            Path alt = getCachedWavPath(voiceDir, s, "N|" + numTok + sfx);
+            if (Files.exists(alt)) {
+                return alt;
+            }
+        }
+        return primary;
+    }
+
     private volatile boolean cacheDirLogged = false;
 
     private Path getVoiceCacheDir(String voiceName, Engine engine, int sampleRate) {
@@ -685,30 +863,72 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
         );
     }
 
-private static void showMissingSpeechCachePopup(String voiceName, Path voiceDir, List<String> missing) {
-    if (missing == null || missing.isEmpty()) {
-        return;
+    private static final int SPEECH_CACHE_MISS_BANNER_MAX_SPOKEN_CHARS = 40;
+
+    /** Spoken text from a miss line such as {@code MID: Tritium} or {@code END: percent.} */
+    private static String spokenFromSpeechCacheMissLine(String line) {
+        if (line == null) {
+            return "?";
+        }
+        String t = line.trim();
+        int sep = t.indexOf(": ");
+        if (sep >= 0 && sep + 2 <= t.length()) {
+            return t.substring(sep + 2).trim();
+        }
+        return t;
     }
 
-    String vn = voiceName != null && !voiceName.isBlank() ? voiceName.trim() : "selected voice";
-    String msg = "Speech cache: " + missing.size() + " clip(s) missing (" + vn + ") — enable AWS or voice pack";
-    Consumer<String> rep = speechCacheMissBannerReporter;
-    if (rep != null) {
-        SwingUtilities.invokeLater(() -> rep.accept(msg));
-    } else {
-        System.out.println("[EDO] " + msg);
-        if (voiceDir != null) {
-            System.out.println("[EDO] Cache dir: " + voiceDir.toAbsolutePath());
+    private static String ellipsizeSpokenForBanner(String spoken, int maxChars) {
+        if (spoken == null) {
+            return "?";
         }
-        for (String m : missing) {
-            if (m != null && !m.isBlank()) {
-                System.out.println("[EDO]   " + m);
+        String t = spoken.trim();
+        if (t.isEmpty()) {
+            return "?";
+        }
+        if (t.length() <= maxChars) {
+            return t;
+        }
+        if (maxChars <= 1) {
+            return "\u2026";
+        }
+        return t.substring(0, maxChars - 1) + "\u2026";
+    }
+
+    private static String formatSpeechCacheMissBannerText(List<String> missing) {
+        String fragment = ellipsizeSpokenForBanner(
+                spokenFromSpeechCacheMissLine(missing.get(0)),
+                SPEECH_CACHE_MISS_BANNER_MAX_SPOKEN_CHARS);
+        int n = missing.size();
+        if (n <= 1) {
+            return "TTS: no clip for \"" + fragment + "\" — AWS or pack";
+        }
+        return "TTS: no clip for \"" + fragment + "\" +" + (n - 1) + " — AWS or pack";
+    }
+
+    private static void showMissingSpeechCachePopup(String voiceName, Path voiceDir, List<String> missing) {
+        if (missing == null || missing.isEmpty()) {
+            return;
+        }
+
+        String vn = voiceName != null && !voiceName.isBlank() ? voiceName.trim() : "selected voice";
+        String detailMsg = "Speech cache: " + missing.size() + " clip(s) missing (" + vn + ") — enable AWS or voice pack";
+        Consumer<String> rep = speechCacheMissBannerReporter;
+        if (rep != null) {
+            String banner = formatSpeechCacheMissBannerText(missing);
+            SwingUtilities.invokeLater(() -> rep.accept(banner));
+        } else {
+            System.out.println("[EDO] " + detailMsg);
+            if (voiceDir != null) {
+                System.out.println("[EDO] Cache dir: " + voiceDir.toAbsolutePath());
+            }
+            for (String m : missing) {
+                if (m != null && !m.isBlank()) {
+                    System.out.println("[EDO]   " + m);
+                }
             }
         }
     }
-}
-
-
 
     private static String escapeHtml(String s) {
         if (s == null)

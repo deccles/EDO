@@ -108,12 +108,21 @@ public class TtsSprintf {
      * sample can play when the user has turned speech on in the dialog but not yet pressed OK.
      */
     public void speakfWithSpeechGate(boolean speechEnabled, String template, Object... args) {
+        speakfWithSpeechGateArray(speechEnabled, template, args);
+    }
+
+    /**
+     * Like {@link #speakfWithSpeechGate(boolean, String, Object...)} but accepts an argument array (e.g. from a
+     * sample table) without varargs ambiguity when passing {@code Object[]}.
+     */
+    public void speakfWithSpeechGateArray(boolean speechEnabled, String template, Object[] args) {
         // Double-gate: most callers already check speech enabled, but tests (and any missed call sites)
         // must never produce console spam or invoke TTS side effects.
         if (!speechEnabled) {
             return;
         }
-        SpeechPlan plan = formatToSpeechPlan(template, args);
+        Object[] a = args != null ? args : new Object[0];
+        SpeechPlan plan = formatToSpeechPlanPositional(template, a);
         List<String> chunks = plan.chunkTexts;
         System.out.print("*** SPEAKING: ");
         for (String s : chunks) {
@@ -334,7 +343,17 @@ public class TtsSprintf {
     }
 
     private SpeechPlan formatToSpeechPlan(String template, Object... args) {
+        if (args == null) {
+            return formatToSpeechPlanPositional(template, new Object[0]);
+        }
+        return formatToSpeechPlanPositional(template, args);
+    }
+
+    private SpeechPlan formatToSpeechPlanPositional(String template, Object[] args) {
         Objects.requireNonNull(template, "template");
+        if (args == null) {
+            args = new Object[0];
+        }
 
         List<String> out = new ArrayList<>();
         List<String> cacheKeys = new ArrayList<>();
@@ -350,7 +369,7 @@ public class TtsSprintf {
             String tag = m.group(1);
 
             Object value = null;
-            if (args != null && argIndex < args.length) {
+            if (argIndex < args.length) {
                 value = args[argIndex];
             }
             argIndex++;

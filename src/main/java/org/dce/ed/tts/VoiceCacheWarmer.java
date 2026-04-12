@@ -301,6 +301,16 @@ public final class VoiceCacheWarmer {
     }
 
     /**
+     * Two-commodity phrase used when warming {@code Prospector found {list} ...} (same logic as
+     * {@link #buildSampleProspectorListTwo}). Preferences "Test Speech" should pass this string with {@code 10}/{@code 90}
+     * so offline packs that included adjacent-pair warming hit cache for that clip.
+     */
+    public static String sampleProspectorListTwoForVoicePack() {
+        List<String> names = GalacticAveragePrices.loadDefault().getAllDisplayNamesSorted();
+        return buildSampleProspectorListTwo(names);
+    }
+
+    /**
      * Warm {@code Prospector found {list} ...} for consecutive commodity pairs and triples so multi-material
      * prospector lines match cached SSML chunks for many name combinations.
      */

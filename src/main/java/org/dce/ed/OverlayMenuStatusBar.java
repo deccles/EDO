@@ -44,7 +44,7 @@ public final class OverlayMenuStatusBar {
      */
     private static final int STATUS_BAR_MIN_HEIGHT_PX = 32;
 
-    /** Client property on the fleet badge host: last measured {@link Dimension} so the slot stays fixed when the badge is empty. */
+    /** Client property on the fleet badge host: last measured {@link Dimension} when the countdown badge was visible. */
     public static final String CLIENT_KEY_FLEET_BADGE_SLOT_DIM = "edo.fleetBadgeSlotDim";
 
     public static final Color MENU_POPUP_BG = EdoUi.Internal.DARK_14;
@@ -104,14 +104,6 @@ public final class OverlayMenuStatusBar {
     }
 
     /**
-     * Same total insets as {@code 1px line + fleetTimeBadgeInnerPadding()} so width/height stay constant when the
-     * colored border is removed (timer idle).
-     */
-    public static EmptyBorder fleetTimeBadgePlaceholderBorder() {
-        return new EmptyBorder(6, 5, 5, 5);
-    }
-
-    /**
      * Minimum slot size when no live measurement exists yet (matches status font; wide sample for {@code T-h:mm:ss}).
      */
     public static Dimension computeFleetBadgeSlotSize(Font font) {
@@ -142,23 +134,21 @@ public final class OverlayMenuStatusBar {
     }
 
     /**
-     * Empty, borderless-looking slot: same outer size as the active badge so the menu bar does not jump horizontally.
+     * When no jump/cooldown token is shown: hide the badge so it uses no horizontal space (status text starts
+     * at the left of the status region). Menu bar height stays {@link #STATUS_BAR_MIN_HEIGHT_PX} from
+     * {@link #applyStatusBarRowHeight} and the marquee strip.
      */
-    public static void applyFleetBadgePlaceholderLayout(JPanel host, JLabel label) {
+    public static void applyFleetBadgeCollapsedLayout(JPanel host, JLabel label) {
         if (host == null || label == null) {
             return;
         }
         label.setFont(statusRowFontFromPreferences());
         label.setText("");
-        host.setBorder(fleetTimeBadgePlaceholderBorder());
+        host.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         host.setBackground(opaquePlate(EdoUi.User.BACKGROUND));
-        Dimension slot = (Dimension) host.getClientProperty(CLIENT_KEY_FLEET_BADGE_SLOT_DIM);
-        if (slot == null || slot.width < 8 || slot.height < 8) {
-            slot = computeFleetBadgeSlotSize(label.getFont());
-        }
-        host.setPreferredSize(new Dimension(slot.width, slot.height));
-        host.setMinimumSize(new Dimension(slot.width, slot.height));
-        host.setVisible(true);
+        host.setPreferredSize(null);
+        host.setMinimumSize(null);
+        host.setVisible(false);
         host.revalidate();
     }
 
@@ -221,7 +211,7 @@ public final class OverlayMenuStatusBar {
         fleetCarrierTimeLabel.setHorizontalAlignment(SwingConstants.LEADING);
         fleetCarrierTimeLabel.setVerticalAlignment(SwingConstants.CENTER);
         fleetCarrierTimeBadgeHost.add(fleetCarrierTimeLabel, BorderLayout.CENTER);
-        applyFleetBadgePlaceholderLayout(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
+        applyFleetBadgeCollapsedLayout(fleetCarrierTimeBadgeHost, fleetCarrierTimeLabel);
 
         if (parent != null) {
             MouseAdapter statusClick = new MouseAdapter() {

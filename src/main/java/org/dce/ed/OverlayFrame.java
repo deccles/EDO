@@ -414,7 +414,7 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     static void updateFleetCarrierTimeBadgeExternal(JPanel host, JLabel label) {
         OverlayFrame f = overlayFrame;
         if (f == null) {
-            OverlayMenuStatusBar.applyFleetBadgePlaceholderLayout(host, label);
+            OverlayMenuStatusBar.applyFleetBadgeCollapsedLayout(host, label);
             return;
         }
         f.applyFleetCarrierTimeBadge(host, label);
@@ -427,11 +427,12 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         label.setFont(OverlayMenuStatusBar.statusRowFontFromPreferences());
         String token = getFleetCarrierTimeBadgeTextOnly();
         if (token == null || token.isBlank()) {
-            OverlayMenuStatusBar.applyFleetBadgePlaceholderLayout(host, label);
+            OverlayMenuStatusBar.applyFleetBadgeCollapsedLayout(host, label);
             return;
         }
         host.setPreferredSize(null);
         host.setMinimumSize(null);
+        host.setVisible(true);
         label.setText(token);
         Color border = carrierJumpDepartureTime != null ? EdoUi.User.ERROR : EdoUi.User.CORE_BLUE;
         host.setBorder(BorderFactory.createCompoundBorder(
