@@ -392,8 +392,13 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 			if (spanshRouteLoaded) {
 				SwingUtilities.invokeLater(() -> copyNextSystemFromBaseRoute(jump.getSystemAddress()));
 			}
-		} else if (event instanceof CarrierLocationEvent loc) {
-			super.handleLogEvent(event);
+		} else if (event instanceof CarrierLocationEvent) {
+			// CarrierLocation often appears in the journal around the same time as CarrierJump but can be ordered
+			// earlier; applying it advances the "you are here" arrows before the post-jump cooldown phase the
+			// overlay tracks from CarrierJump. With a loaded Spansh route, only CarrierJump should move the marker.
+			if (!spanshRouteLoaded) {
+				super.handleLogEvent(event);
+			}
 		}
 	}
 

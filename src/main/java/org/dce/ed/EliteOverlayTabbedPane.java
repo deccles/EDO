@@ -1491,7 +1491,7 @@ public static boolean hasMiningEquipment(LoadoutEvent loadout) {
 		String norm = item.toLowerCase(Locale.US);
 		for (String kw : miningKeywords) {
 			if (norm.contains(kw)) {
-				System.out.println("is mining ship because it has " + norm);
+//				System.out.println("is mining ship because it has " + norm);
 				return true;
 			}
 		}

@@ -115,6 +115,33 @@ public final class SystemCache implements SystemStore {
         return INSTANCE;
     }
 
+    /**
+     * Absolute path of the SQLite file used by this JVM's cache singleton—the same file the overlay opened
+     * when the singleton first initialized. In-process tools should prefer this over {@link #getSqliteCacheDbPath()}
+     * alone so the browser targets the live cache path, and calling {@link #getInstance()} first ensures the file exists.
+     */
+    public Path getCacheDbPath() {
+        return cacheDbPath;
+    }
+
+    /**
+     * True if the {@code systems} table has at least one row. Used when the journal import cursor exists but the
+     * SQLite file was replaced or deleted: incremental rescan would otherwise replay only events after the cursor
+     * and leave the cache nearly empty.
+     */
+    public synchronized boolean hasAnyCachedSystems() {
+        if (!sqliteReady || sqliteConnection == null) {
+            return false;
+        }
+        try (PreparedStatement ps = sqliteConnection.prepareStatement("SELECT 1 FROM systems LIMIT 1");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next();
+        } catch (SQLException ex) {
+            System.err.println("SystemCache: hasAnyCachedSystems failed: " + ex.getMessage());
+            return false;
+        }
+    }
+
     public static CachedSystem load() throws IOException {
         return getInstance().loadLastSystem();
     }

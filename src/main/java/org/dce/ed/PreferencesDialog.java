@@ -172,6 +172,8 @@ public class PreferencesDialog extends JDialog {
 	private JSpinner miningLowLimpetReminderPercentSpinner;
 	private JSpinner miningAnimGunSizeSpinner;
 	private JSpinner miningAnimAsteroidSizeSpinner;
+	private JCheckBox miningAnimShowLaserCheckBox;
+	private JCheckBox miningAnimShowAsteroidCheckBox;
 
 	private JCheckBox overlayTabRouteVisibleCheckBox;
 	private JCheckBox overlayTabSystemVisibleCheckBox;
@@ -211,7 +213,7 @@ public class PreferencesDialog extends JDialog {
 				new PreferenceSpeechTestClip("Did you forget your limpets again commander?"),
 				new PreferenceSpeechTestClip("Jump complete"),
 				new PreferenceSpeechTestClip("Cooldown complete"),
-				new PreferenceSpeechTestClip("Prospector found {material} at {n} percent.", "Tritium", Integer.valueOf(50)),
+				new PreferenceSpeechTestClip("Prospector found {material} at {n} percent.", "Grandidierite", Integer.valueOf(50)),
 				new PreferenceSpeechTestClip("Prospector found {list} from {min} to {max} percent.",
 						prospectorListTwo, Integer.valueOf(10), Integer.valueOf(90)),
 				new PreferenceSpeechTestClip("Entering clonal colony range of {species}. Minimum {meters} meters.",
@@ -1157,6 +1159,22 @@ public class PreferencesDialog extends JDialog {
 		animBox.add(miningAnimAsteroidSizeSpinner, abc);
 		abc.gridx = 2;
 		animBox.add(new JLabel("% (100 = default)"), abc);
+		abc.gridx = 0;
+		abc.gridy++;
+		abc.gridwidth = 3;
+		miningAnimShowLaserCheckBox = new JCheckBox("Show laser");
+		miningAnimShowLaserCheckBox.setOpaque(false);
+		miningAnimShowLaserCheckBox.setSelected(OverlayPreferences.isMiningAnimationShowLaser());
+		miningAnimShowLaserCheckBox.setToolTipText(
+				"When off, the mining scatter plot hides the gun platform, laser beam, and ore shrapnel during the gather animation.");
+		animBox.add(miningAnimShowLaserCheckBox, abc);
+		abc.gridy++;
+		miningAnimShowAsteroidCheckBox = new JCheckBox("Show asteroid");
+		miningAnimShowAsteroidCheckBox.setOpaque(false);
+		miningAnimShowAsteroidCheckBox.setSelected(OverlayPreferences.isMiningAnimationShowAsteroid());
+		miningAnimShowAsteroidCheckBox.setToolTipText(
+				"When off, scatter markers use data points only (no rotating asteroid line-art), including during gather.");
+		animBox.add(miningAnimShowAsteroidCheckBox, abc);
 		outer.add(animBox);
 
 		panel.add(outer, BorderLayout.NORTH);
@@ -1448,8 +1466,12 @@ public class PreferencesDialog extends JDialog {
 			}
 			PreferenceSpeechTestClip clip = PREFERENCE_SPEECH_TEST_CLIPS[
 					Math.floorMod(speechPreferenceTestClipIndex++, PREFERENCE_SPEECH_TEST_CLIPS.length)];
+			Object selVoice = speechVoiceCombo.getSelectedItem();
+			String voiceName = selVoice != null ? selVoice.toString() : null;
+			var voicePreview = new PollyTtsCached.SpeechSynthesisVoicePreview(voiceName);
 			speechPreferencesPreviewTts().speakfWithSpeechGateArray(
 					speechEnabledCheckBox.isSelected(),
+					voicePreview,
 					clip.template,
 					clip.args);
 		});
@@ -1998,6 +2020,12 @@ public class PreferencesDialog extends JDialog {
             } catch (Exception e) {
                 // ignore
             }
+        }
+        if (miningAnimShowLaserCheckBox != null) {
+            OverlayPreferences.setMiningAnimationShowLaser(miningAnimShowLaserCheckBox.isSelected());
+        }
+        if (miningAnimShowAsteroidCheckBox != null) {
+            OverlayPreferences.setMiningAnimationShowAsteroid(miningAnimShowAsteroidCheckBox.isSelected());
         }
 
         if (bioValuableThresholdMillionSpinner != null) {

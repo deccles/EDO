@@ -176,7 +176,8 @@ final class WindowsWindowIcons {
             }
         }
 
-        WinGDI.BITMAPINFO bmi = new WinGDI.BITMAPINFO(0);
+        // JNA forbids zero-length Structure arrays; for 32-bpp BI_RGB the palette is unused (Windows ignores it).
+        WinGDI.BITMAPINFO bmi = new WinGDI.BITMAPINFO(1);
         bmi.bmiHeader.biWidth = w;
         bmi.bmiHeader.biHeight = -h;
         bmi.bmiHeader.biPlanes = 1;

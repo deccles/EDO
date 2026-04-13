@@ -116,6 +116,15 @@ public class TtsSprintf {
      * sample table) without varargs ambiguity when passing {@code Object[]}.
      */
     public void speakfWithSpeechGateArray(boolean speechEnabled, String template, Object[] args) {
+        speakfWithSpeechGateArray(speechEnabled, null, template, args);
+    }
+
+    /**
+     * Like {@link #speakfWithSpeechGateArray(boolean, String, Object[])} but uses {@code voicePreview} for the
+     * Polly voice when non-null and non-blank (Speech tab test before OK).
+     */
+    public void speakfWithSpeechGateArray(boolean speechEnabled, PollyTtsCached.SpeechSynthesisVoicePreview voicePreview,
+            String template, Object[] args) {
         // Double-gate: most callers already check speech enabled, but tests (and any missed call sites)
         // must never produce console spam or invoke TTS side effects.
         if (!speechEnabled) {
@@ -131,10 +140,13 @@ public class TtsSprintf {
         if (chunks.isEmpty()) {
             return;
         }
+        else 
+        	System.out.println();
 
+        final PollyTtsCached.SpeechSynthesisVoicePreview previewForWorker = voicePreview;
         tts.getPlaybackQueue().submit(() -> {
             try {
-                speakAssembledBlocking(plan);
+                speakAssembledBlocking(plan, previewForWorker);
             } catch (Exception e) {
                 if (PollyTtsCached.isMissingAwsCredentialsError(e)) {
                     System.err.println("[EDO] TTS skipped: Amazon Polly needs AWS credentials (see earlier dialog or Preferences).");
@@ -145,7 +157,7 @@ public class TtsSprintf {
         });
     }
 
-    private void speakAssembledBlocking(SpeechPlan plan) throws Exception {
+    private void speakAssembledBlocking(SpeechPlan plan, PollyTtsCached.SpeechSynthesisVoicePreview voicePreview) throws Exception {
         if (plan == null || plan.chunkTexts.isEmpty()) {
             return;
         }
@@ -158,7 +170,8 @@ public class TtsSprintf {
                 ssmlPlan.chunkTexts,
                 ssmlPlan.cacheKeys,
                 ssmlPlan.ssml,
-                ssmlPlan.markNames
+                ssmlPlan.markNames,
+                voicePreview
         );
 
         // Filter nulls (blank chunks) and play as a single continuous stream.
@@ -304,7 +317,7 @@ public class TtsSprintf {
      */
     public void speakfBlocking(String template, Object... args) throws Exception {
         SpeechPlan plan = formatToSpeechPlan(template, args);
-        speakAssembledBlocking(plan);
+        speakAssembledBlocking(plan, null);
     }
 
     /**
@@ -318,7 +331,7 @@ public class TtsSprintf {
 
         tts.getPlaybackQueue().submit(() -> {
             try {
-                speakAssembledBlocking(plan);
+                speakAssembledBlocking(plan, null);
             } catch (Exception e) {
                 if (PollyTtsCached.isMissingAwsCredentialsError(e)) {
                     System.err.println("[EDO] TTS skipped: Amazon Polly needs AWS credentials (see earlier dialog or Preferences).");
@@ -331,7 +344,7 @@ public class TtsSprintf {
 
     public void speakfBlocking(String template, Map<String, ?> argsByTag) throws Exception {
         SpeechPlan plan = formatToSpeechPlan(template, argsByTag);
-        speakAssembledBlocking(plan);
+        speakAssembledBlocking(plan, null);
     }
 
     /**

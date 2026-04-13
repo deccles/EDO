@@ -125,6 +125,10 @@ public final class OverlayPreferences {
     private static final String KEY_MINING_ANIM_GUN_SIZE_PERCENT = "mining.animation.gunSizePercent";
     /** Mining scatter gather animation: asteroid line-art scale, 100 = current default artwork size. */
     private static final String KEY_MINING_ANIM_ASTEROID_SIZE_PERCENT = "mining.animation.asteroidSizePercent";
+    /** Mining scatter: gun platform + mining laser during gather (default on). */
+    private static final String KEY_MINING_ANIM_SHOW_LASER = "mining.animation.showLaser";
+    /** Mining scatter: rotating asteroid line-art markers (default on); off leaves plot dots only. */
+    private static final String KEY_MINING_ANIM_SHOW_ASTEROID = "mining.animation.showAsteroid";
 
     /**
      * Mining preferences ▸ Exobiology: minimum valuable exobiology threshold (million credits) — money bag, bio TTS,
@@ -1143,6 +1147,22 @@ public static Engine getSpeechEngine() {
 
     public static void setMiningAnimationAsteroidSizePercent(int percent) {
         PREFS.putInt(KEY_MINING_ANIM_ASTEROID_SIZE_PERCENT, clampMiningAnimationSizePercent(percent));
+    }
+
+    public static boolean isMiningAnimationShowLaser() {
+        return PREFS.getBoolean(KEY_MINING_ANIM_SHOW_LASER, true);
+    }
+
+    public static void setMiningAnimationShowLaser(boolean show) {
+        PREFS.putBoolean(KEY_MINING_ANIM_SHOW_LASER, show);
+    }
+
+    public static boolean isMiningAnimationShowAsteroid() {
+        return PREFS.getBoolean(KEY_MINING_ANIM_SHOW_ASTEROID, true);
+    }
+
+    public static void setMiningAnimationShowAsteroid(boolean show) {
+        PREFS.putBoolean(KEY_MINING_ANIM_SHOW_ASTEROID, show);
     }
 
     private static double getDoubleClamped(String key, double def, double min, double max) {

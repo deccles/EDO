@@ -82,6 +82,9 @@ public final class EdoSqliteDatabaseFrame extends JFrame {
     private final DefaultTableModel resultModel;
     private final JLabel statusLabel;
 
+    public static void main(String args[]) {
+        EdoSqliteDatabaseFrame.showDefaultOrBringToFront(null);
+    }
     private EdoSqliteDatabaseFrame(Path dbPath) throws SQLException {
         super("EDO SQLite Database");
         this.dbPath = dbPath;
@@ -738,10 +741,10 @@ public final class EdoSqliteDatabaseFrame extends JFrame {
     }
 
     /**
-     * Opens the EDO SQLite cache DB ({@link SystemCache#getSqliteCacheDbPath()}) or brings an existing window to front.
+     * Opens the same SQLite file as the running overlay's {@link SystemCache} singleton, or brings an existing window to front.
      */
     public static void showDefaultOrBringToFront(Component parent) {
-        Path path = SystemCache.getSqliteCacheDbPath();
+        Path path = SystemCache.getInstance().getCacheDbPath();
         showOrBringToFront(parent, path);
     }
 

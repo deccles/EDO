@@ -15,6 +15,7 @@ import java.awt.IllegalComponentStateException;
 import java.awt.MouseInfo;
 import java.awt.Point;
 import java.awt.PointerInfo;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -80,23 +81,42 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private static final int MIN_WIDTH = 260;
     private static final int MIN_HEIGHT = 200;
 
+    /** Legacy keys (still written on save so older builds / single-slot fallbacks keep working). */
     private static final String PREF_KEY_X = "overlay.x";
     private static final String PREF_KEY_Y = "overlay.y";
     private static final String PREF_KEY_WIDTH = "overlay.width";
     private static final String PREF_KEY_HEIGHT = "overlay.height";
+
+    private static final String PREF_KEY_PT_X = "overlay.pt.x";
+    private static final String PREF_KEY_PT_Y = "overlay.pt.y";
+    private static final String PREF_KEY_PT_WIDTH = "overlay.pt.width";
+    private static final String PREF_KEY_PT_HEIGHT = "overlay.pt.height";
+
+    private static final String PREF_KEY_DECORATED_X = "overlay.decorated.x";
+    private static final String PREF_KEY_DECORATED_Y = "overlay.decorated.y";
+    private static final String PREF_KEY_DECORATED_WIDTH = "overlay.decorated.width";
+    private static final String PREF_KEY_DECORATED_HEIGHT = "overlay.decorated.height";
 
     private static final String DEFAULT_TITLE_BAR_TITLE = "Elite Dangerous RockHound";
 
     /** Cooldown duration after fleet jump countdown expires (seconds). */
     private static final int CARRIER_JUMP_COOLDOWN_SECONDS = 5 * 60;
     /**
-     * Empirical correction: observed cooldown end is ~10 seconds earlier than the raw
-     * "5 minutes" window derived from the journal reference timestamp.
-     * If this changes with future game/journal behavior, this constant is the tuning knob.
+     * Empirical correction to {@link #CARRIER_JUMP_COOLDOWN_SECONDS} when anchoring the bar to {@code CarrierJump}
+     * journal time: game-ready cooldown ends earlier than a naive +5:00 (earlier ~10s tweak plus a consistent
+     * ~1 minute display overrun vs in-game UI in current builds).
      */
-    private static final int CARRIER_JUMP_COOLDOWN_END_CORRECTION_SECONDS = -10;
+    private static final int CARRIER_JUMP_COOLDOWN_END_CORRECTION_SECONDS = -(10 + 60);
     private static final int CARRIER_JUMP_COOLDOWN_SECONDS_EFFECTIVE =
             CARRIER_JUMP_COOLDOWN_SECONDS + CARRIER_JUMP_COOLDOWN_END_CORRECTION_SECONDS;
+    /**
+     * Start cooldown on {@code CarrierJump} when the journal timestamp is this recent, even if we never had an
+     * in-memory {@code CarrierJumpRequest} countdown (overlay restarted, missed request line, etc.).
+     * Ancient jumps from full file replay stay ignored.
+     */
+    private static final long CARRIER_JUMP_COOLDOWN_LIVE_MAX_AGE_SECONDS = 15L * 60L;
+    /** Allow journal timestamps slightly ahead of the local clock. */
+    private static final long CARRIER_JUMP_COOLDOWN_LIVE_FUTURE_SKEW_SECONDS = 120L;
 
     private static final TtsSprintf CARRIER_JUMP_TTS = new TtsSprintf(new PollyTtsCached());
 
@@ -392,8 +412,12 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
      */
     static String buildDecoratedMenuStatusHtml(String rightStatusHtml, boolean limpet) {
         String right = rightStatusHtml != null ? rightStatusHtml.trim() : "";
+        OverlayFrame f = OverlayFrame.overlayFrame;
+        boolean noVisibleRight = (f != null)
+                ? f.isRightStatusEffectivelyEmpty()
+                : right.isEmpty();
         String limpetSpan = "<span style='color:" + EdoUi.htmlRgb(EdoUi.User.ERROR) + ";'>"
-                + (right.isEmpty() ? "" : "  |  ") + "Low Limpet Warning!</span>";
+                + (noVisibleRight ? "" : "  |  ") + "Low Limpet Warning!</span>";
         if (!limpet) {
             return right;
         }
@@ -536,8 +560,8 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
 
         applyOverlayBackgroundFromPreferences(false);
 
-        // Load saved bounds if available; otherwise use defaults
-        loadBoundsFromPreferences(prefs, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
+        Rectangle passThroughRect = readPassThroughStoredBounds();
+        setBounds(passThroughRect.x, passThroughRect.y, passThroughRect.width, passThroughRect.height);
 
         // Add custom resize handler for edges/corners.
         // IMPORTANT: attach recursively so resizing works even when cursor is over child components.
@@ -605,7 +629,12 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
     private void saveSessionState() {
         EliteOverlayTabbedPane tabs = (contentPanel != null) ? contentPanel.getTabbedPane() : null;
         if (tabs == null) return;
-        EdoSessionState state = new EdoSessionState();
+        EdoSessionState state;
+        try {
+            state = EdoSessionPersistence.load();
+        } catch (Exception e) {
+            state = new EdoSessionState();
+        }
         tabs.getRouteTabPanel().fillSessionState(state);
         tabs.getFleetCarrierTabPanel().fillSessionState(state);
         tabs.getSystemTabPanel().fillSessionState(state);
@@ -619,10 +648,14 @@ public class OverlayFrame extends JFrame implements OverlayUiPreviewHost {
         if (state == null) return;
         if (carrierJumpDepartureTime != null) {
             state.setCarrierJumpDepartureTime(carrierJumpDepartureTime.toString());
+        } else {
+            state.setCarrierJumpDepartureTime(null);
         }
         state.setCarrierJumpTargetSystem(carrierJumpTargetSystem);
         if (carrierJumpCooldownEndTime != null) {
             state.setCarrierJumpCooldownEndTime(carrierJumpCooldownEndTime.toString());
+        } else {
+            state.setCarrierJumpCooldownEndTime(null);
         }
     }
 
@@ -783,7 +816,11 @@ private void installCarrierJumpTitleUpdater() {
                         return;
                     }
                     Instant newEndTime = jumpTs.plusSeconds(CARRIER_JUMP_COOLDOWN_SECONDS_EFFECTIVE);
+                    Instant now = Instant.now();
+                    boolean jumpLooksLive = !jumpTs.isBefore(now.minusSeconds(CARRIER_JUMP_COOLDOWN_LIVE_MAX_AGE_SECONDS))
+                            && !jumpTs.isAfter(now.plusSeconds(CARRIER_JUMP_COOLDOWN_LIVE_FUTURE_SKEW_SECONDS));
                     boolean shouldStartOrResync = hadPendingCountdown
+                            || jumpLooksLive
                             || ((carrierJumpCooldownEndTime != null)
                                     && newEndTime.isBefore(carrierJumpCooldownEndTime));
                     if (shouldStartOrResync) {
@@ -1020,7 +1057,11 @@ private void installLowLimpetStatusUpdater() {
  * Same combined status string as {@link DecoratedOverlayDialog#updateStatusLabel()}, plus transient
  * exception text when {@link #reportExceptionToTitleBar} is active.
  */
-private boolean isRightStatusEffectivelyEmpty() {
+/**
+ * True when the right status area has no meaningful text (no FC line, no bio credits line, no update hint, no speech banner).
+ * Used by pass-through status and by {@link #buildDecoratedMenuStatusHtml} so a lone limpet warning does not get a leading {@code |}.
+ */
+boolean isRightStatusEffectivelyEmpty() {
     String main = getRightStatusMainSuffixPlain();
     if (main != null && !main.trim().isEmpty()) {
         return false;
@@ -1370,6 +1411,145 @@ private void refreshPassThroughUnifiedStatus() {
         }
     }
 
+    /**
+     * Union of every attached display in screen coordinates (same space as {@link Window#setBounds}).
+     * {@link Toolkit#getScreenSize()} is primary-monitor only and was forcing restored windows onto that display.
+     */
+    private static Rectangle getVirtualScreenBoundsUnion() {
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        GraphicsDevice[] devices = ge.getScreenDevices();
+        if (devices == null || devices.length == 0) {
+            Dimension d = Toolkit.getDefaultToolkit().getScreenSize();
+            return new Rectangle(0, 0, d.width, d.height);
+        }
+        Rectangle union = null;
+        for (GraphicsDevice gd : devices) {
+            Rectangle b = gd.getDefaultConfiguration().getBounds();
+            union = (union == null) ? new Rectangle(b) : union.union(b);
+        }
+        if (union == null) {
+            Dimension d = Toolkit.getDefaultToolkit().getScreenSize();
+            return new Rectangle(0, 0, d.width, d.height);
+        }
+        return union;
+    }
+
+    /** Fits {@code x,y,w,h} into the multi-monitor virtual desktop (not just the primary display). */
+    private static Rectangle clampFrameBoundsToVirtualScreens(int x, int y, int w, int h) {
+        Rectangle union = getVirtualScreenBoundsUnion();
+        w = Math.min(w, union.width);
+        h = Math.min(h, union.height);
+        w = Math.max(MIN_WIDTH, w);
+        h = Math.max(MIN_HEIGHT, h);
+        w = Math.min(w, union.width);
+        h = Math.min(h, union.height);
+        x = Math.max(union.x, Math.min(x, union.x + union.width - w));
+        y = Math.max(union.y, Math.min(y, union.y + union.height - h));
+        return new Rectangle(x, y, w, h);
+    }
+
+    private static Rectangle readLegacyStoredBounds(Preferences p) {
+        int x = p.getInt(PREF_KEY_X, DEFAULT_X);
+        int y = p.getInt(PREF_KEY_Y, DEFAULT_Y);
+        int w = p.getInt(PREF_KEY_WIDTH, DEFAULT_WIDTH);
+        int h = p.getInt(PREF_KEY_HEIGHT, DEFAULT_HEIGHT);
+        Rectangle r = clampFrameBoundsToVirtualScreens(x, y, w, h);
+        System.out.println("Read legacy bounds " + r.x + " " + r.y + " " + r.width + " " + r.height);
+        return r;
+    }
+
+    /**
+     * Undecorated pass-through {@link OverlayFrame} bounds for the next session.
+     */
+    public static Rectangle readPassThroughStoredBounds() {
+        Preferences p = Preferences.userNodeForPackage(OverlayFrame.class);
+        int w = p.getInt(PREF_KEY_PT_WIDTH, -1);
+        if (w >= MIN_WIDTH) {
+            int x = p.getInt(PREF_KEY_PT_X, DEFAULT_X);
+            int y = p.getInt(PREF_KEY_PT_Y, DEFAULT_Y);
+            int h = p.getInt(PREF_KEY_PT_HEIGHT, DEFAULT_HEIGHT);
+            Rectangle r = clampFrameBoundsToVirtualScreens(x, y, w, h);
+            System.out.println("Read pass-through bounds " + r.x + " " + r.y + " " + r.width + " " + r.height);
+            return r;
+        }
+        return readLegacyStoredBounds(p);
+    }
+
+    /**
+     * Normal decorated {@link org.dce.ed.DecoratedOverlayDialog} bounds for the next session.
+     */
+    public static Rectangle readDecoratedStoredBounds() {
+        Preferences p = Preferences.userNodeForPackage(OverlayFrame.class);
+        int w = p.getInt(PREF_KEY_DECORATED_WIDTH, -1);
+        if (w >= MIN_WIDTH) {
+            int x = p.getInt(PREF_KEY_DECORATED_X, DEFAULT_X);
+            int y = p.getInt(PREF_KEY_DECORATED_Y, DEFAULT_Y);
+            int h = p.getInt(PREF_KEY_DECORATED_HEIGHT, DEFAULT_HEIGHT);
+            Rectangle r = clampFrameBoundsToVirtualScreens(x, y, w, h);
+            System.out.println("Read decorated bounds " + r.x + " " + r.y + " " + r.width + " " + r.height);
+            return r;
+        }
+        return readLegacyStoredBounds(p);
+    }
+
+    private static void putBoundsGroup(Preferences p, String kx, String ky, String kw, String kh, Rectangle r) {
+        p.putInt(kx, r.x);
+        p.putInt(ky, r.y);
+        p.putInt(kw, r.width);
+        p.putInt(kh, r.height);
+    }
+
+    private static void putLegacyBounds(Preferences p, Rectangle r) {
+        putBoundsGroup(p, PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT, r);
+    }
+
+    private static void flushOverlayPrefs(Preferences p) {
+        try {
+            p.flush();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Persists pass-through outer bounds and mirrors to legacy {@code overlay.*} keys. */
+    public static void persistPassThroughBoundsRectangle(Rectangle r) {
+        if (r == null) {
+            return;
+        }
+        Rectangle c = clampFrameBoundsToVirtualScreens(r.x, r.y, r.width, r.height);
+        Preferences p = Preferences.userNodeForPackage(OverlayFrame.class);
+        putBoundsGroup(p, PREF_KEY_PT_X, PREF_KEY_PT_Y, PREF_KEY_PT_WIDTH, PREF_KEY_PT_HEIGHT, c);
+        putLegacyBounds(p, c);
+        flushOverlayPrefs(p);
+        System.out.println("Saved pass-through bounds: " + c.x + " " + c.y + " " + c.width + " " + c.height);
+    }
+
+    /** Persists decorated-window outer bounds and mirrors to legacy {@code overlay.*} keys. */
+    public static void persistDecoratedBoundsRectangle(Rectangle r) {
+        if (r == null) {
+            return;
+        }
+        Rectangle c = clampFrameBoundsToVirtualScreens(r.x, r.y, r.width, r.height);
+        Preferences p = Preferences.userNodeForPackage(OverlayFrame.class);
+        putBoundsGroup(p, PREF_KEY_DECORATED_X, PREF_KEY_DECORATED_Y, PREF_KEY_DECORATED_WIDTH, PREF_KEY_DECORATED_HEIGHT, c);
+        putLegacyBounds(p, c);
+        flushOverlayPrefs(p);
+        System.out.println("Saved decorated bounds: " + c.x + " " + c.y + " " + c.width + " " + c.height);
+    }
+
+    /** Outer bounds using screen location when the peer exists (multi-monitor / DPI friendly). */
+    public static Rectangle windowOuterRectangle(Window w) {
+        if (w == null) {
+            return new Rectangle(DEFAULT_X, DEFAULT_Y, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        }
+        try {
+            Point loc = w.getLocationOnScreen();
+            Rectangle b = w.getBounds();
+            return new Rectangle(loc.x, loc.y, b.width, b.height);
+        } catch (IllegalComponentStateException e) {
+            return new Rectangle(w.getX(), w.getY(), w.getWidth(), w.getHeight());
+        }
+    }
+
     public void loadBoundsFromPreferences(
             Preferences prefs,
             String keyX,
@@ -1381,30 +1561,9 @@ private void refreshPassThroughUnifiedStatus() {
         int y = prefs.getInt(keyY, DEFAULT_Y);
         int w = prefs.getInt(keyWidth, DEFAULT_WIDTH);
         int h = prefs.getInt(keyHeight, DEFAULT_HEIGHT);
-
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-
-        if (w > screenSize.width) {
-            w = screenSize.width;
-        }
-        if (h > screenSize.height) {
-            h = screenSize.height;
-        }
-
-        if (x < 0) {
-            x = 0;
-        }
-        if (y < 0) {
-            y = 0;
-        }
-        if (x + w > screenSize.width) {
-            x = screenSize.width - w;
-        }
-        if (y + h > screenSize.height) {
-            y = screenSize.height - h;
-        }
-        System.out.println("Read " + x + " " + y + " " + w + " " + h);
-        setBounds(x, y, w, h);
+        Rectangle r = clampFrameBoundsToVirtualScreens(x, y, w, h);
+        System.out.println("Read " + r.x + " " + r.y + " " + r.width + " " + r.height);
+        setBounds(r.x, r.y, r.width, r.height);
     }
 
     public void saveBoundsToPreferences(
@@ -1417,31 +1576,22 @@ private void refreshPassThroughUnifiedStatus() {
         prefs.putInt(keyY, getY());
         prefs.putInt(keyWidth, getWidth());
         prefs.putInt(keyHeight, getHeight());
-
+        flushOverlayPrefs(prefs);
         System.out.println("Saved : " + getX() + " " + getY() + " " + getWidth() + " " + getHeight());
     }
 
     /**
-     * Writes {@code w}'s bounds to the same keys {@link #loadBoundsFromPreferences} reads at startup. The decorated
-     * (non-pass-through) host must call this on exit; otherwise only {@link #closeOverlay()} from the pass-through
-     * frame persisted geometry.
+     * Saves {@code w}'s outer bounds for decorated mode (call from {@link org.dce.ed.DecoratedOverlayDialog} on exit).
      */
     public static void persistOuterBounds(Window w) {
-        if (w == null) {
-            return;
-        }
-        Preferences p = Preferences.userNodeForPackage(OverlayFrame.class);
-        p.putInt(PREF_KEY_X, w.getX());
-        p.putInt(PREF_KEY_Y, w.getY());
-        p.putInt(PREF_KEY_WIDTH, w.getWidth());
-        p.putInt(PREF_KEY_HEIGHT, w.getHeight());
+        persistDecoratedBoundsRectangle(windowOuterRectangle(w));
     }
 
     /**
      * Centralized close method: saves bounds then exits.
      */
     public void closeOverlay() {
-        saveBoundsToPreferences(PREF_KEY_X, PREF_KEY_Y, PREF_KEY_WIDTH, PREF_KEY_HEIGHT);
+        persistPassThroughBoundsRectangle(windowOuterRectangle(this));
         dispose();
         System.exit(0);
     }

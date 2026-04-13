@@ -109,6 +109,13 @@ public class PollyTtsCached implements Closeable {
             "Ivy", "Joanna", "Kendra", "Kimberly", "Salli", "Joey", "Justin", "Matthew"
     );
 
+    /**
+     * Optional Polly voice name for preview synthesis (e.g. Speech preferences before OK).
+     * When {@code voiceName} is null or blank, {@link OverlayPreferences} is used.
+     */
+    public record SpeechSynthesisVoicePreview(String voiceName) {
+    }
+
     // Single-thread executor = non-blocking callers, but sequential playback.
     private static final ExecutorService PLAYBACK_QUEUE  = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "PollyTtsCached-Playback");
@@ -192,7 +199,7 @@ public class PollyTtsCached implements Closeable {
     public void speakBlocking(String text) throws Exception {
         Objects.requireNonNull(text, "text");
 
-        VoiceSettings s = resolveVoiceSettings();
+        VoiceSettings s = resolveVoiceSettings(null);
         Path wavFile = getOrCreateCachedWav(text, s.voiceName, s.engine, s.sampleRate);
         if (wavFile == null) {
             return;
@@ -204,7 +211,7 @@ public class PollyTtsCached implements Closeable {
         if (text == null || text.isBlank()) {
             return null;
         }
-        VoiceSettings s = resolveVoiceSettings();
+        VoiceSettings s = resolveVoiceSettings(null);
         return getOrCreateCachedWav(text, s.voiceName, s.engine, s.sampleRate);
     }
 
@@ -230,7 +237,7 @@ public class PollyTtsCached implements Closeable {
      * This overload keys each chunk by its literal chunk text (legacy behavior).
      */
     public List<Path> ensureCachedWavsFromSsmlMarks(List<String> chunkTexts, String ssml, List<String> markNames) throws Exception {
-        return ensureCachedWavsFromSsmlMarks(chunkTexts, chunkTexts, ssml, markNames);
+        return ensureCachedWavsFromSsmlMarks(chunkTexts, chunkTexts, ssml, markNames, null);
     }
 
     /**
@@ -241,6 +248,15 @@ public class PollyTtsCached implements Closeable {
      * markNames : one mark per chunk, in order, present in the SSML as <mark name="..."/>
      */
     public List<Path> ensureCachedWavsFromSsmlMarks(List<String> chunkTexts, List<String> cacheKeys, String ssml, List<String> markNames) throws Exception {
+        return ensureCachedWavsFromSsmlMarks(chunkTexts, cacheKeys, ssml, markNames, null);
+    }
+
+    /**
+     * Same as {@link #ensureCachedWavsFromSsmlMarks(List, List, String, List)} with an optional voice name
+     * override for preview (non-persisted UI selection).
+     */
+    public List<Path> ensureCachedWavsFromSsmlMarks(List<String> chunkTexts, List<String> cacheKeys, String ssml,
+            List<String> markNames, SpeechSynthesisVoicePreview voicePreview) throws Exception {
         if (chunkTexts == null || markNames == null || chunkTexts.isEmpty()) {
             return List.of();
         }
@@ -257,7 +273,7 @@ public class PollyTtsCached implements Closeable {
             throw new IllegalArgumentException("ssml is blank");
         }
 
-        VoiceSettings s = resolveVoiceSettings();
+        VoiceSettings s = resolveVoiceSettings(voicePreview);
         Path voiceDir = getVoiceCacheDir(s.voiceName, s.engine, s.sampleRate);
         Files.createDirectories(voiceDir);
 
@@ -1259,8 +1275,11 @@ if (!OverlayPreferences.isSpeechUseAwsSynthesis()) {
     // Settings + utils
     // ------------------------------
 
-    private VoiceSettings resolveVoiceSettings() {
+    private VoiceSettings resolveVoiceSettings(SpeechSynthesisVoicePreview voicePreview) {
         String voiceName = OverlayPreferences.getSpeechVoiceName();
+        if (voicePreview != null && voicePreview.voiceName() != null && !voicePreview.voiceName().isBlank()) {
+            voiceName = voicePreview.voiceName().trim();
+        }
         if (voiceName == null || voiceName.isBlank()) {
             voiceName = "Joanna";
         }

@@ -103,6 +103,16 @@ public class RescanJournalsMain {
 			System.out.println("Forcing full rescan (--full). Ignoring any existing import timestamp.");
 		}
 
+		// If the import cursor advanced (live play / prior runs) but the SQLite cache was deleted, is on a new PC,
+		// or was switched to a new path, incremental replay would only load events after the cursor — leaving
+		// systems empty until new jumps. Replay full journal history once when we see that mismatch.
+		if (forcedJournalFile == null && !forceFull && lastImport != null
+				&& !SystemCache.getInstance().hasAnyCachedSystems()) {
+			System.out.println(
+					"Journal import cursor exists but the system cache has no systems; replaying all journals once to rebuild the cache.");
+			lastImport = null;
+		}
+
 		List<EliteLogEvent> events;
 		if (forcedJournalFile != null) {
 			// We intentionally do NOT stage/copy anything into the live journal directory

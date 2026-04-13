@@ -189,7 +189,7 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
             StartupSplashOverlay.install(passThroughFrame);
         } else {
             // Start directly in decorated non-pass-through mode (no startup mode flip).
-            java.awt.Rectangle bounds = passThroughFrame.getBounds();
+            Rectangle bounds = OverlayFrame.readDecoratedStoredBounds();
             passThroughFrame.setPassThroughEnabled(false);
 
             decoratedDialog.setBounds(bounds);
@@ -251,6 +251,11 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
     	if (captured == null) {
     		captured = new Rectangle(fromWindow.getBounds());
     	}
+    	if (this.passThroughMode) {
+    		OverlayFrame.persistPassThroughBoundsRectangle(captured);
+    	} else {
+    		OverlayFrame.persistDecoratedBoundsRectangle(captured);
+    	}
     	// Always take outer size from the window we are leaving. Merging with a stored size could keep an
     	// inflated getBounds() from the other host (pass-through often reports slightly larger on Windows).
     	final Rectangle outerBounds = new Rectangle(captured);
@@ -308,6 +313,7 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
                     Rectangle finalRect = afterContent != null ? afterContent : applied;
                     reapplyFixedOverlayBounds(decoratedDialog, finalRect);
                     decoratedDialog.hideTransitionShield();
+                    OverlayFrame.persistDecoratedBoundsRectangle(OverlayFrame.windowOuterRectangle(decoratedDialog));
                 });
     		});
     	}
@@ -482,6 +488,9 @@ public class EliteDangerousOverlay implements NativeKeyListener, NativeMouseWhee
                 Timer t = new Timer(120, e -> {
                     ((Timer) e.getSource()).stop();
                     reapplyFixedOverlayBounds(w, finalRect);
+                    if (w instanceof OverlayFrame) {
+                        OverlayFrame.persistPassThroughBoundsRectangle(OverlayFrame.windowOuterRectangle(w));
+                    }
                 });
                 t.setRepeats(false);
                 t.start();

@@ -3862,10 +3862,14 @@ String getName() {
 		 */
 		private double animGunScaleCached = 1.0;
 		private double animAsteroidScaleCached = 1.0;
+		private boolean animShowLaserCached = true;
+		private boolean animShowAsteroidCached = true;
 
 		private void refreshAnimationScaleCache() {
 			animGunScaleCached = OverlayPreferences.getMiningAnimationGunSizePercent() / 100.0;
 			animAsteroidScaleCached = OverlayPreferences.getMiningAnimationAsteroidSizePercent() / 100.0;
+			animShowLaserCached = OverlayPreferences.isMiningAnimationShowLaser();
+			animShowAsteroidCached = OverlayPreferences.isMiningAnimationShowAsteroid();
 		}
 
 		private double gunDrawScale() {
@@ -3973,6 +3977,9 @@ String getName() {
 		}
 
 		private boolean gatherGunWithinEpsilonOfHome(double epsilon) {
+			if (!animShowLaserCached) {
+				return true;
+			}
 			if (gatherAnimCommander == null || gatherAnimCommander.isEmpty()) {
 				return true;
 			}
@@ -4052,6 +4059,9 @@ String getName() {
 		}
 
 		private void drawGunPlatforms(Graphics2D g2, PlotGeom geom, List<ProspectorLogRow> toPlot, Map<String, Color> commanderColor) {
+			if (!animShowLaserCached) {
+				return;
+			}
 			List<String> pcs = platformCommandersForPlot(toPlot);
 			if (pcs.isEmpty()) {
 				return;
@@ -4110,6 +4120,10 @@ String getName() {
 			hoverPollTimer.start();
 			asteroidSpinTimer = new javax.swing.Timer(45, e -> {
 				if (!isVisible()) {
+					return;
+				}
+				refreshAnimationScaleCache();
+				if (!animShowAsteroidCached) {
 					return;
 				}
 				asteroidSpinAngle += 0.12;
@@ -4431,6 +4445,9 @@ String getName() {
 				return;
 			}
 			refreshAnimationScaleCache();
+			if (!animShowLaserCached) {
+				gatherParticles.clear();
+			}
 			if (gatherDebrisPhaseOnly) {
 				for (OreParticle p : gatherParticles) {
 					p.ageMs += 30;
@@ -4440,7 +4457,7 @@ String getName() {
 				}
 				gatherParticles.removeIf(p -> p.ageMs > 700);
 				PlotGeom gDebris = computePlotGeom();
-				if (gDebris != null && !gatherAnimCommander.isEmpty()) {
+				if (animShowLaserCached && gDebris != null && !gatherAnimCommander.isEmpty()) {
 					List<String> pcsD = platformCommandersForPlot(filteredRows());
 					double home = homeXForCommander(gDebris, gatherAnimCommander, pcsD);
 					Double gx = gunPlatformCenterXByCommander.get(gatherAnimCommander);
@@ -4470,7 +4487,7 @@ String getName() {
 			while (gatherParticles.size() > 220) {
 				gatherParticles.remove(0);
 			}
-			if (gatherAnimPhase > 0.02f && gatherAnimPhase < 1f) {
+			if (animShowLaserCached && gatherAnimPhase > 0.02f && gatherAnimPhase < 1f) {
 				Point rock = currentGatherAsteroidScreenPos();
 				spawnOreTrailAtRock(rock.x, rock.y);
 			}
@@ -4486,7 +4503,7 @@ String getName() {
 				}
 			}
 			PlotGeom gTrack = computePlotGeom();
-			if (gTrack != null && !gatherAnimCommander.isEmpty()) {
+			if (animShowLaserCached && gTrack != null && !gatherAnimCommander.isEmpty()) {
 				Point rockScr = currentGatherAsteroidScreenPos();
 				Double curX = gunPlatformCenterXByCommander.get(gatherAnimCommander);
 				if (curX != null) {
@@ -4568,22 +4585,31 @@ String getName() {
 				return;
 			}
 			if (gatherDebrisPhaseOnly) {
-				drawGatherParticlesOnly(g2);
+				if (animShowLaserCached) {
+					drawGatherParticlesOnly(g2);
+				}
 				return;
 			}
 			Point rock = currentGatherAsteroidScreenPos();
 			int ax = rock.x;
 			int ay = rock.y;
-			if (gatherLaserFrom != null && gatherAnimPhase > 0f) {
+			if (animShowLaserCached && gatherLaserFrom != null && gatherAnimPhase > 0f) {
 				// Beam always reaches the rock; do not shorten the beam while the rock moves (avoids rock sliding ahead of the laser).
 				drawPlasmaLaser(g2, gatherLaserFrom.x, gatherLaserFrom.y, ax, ay, 1f);
 			}
-			drawLineArtAsteroid(g2, ax, ay, gatherAsteroidColor, gatherPhaseSpin, 0.02);
+			if (animShowAsteroidCached) {
+				drawLineArtAsteroid(g2, ax, ay, gatherAsteroidColor, gatherPhaseSpin, 0.02);
+			}
 
-			drawGatherParticlesOnly(g2);
+			if (animShowLaserCached) {
+				drawGatherParticlesOnly(g2);
+			}
 		}
 
 		private void drawGatherParticlesOnly(Graphics2D g2) {
+			if (!animShowLaserCached) {
+				return;
+			}
 			g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.85f));
 			for (OreParticle p : gatherParticles) {
 				float life = 1f - p.ageMs / 700f;
@@ -4941,7 +4967,7 @@ String getName() {
 
 			// Line-art asteroids: {@link MiningScatterAsteroidModel#computeRockMarkerRows} — one rock per material
 			// on the commander's current asteroid (latest row anchor), no duplicate rows for the same material.
-			if (!pointInfos.isEmpty() && sessionActiveRun > 0) {
+			if (animShowAsteroidCached && !pointInfos.isEmpty() && sessionActiveRun > 0) {
 				List<ProspectorLogRow> inSession = toPlot.stream()
 					.filter(r -> r.getRun() == sessionActiveRun)
 					.toList();
