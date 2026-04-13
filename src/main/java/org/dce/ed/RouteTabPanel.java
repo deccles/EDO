@@ -26,6 +26,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +43,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -51,6 +54,7 @@ import javax.swing.event.ChangeListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
+import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 
 import org.dce.ed.ui.PassThroughScrollSupport;
@@ -128,6 +132,19 @@ public class RouteTabPanel extends JPanel {
 	private static final int COL_CLASS    = 3;
 	private static final int COL_STATUS   = 4;
 	private static final int COL_DISTANCE = 5;
+	/** Route marker column is fixed width (arrows). */
+	private static final int ROUTE_COL_WIDTH_MARKER = 20;
+	/** Minimum width for the # column (route index). */
+	private static final int ROUTE_COL_MIN_INDEX = 36;
+	private static final int ROUTE_COL_PREF_INDEX = 44;
+	/** System name shrinks first; this is the smallest useful width before stealing from Class. */
+	private static final int ROUTE_COL_MIN_SYSTEM = 40;
+	/** Keep status glyphs readable; {@link StatusCircleIcon} scales with UI font. */
+	private static final int ROUTE_COL_MIN_STATUS_EXTRA = 12;
+	/** Horizontal padding around measured Ly text (renderer borders). */
+	private static final int ROUTE_COL_DISTANCE_PAD = 20;
+	/** Keep star-class / fuel gauge usable; may shrink below preferred if the window is very narrow. */
+	private static final int ROUTE_COL_MIN_CLASS_EXTRA = 6;
 	/** Keep current system row at this offset from top when auto-scrolling (e.g. one jump = one row scroll). */
 	private static final int TARGET_CURRENT_ROW_OFFSET = 4;
 	private final JLabel headerLabel;
@@ -433,8 +450,9 @@ public class RouteTabPanel extends JPanel {
 		};
 		table.setDefaultRenderer(Object.class, defaultRenderer);
 		table.getColumnModel().getColumn(COL_MARKER).setCellRenderer(new MarkerRenderer());
-		table.getColumnModel().getColumn(COL_MARKER).setMaxWidth(20);
-		table.getColumnModel().getColumn(COL_MARKER).setPreferredWidth(20);
+		table.getColumnModel().getColumn(COL_MARKER).setMinWidth(ROUTE_COL_WIDTH_MARKER);
+		table.getColumnModel().getColumn(COL_MARKER).setMaxWidth(ROUTE_COL_WIDTH_MARKER);
+		table.getColumnModel().getColumn(COL_MARKER).setPreferredWidth(ROUTE_COL_WIDTH_MARKER);
 		// System column needs indentation support for synthetic destination-body rows.
 		table.getColumnModel().getColumn(COL_SYSTEM).setCellRenderer(new SystemNameRenderer());
 		table.getColumnModel().getColumn(COL_CLASS).setCellRenderer(new StarClassRenderer());
@@ -492,13 +510,9 @@ public class RouteTabPanel extends JPanel {
 		table.getColumnModel()
 		.getColumn(COL_DISTANCE)
 		.setCellRenderer(distanceRenderer);
-		// Column widths
-		TableColumnModel columns = table.getColumnModel();
-		columns.getColumn(COL_INDEX).setPreferredWidth(40);   // #
-		columns.getColumn(COL_SYSTEM).setPreferredWidth(260); // system name
-		columns.getColumn(COL_CLASS).setPreferredWidth(routeClassColumnPreferredWidthPx()); // class + gauge
-		columns.getColumn(COL_STATUS).setPreferredWidth(40);  // check/? status
-		columns.getColumn(COL_DISTANCE).setPreferredWidth(60); // Ly
+		// Column widths: layout is driven by the viewport (see applyRouteTableColumnLayout).
+		table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+		configureRouteTableColumnResizePolicy();
 		routeScrollPane = new JScrollPane(table);
 		routeScrollPane.setOpaque(false);
 		routeScrollPane.getViewport().setOpaque(false);
@@ -507,6 +521,7 @@ public class RouteTabPanel extends JPanel {
 		if (routeScrollPane.getViewport() != null) {
 			routeScrollPane.getViewport().setBorder(null);
 			installViewportScrollListener(routeScrollPane.getViewport());
+			installRouteTableColumnViewportListener(routeScrollPane.getViewport());
 		}
 		if (routeScrollPane.getColumnHeader() != null) {
 			routeScrollPane.getColumnHeader().setBorder(null);
@@ -532,12 +547,7 @@ public class RouteTabPanel extends JPanel {
 		routeScrollPane.setColumnHeaderView(null);
 		table.setTableHeader(null);
 
-		SwingUtilities.invokeLater(() -> {
-			TableColumnModel cols = table.getColumnModel();
-			cols.getColumn(COL_MARKER).setMinWidth(20);
-			cols.getColumn(COL_MARKER).setMaxWidth(20);
-			cols.getColumn(COL_MARKER).setPreferredWidth(20);
-		});
+		SwingUtilities.invokeLater(this::applyRouteTableColumnLayout);
 		// Copy-to-clipboard: hover only in pass-through mode; double-click always copies.
 		systemTableHoverCopyManager = new SystemTableHoverCopyManager(table, COL_SYSTEM, passThroughEnabledSupplier);
 		systemTableHoverCopyManager.start();
@@ -1095,6 +1105,112 @@ public class RouteTabPanel extends JPanel {
 		viewY = Math.max(0, Math.min(viewY, Math.max(0, tableHeight - viewHeight)));
 		java.awt.Point pos = vp.getViewPosition();
 		vp.setViewPosition(new java.awt.Point(pos.x != 0 ? pos.x : 0, viewY));
+	}
+
+	/**
+	 * Min / max constraints for route columns. Actual pixel widths are assigned in
+	 * {@link #applyRouteTableColumnLayout()} from the scroll viewport width.
+	 */
+	private void configureRouteTableColumnResizePolicy() {
+		if (table == null) {
+			return;
+		}
+		TableColumnModel cm = table.getColumnModel();
+		cm.getColumn(COL_MARKER).setMinWidth(ROUTE_COL_WIDTH_MARKER);
+		cm.getColumn(COL_MARKER).setMaxWidth(ROUTE_COL_WIDTH_MARKER);
+		cm.getColumn(COL_INDEX).setMinWidth(ROUTE_COL_MIN_INDEX);
+		cm.getColumn(COL_SYSTEM).setMinWidth(ROUTE_COL_MIN_SYSTEM);
+		cm.getColumn(COL_CLASS).setMinWidth(routeClassColumnMinWidthPx());
+		cm.getColumn(COL_STATUS).setMinWidth(routeStatusColumnMinWidthPx());
+		cm.getColumn(COL_DISTANCE).setMinWidth(measureRouteDistanceColumnMinWidthPx());
+	}
+
+	private void installRouteTableColumnViewportListener(JViewport viewport) {
+		if (viewport == null) {
+			return;
+		}
+		viewport.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				SwingUtilities.invokeLater(() -> applyRouteTableColumnLayout());
+			}
+		});
+	}
+
+	/**
+	 * Sizes route table columns to the viewport: marker, #, status, and Ly keep at least their minimum widths;
+	 * the Class column may shrink after the System column hits its minimum; extra width goes to System.
+	 */
+	private void applyRouteTableColumnLayout() {
+		if (table == null || routeScrollPane == null) {
+			return;
+		}
+		JViewport viewport = routeScrollPane.getViewport();
+		if (viewport == null) {
+			return;
+		}
+		int avail = viewport.getWidth();
+		if (avail <= 0) {
+			return;
+		}
+		TableColumnModel cm = table.getColumnModel();
+		int wMark = ROUTE_COL_WIDTH_MARKER;
+		int wIdx = Math.max(ROUTE_COL_MIN_INDEX, ROUTE_COL_PREF_INDEX);
+		int wStat = routeStatusColumnMinWidthPx();
+		int wDist = measureRouteDistanceColumnMinWidthPx();
+		int wClassPref = routeClassColumnPreferredWidthPx();
+		int wClassMin = routeClassColumnMinWidthPx();
+		int wClass = wClassPref;
+		int wSys = avail - wMark - wIdx - wClass - wStat - wDist;
+		if (wSys < ROUTE_COL_MIN_SYSTEM) {
+			int deficit = ROUTE_COL_MIN_SYSTEM - wSys;
+			int steal = Math.min(deficit, Math.max(0, wClass - wClassMin));
+			wClass -= steal;
+			wSys = avail - wMark - wIdx - wClass - wStat - wDist;
+		}
+		if (wSys < ROUTE_COL_MIN_SYSTEM) {
+			wSys = ROUTE_COL_MIN_SYSTEM;
+			wClass = avail - wMark - wIdx - wSys - wStat - wDist;
+			if (wClass < wClassMin) {
+				wClass = wClassMin;
+				wSys = avail - wMark - wIdx - wClass - wStat - wDist;
+			}
+		}
+		wSys = Math.max(0, wSys);
+		int total = wMark + wIdx + wSys + wClass + wStat + wDist;
+		if (total < avail) {
+			wSys += avail - total;
+		}
+		setRouteTableColumnPixelWidth(cm.getColumn(COL_MARKER), wMark);
+		setRouteTableColumnPixelWidth(cm.getColumn(COL_INDEX), wIdx);
+		setRouteTableColumnPixelWidth(cm.getColumn(COL_SYSTEM), wSys);
+		setRouteTableColumnPixelWidth(cm.getColumn(COL_CLASS), wClass);
+		setRouteTableColumnPixelWidth(cm.getColumn(COL_STATUS), wStat);
+		setRouteTableColumnPixelWidth(cm.getColumn(COL_DISTANCE), wDist);
+		table.revalidate();
+		table.repaint();
+	}
+
+	private static void setRouteTableColumnPixelWidth(TableColumn col, int w) {
+		col.setPreferredWidth(w);
+		col.setWidth(w);
+	}
+
+	private int routeStatusColumnMinWidthPx() {
+		return Math.max(36, OverlayPreferences.getUiFontSize() + ROUTE_COL_MIN_STATUS_EXTRA);
+	}
+
+	private int measureRouteDistanceColumnMinWidthPx() {
+		if (table == null) {
+			return 72;
+		}
+		FontMetrics fm = table.getFontMetrics(table.getFont());
+		int w = fm.stringWidth("999999.99 Ly") + ROUTE_COL_DISTANCE_PAD;
+		return Math.max(72, w);
+	}
+
+	private static int routeClassColumnMinWidthPx() {
+		return Math.max(30, fuelGaugeIconSizePx() + ROUTE_COL_MIN_CLASS_EXTRA);
 	}
 
 	private static final int VIEWPORT_EDSM_DEBOUNCE_MS = 200;
@@ -2493,11 +2609,8 @@ public class RouteTabPanel extends JPanel {
 			if (table.getTableHeader() != null) {
 				table.getTableHeader().setFont(uiFont.deriveFont(Font.BOLD));
 			}
-			TableColumnModel tcm = table.getColumnModel();
-			if (tcm.getColumnCount() > COL_CLASS) {
-				tcm.getColumn(COL_CLASS).setPreferredWidth(routeClassColumnPreferredWidthPx());
-			}
-			table.revalidate();
+			configureRouteTableColumnResizePolicy();
+			applyRouteTableColumnLayout();
 		}
 		repaint();
 	}
