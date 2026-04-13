@@ -12,7 +12,11 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Insets;
+import java.awt.Point;
 import java.awt.RenderingHints;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +52,7 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.BorderFactory;
+import javax.swing.border.AbstractBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -79,6 +84,7 @@ import org.dce.ed.logreader.event.LocationEvent;
 import org.dce.ed.logreader.event.StatusEvent;
 import org.dce.ed.state.SystemState;
 import org.dce.ed.ui.EdoUi;
+import org.dce.ed.ui.HoverCopyButtonSupport;
 import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.EdoUi.User;
 import org.dce.ed.util.EdsmClient;
@@ -147,6 +153,8 @@ public class RouteTabPanel extends JPanel {
 	private static final int ROUTE_COL_MIN_CLASS_EXTRA = 6;
 	/** Keep current system row at this offset from top when auto-scrolling (e.g. one jump = one row scroll). */
 	private static final int TARGET_CURRENT_ROW_OFFSET = 4;
+	/** Padding above/beside “Copy next destination” under the route table. */
+	private static final int ROUTE_COPY_STRIP_GAP_PX = 12;
 	private final JLabel headerLabel;
 	/** Title strip: route summary (west) + Ly column mode toggles (east). */
 	private final JPanel routeTitleRow;
@@ -154,8 +162,14 @@ public class RouteTabPanel extends JPanel {
 	private final JButton lyModePerLegButton;
 	private boolean lyModeFromCurrentHovered;
 	private boolean lyModePerLegHovered;
-	private JTable table=null;
-	private JScrollPane routeScrollPane;
+	protected JTable table=null;
+	protected JScrollPane routeScrollPane;
+	/** Holds {@link #routeScrollPane} and the copy strip (same structure on Route and Fleet Carrier tabs). */
+	private final JPanel routeCenterWrapper;
+	private final JPanel routeCopyStrip;
+	private final JButton copyNextDestinationButton;
+	private final HoverCopyButtonSupport copyNextDestinationHoverCopySupport;
+	private final Timer copyNextDestinationRefreshTimer;
 	private final RouteTableModel tableModel;
 	private SystemTableHoverCopyManager systemTableHoverCopyManager;
 	private StatusHoverPopupManager statusHoverPopupManager;
@@ -514,6 +528,7 @@ public class RouteTabPanel extends JPanel {
 		table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		configureRouteTableColumnResizePolicy();
 		routeScrollPane = new JScrollPane(table);
+		routeScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		routeScrollPane.setOpaque(false);
 		routeScrollPane.getViewport().setOpaque(false);
 		routeScrollPane.setBorder(null);
@@ -541,8 +556,43 @@ public class RouteTabPanel extends JPanel {
 		}
 		routeScrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
+		routeCenterWrapper = new JPanel(new BorderLayout());
+		routeCenterWrapper.setOpaque(false);
+		routeCenterWrapper.setBackground(EdoUi.Internal.TRANSPARENT);
+
+		routeCopyStrip = new JPanel(new BorderLayout());
+		routeCopyStrip.setOpaque(false);
+		routeCopyStrip.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createMatteBorder(1, 0, 0, 0, EdoUi.ED_ORANGE_TRANS),
+				new EmptyBorder(ROUTE_COPY_STRIP_GAP_PX, 4, 8, 4)));
+
+		copyNextDestinationButton = new JButton("Copy next destination");
+		styleRoutePrimaryCopyButton(copyNextDestinationButton, uiFont);
+		copyNextDestinationButton.setToolTipText("Copy the next route system name to the clipboard (same as Route/Nearby copy)");
+		copyNextDestinationButton.addActionListener(e -> copyNextRouteDestinationToClipboard());
+
+		copyNextDestinationHoverCopySupport = new HoverCopyButtonSupport(copyNextDestinationButton,
+				() -> nextRouteDestinationSystemName(routeSession),
+				passThroughEnabledSupplier);
+
+		routeCenterWrapper.add(routeScrollPane, BorderLayout.CENTER);
+		routeCopyStrip.add(copyNextDestinationButton, BorderLayout.CENTER);
+		routeCenterWrapper.add(routeCopyStrip, BorderLayout.SOUTH);
+
 		add(routeTitleRow, BorderLayout.NORTH);
-		add(routeScrollPane, BorderLayout.CENTER);
+		add(routeCenterWrapper, BorderLayout.CENTER);
+
+		table.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JViewport vpRoute = routeScrollPane.getViewport();
+		if (vpRoute != null) {
+			vpRoute.setViewPosition(new Point(0, 0));
+		}
+
+		copyNextDestinationRefreshTimer = new Timer(1_000, e -> updateCopyNextDestinationButton());
+		copyNextDestinationRefreshTimer.setRepeats(true);
+		copyNextDestinationRefreshTimer.start();
+		updateCopyNextDestinationButton();
+		copyNextDestinationHoverCopySupport.start();
 
 		routeScrollPane.setColumnHeaderView(null);
 		table.setTableHeader(null);
@@ -950,6 +1000,7 @@ public class RouteTabPanel extends JPanel {
 			startEdsmUpdatesForVisibleRows();
 			scrollToKeepCurrentRowAtOffset();
 		});
+		updateCopyNextDestinationButton();
 	}
 
 	/**
@@ -1089,22 +1140,37 @@ public class RouteTabPanel extends JPanel {
 		if (table == null || routeScrollPane == null) {
 			return;
 		}
-		java.awt.Component p = table.getParent();
-		if (!(p instanceof javax.swing.JViewport)) {
+		JViewport vp = null;
+		for (java.awt.Container walk = table.getParent(); walk != null; walk = walk.getParent()) {
+			if (walk instanceof JViewport) {
+				vp = (JViewport) walk;
+				break;
+			}
+		}
+		if (vp == null) {
 			return;
 		}
-		javax.swing.JViewport vp = (javax.swing.JViewport) p;
 		int currentRow = getCurrentSystemRowIndex();
 		if (currentRow < 0) {
 			return;
 		}
 		int rowHeight = table.getRowHeight();
-		int tableHeight = table.getHeight();
+		Component scrollView = vp.getView();
+		int viewTotalH = scrollView != null ? scrollView.getHeight() : table.getHeight();
 		int viewHeight = vp.getExtentSize().height;
-		int viewY = (currentRow - TARGET_CURRENT_ROW_OFFSET) * rowHeight;
-		viewY = Math.max(0, Math.min(viewY, Math.max(0, tableHeight - viewHeight)));
+		int tableYInView = 0;
+		if (scrollView != null) {
+			java.awt.Point tableOrigin = SwingUtilities.convertPoint(table, 0, 0, scrollView);
+			tableYInView = tableOrigin.y;
+		}
+		int viewY = tableYInView + (currentRow - TARGET_CURRENT_ROW_OFFSET) * rowHeight;
+		viewY = Math.max(0, Math.min(viewY, Math.max(0, viewTotalH - viewHeight)));
 		java.awt.Point pos = vp.getViewPosition();
-		vp.setViewPosition(new java.awt.Point(pos.x != 0 ? pos.x : 0, viewY));
+		int extentW = vp.getExtentSize().width;
+		int viewW = scrollView != null ? scrollView.getWidth() : table.getWidth();
+		int maxScrollX = Math.max(0, viewW - extentW);
+		int newX = maxScrollX == 0 ? 0 : Math.min(Math.max(0, pos.x), maxScrollX);
+		vp.setViewPosition(new java.awt.Point(newX, viewY));
 	}
 
 	/**
@@ -1149,7 +1215,8 @@ public class RouteTabPanel extends JPanel {
 		if (viewport == null) {
 			return;
 		}
-		int avail = viewport.getWidth();
+		// Extent width matches the painted viewport area (accounts for vertical scrollbar).
+		int avail = viewport.getExtentSize().width;
 		if (avail <= 0) {
 			return;
 		}
@@ -1180,6 +1247,38 @@ public class RouteTabPanel extends JPanel {
 		int total = wMark + wIdx + wSys + wClass + wStat + wDist;
 		if (total < avail) {
 			wSys += avail - total;
+			total = wMark + wIdx + wSys + wClass + wStat + wDist;
+		}
+		// Never exceed viewport width: with HORIZONTAL_SCROLLBAR_NEVER a wider view leaves a bogus
+		// horizontal origin and empty space on the left.
+		if (total > avail) {
+			int slack = total - avail;
+			int take = Math.min(slack, Math.max(0, wSys - ROUTE_COL_MIN_SYSTEM));
+			wSys -= take;
+			slack -= take;
+			if (slack > 0) {
+				take = Math.min(slack, Math.max(0, wClass - wClassMin));
+				wClass -= take;
+				slack -= take;
+			}
+			if (slack > 0) {
+				take = Math.min(slack, Math.max(0, wIdx - ROUTE_COL_MIN_INDEX));
+				wIdx -= take;
+				slack -= take;
+			}
+			if (slack > 0) {
+				take = Math.min(slack, Math.max(0, wDist - 56));
+				wDist -= take;
+				slack -= take;
+			}
+			if (slack > 0) {
+				take = Math.min(slack, Math.max(0, wStat - 28));
+				wStat -= take;
+				slack -= take;
+			}
+			if (slack > 0) {
+				wSys = Math.max(0, wSys - slack);
+			}
 		}
 		setRouteTableColumnPixelWidth(cm.getColumn(COL_MARKER), wMark);
 		setRouteTableColumnPixelWidth(cm.getColumn(COL_INDEX), wIdx);
@@ -1189,6 +1288,22 @@ public class RouteTabPanel extends JPanel {
 		setRouteTableColumnPixelWidth(cm.getColumn(COL_DISTANCE), wDist);
 		table.revalidate();
 		table.repaint();
+		// Horizontal scrollbar is off: always pin x=0 after layout so we never show a stale offset
+		// (empty band on the left, content clipped on the right).
+		SwingUtilities.invokeLater(() -> {
+			if (routeScrollPane == null) {
+				return;
+			}
+			routeScrollPane.validate();
+			JViewport vp = routeScrollPane.getViewport();
+			if (vp == null) {
+				return;
+			}
+			java.awt.Point p = vp.getViewPosition();
+			if (p.x != 0) {
+				vp.setViewPosition(new java.awt.Point(0, p.y));
+			}
+		});
 	}
 
 	private static void setRouteTableColumnPixelWidth(TableColumn col, int w) {
@@ -2612,8 +2727,84 @@ public class RouteTabPanel extends JPanel {
 			configureRouteTableColumnResizePolicy();
 			applyRouteTableColumnLayout();
 		}
+		if (copyNextDestinationButton != null) {
+			styleRoutePrimaryCopyButton(copyNextDestinationButton, uiFont);
+		}
 		repaint();
 	}
+
+	public void applyOverlayBackground(Color bgWithAlpha, boolean treatAsTransparent) {
+		if (copyNextDestinationButton != null) {
+			copyNextDestinationButton.setForeground(EdoUi.User.MAIN_TEXT);
+		}
+		revalidate();
+		repaint();
+	}
+
+	private void updateCopyNextDestinationButton() {
+		if (copyNextDestinationButton == null) {
+			return;
+		}
+		String next = nextRouteDestinationSystemName(routeSession);
+		copyNextDestinationButton.setEnabled(next != null && !next.isBlank());
+	}
+
+	private void copyNextRouteDestinationToClipboard() {
+		String next = nextRouteDestinationSystemName(routeSession);
+		if (next == null || next.isBlank()) {
+			return;
+		}
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(next), null);
+		Component anchor = copyNextDestinationButton != null ? copyNextDestinationButton : table;
+		SystemTableHoverCopyManager.showCopiedToast((JComponent) anchor, next);
+	}
+
+	private static void styleRoutePrimaryCopyButton(JButton b, Font uiFont) {
+		b.setFocusable(false);
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		b.setFont(uiFont.deriveFont(Font.BOLD));
+		b.setMargin(new Insets(0, 0, 0, 0));
+		b.setContentAreaFilled(false);
+		b.setOpaque(false);
+		b.setBorderPainted(true);
+		b.setBackground(EdoUi.Internal.TRANSPARENT);
+		b.setBorder(BorderFactory.createCompoundBorder(
+				new RoundedLineBorder(EdoUi.User.MAIN_TEXT, 2, 12),
+				new EmptyBorder(8, 18, 8, 18)));
+	}
+
+	private static final class RoundedLineBorder extends AbstractBorder {
+		private static final long serialVersionUID = 1L;
+		private final Color color;
+		private final int thickness;
+		private final int arc;
+
+		RoundedLineBorder(Color color, int thickness, int arc) {
+			this.color = color;
+			this.thickness = Math.max(1, thickness);
+			this.arc = Math.max(2, arc);
+		}
+
+		@Override
+		public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g2.setColor(color);
+				g2.setStroke(new BasicStroke(thickness));
+				int inset = thickness / 2;
+				g2.drawRoundRect(x + inset, y + inset, width - thickness - 1, height - thickness - 1, arc, arc);
+			} finally {
+				g2.dispose();
+			}
+		}
+
+		@Override
+		public Insets getBorderInsets(Component c) {
+			return new Insets(thickness, thickness, thickness, thickness);
+		}
+	}
+
 	private static void applyFontRecursively(Component c, Font font) {
 		if (c == null || font == null) {
 			return;

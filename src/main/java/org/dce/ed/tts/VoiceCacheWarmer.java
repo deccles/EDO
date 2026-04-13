@@ -166,7 +166,7 @@ public final class VoiceCacheWarmer {
 
         Set<String> tokens = new LinkedHashSet<>();
         tokens.addAll(allLetters());
-        tokens.addAll(allNumbers());
+        tokens.addAll(numericComboSpeechTokens());
         tokens.addAll(units);
         tokens.addAll(speciesWords);
         tokens.addAll(commodityWords);
@@ -520,11 +520,32 @@ public final class VoiceCacheWarmer {
         return out;
     }
 
-    private static Set<String> allNumbers() {
+    /**
+     * Building blocks for {@code {n}} combo speech: digits, round tens, hundreds, … plus {@code minus} / {@code zero}.
+     * Integers are spoken as sequences (e.g. 41 → 40 + 1), not one clip per 0…9999.
+     */
+    private static Set<String> numericComboSpeechTokens() {
         Set<String> out = new LinkedHashSet<>();
-        for (int i = 0; i <= 99; i++) {
+        for (int i = 0; i <= 9; i++) {
             out.add(Integer.toString(i));
         }
+        for (int t = 1; t <= 9; t++) {
+            out.add(Integer.toString(t * 10));
+        }
+        for (int h = 1; h <= 9; h++) {
+            out.add(Integer.toString(h * 100));
+        }
+        for (int k = 1; k <= 9; k++) {
+            out.add(Integer.toString(k * 1000));
+        }
+        for (int m = 1; m <= 9; m++) {
+            out.add(Integer.toString(m * 1_000_000));
+        }
+        for (int b = 1; b <= 9; b++) {
+            out.add(Integer.toString(b * 1_000_000_000));
+        }
+        out.add("minus");
+        out.add("zero");
         return out;
     }
 

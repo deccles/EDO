@@ -2,26 +2,28 @@ package org.dce.ed;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.FlowLayout;
+import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Font;
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
+import java.awt.Insets;
 import java.nio.file.Path;
 import java.util.Collections;
-import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
-import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
+import javax.swing.UIManager;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
+import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.Timer;
 
 import org.dce.ed.logreader.EliteEventType;
 import org.dce.ed.logreader.EliteLogEvent;
@@ -34,7 +36,6 @@ import org.dce.ed.session.EdoSessionState;
 import org.dce.ed.session.FleetCarrierSessionData;
 import org.dce.ed.session.FleetCarrierSessionMapper;
 import org.dce.ed.ui.EdoUi;
-import org.dce.ed.ui.SystemTableHoverCopyManager;
 import org.dce.ed.ui.SystemNameAutocomplete;
 import org.dce.ed.util.SpanshClient;
 
@@ -43,7 +44,7 @@ import com.google.gson.JsonParser;
 
 /**
  * Fleet Carrier tab:
- * - Imports a Spansh fleet-carrier route (JSON or CSV export).
+ * - Loads a Spansh fleet-carrier route from JSON/CSV (e.g. file drop) or from the built-in Spansh query.
  * - Reacts to carrier jump scheduling ({@code CarrierJumpRequest}), completion ({@code CarrierJump}),
  *   cancellation ({@code CarrierJumpCancelled}), and {@code CarrierLocation}.
  * - Refreshes the route status column after FSS events (same {@link org.dce.ed.cache.SystemCache} data as
@@ -53,7 +54,7 @@ import com.google.gson.JsonParser;
 public class FleetCarrierTabPanel extends RouteTabPanel {
 	private static final long serialVersionUID = 1L;
 
-	private final String defaultStatusText = "Drop a Spansh file to import";
+	private final String defaultStatusText = "Drag a Spansh route file onto RockHound to import";
 
 	private volatile boolean spanshRouteLoaded = false;
 
@@ -63,28 +64,27 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 	private final JLabel destinationLabel;
 	private final JTextField destinationField;
 	private final JButton calculateButton;
-	private final JButton importButton;
-	private final JButton copyNextDestinationButton;
-	private final Timer copyNextDestinationRefreshTimer;
 
 	public FleetCarrierTabPanel(BooleanSupplier passThroughEnabledSupplier) {
 		super(passThroughEnabledSupplier);
 
-		// This tab title should be obvious even though we reuse RouteTabPanel rendering.
 		setHeaderLabelText("Fleet Carrier: (no data)");
 
 		setOpaque(false);
 		setBackground(EdoUi.Internal.TRANSPARENT);
 
-		bottomBar = new JPanel(new BorderLayout());
+		bottomBar = new JPanel();
+		bottomBar.setLayout(new BoxLayout(bottomBar, BoxLayout.Y_AXIS));
 		bottomBar.setOpaque(false);
 		bottomBar.setBackground(EdoUi.Internal.TRANSPARENT);
+		bottomBar.setBorder(new EmptyBorder(0, 4, 4, 4));
 
 		statusLabel = new JLabel(defaultStatusText, SwingConstants.LEFT);
 		statusLabel.setOpaque(false);
-		statusLabel.setForeground(EdoUi.User.MAIN_TEXT);
+		statusLabel.setForeground(EdoUi.Internal.MAIN_TEXT_ALPHA_180);
+		statusLabel.setFont(spanshDropHintFont());
+
 		Font base = OverlayPreferences.getUiFont();
-		statusLabel.setFont(base);
 
 		destinationLabel = new JLabel("Destination:");
 		destinationLabel.setOpaque(false);
@@ -120,96 +120,42 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		});
 
 		calculateButton = new JButton("Calculate");
-		calculateButton.setFocusable(false);
-		calculateButton.setForeground(EdoUi.User.MAIN_TEXT);
-		calculateButton.setOpaque(!OverlayPreferences.overlayChromeRequestsTransparency());
-		calculateButton.setBackground(EdoUi.Internal.DARK_ALPHA_220);
+		styleFleetSecondaryButton(calculateButton);
 		calculateButton.addActionListener(e -> fetchRouteFromSpansh());
 
-		importButton = new JButton("Import Spansh");
-		importButton.setFocusable(false);
-		importButton.setForeground(EdoUi.User.MAIN_TEXT);
-		importButton.setOpaque(!OverlayPreferences.overlayChromeRequestsTransparency());
-		importButton.setBackground(EdoUi.Internal.DARK_ALPHA_220);
-
-		copyNextDestinationButton = new JButton("Copy next destination");
-		copyNextDestinationButton.setFocusable(false);
-		copyNextDestinationButton.setOpaque(false);
-		copyNextDestinationButton.setForeground(EdoUi.User.MAIN_TEXT);
-		copyNextDestinationButton.setFont(base.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 3));
-		copyNextDestinationButton.setToolTipText("Copy the next route system name to the clipboard (same as Route/Nearby copy)");
-		copyNextDestinationButton.addActionListener(e -> copyNextRouteDestinationToClipboard());
-
-		importButton.addActionListener(e -> {
-			JFileChooser chooser = new JFileChooser();
-			chooser.setDialogTitle("Import Spansh fleet-carrier route (JSON or CSV)");
-			chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-			chooser.setAcceptAllFileFilterUsed(false);
-			chooser.setFileFilter(new FileNameExtensionFilter("JSON or CSV", "json", "csv"));
-
-			java.awt.Window w = SwingUtilities.getWindowAncestor(this);
-			int result = chooser.showOpenDialog(w);
-			if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
-				doImport(chooser.getSelectedFile().toPath());
-			}
-		});
-
-		JPanel statusWrap = new JPanel(new BorderLayout());
-		statusWrap.setOpaque(false);
-		statusWrap.add(statusLabel, BorderLayout.CENTER);
-
-		JPanel bottomEast = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-		bottomEast.setOpaque(false);
-		bottomEast.setBackground(EdoUi.Internal.TRANSPARENT);
-		bottomEast.add(copyNextDestinationButton);
-
-		bottomBar.add(importButton, BorderLayout.WEST);
-		bottomBar.add(statusWrap, BorderLayout.CENTER);
-		bottomBar.add(bottomEast, BorderLayout.EAST);
-
-		JPanel fetchRow = new JPanel(new BorderLayout(8, 0));
+		JPanel fetchRow = new JPanel(new BorderLayout(10, 0));
 		fetchRow.setOpaque(false);
 		fetchRow.setBackground(EdoUi.Internal.TRANSPARENT);
 		fetchRow.add(destinationLabel, BorderLayout.WEST);
 		fetchRow.add(destinationField, BorderLayout.CENTER);
 		fetchRow.add(calculateButton, BorderLayout.EAST);
 
+		bottomBar.add(fetchRow);
+		bottomBar.add(Box.createVerticalStrut(6));
+		statusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		bottomBar.add(statusLabel);
+
 		JPanel southOuter = new JPanel(new BorderLayout());
 		southOuter.setOpaque(false);
 		southOuter.setBackground(EdoUi.Internal.TRANSPARENT);
-		southOuter.add(fetchRow, BorderLayout.NORTH);
+		southOuter.setBorder(new EmptyBorder(8, 0, 0, 0));
 		southOuter.add(bottomBar, BorderLayout.CENTER);
 
 		add(southOuter, BorderLayout.SOUTH);
 		applyOverlayBackground(EdoUi.Internal.TRANSPARENT, OverlayPreferences.overlayChromeRequestsTransparency());
-
-		copyNextDestinationRefreshTimer = new Timer(1_000, e -> updateCopyNextDestinationButton());
-		copyNextDestinationRefreshTimer.setRepeats(true);
-		copyNextDestinationRefreshTimer.start();
-		updateCopyNextDestinationButton();
 	}
 
-	private void updateCopyNextDestinationButton() {
-		String next = RouteTabPanel.nextRouteDestinationSystemName(routeSession);
-		copyNextDestinationButton.setEnabled(next != null && !next.isBlank());
-	}
-
-	private void copyNextRouteDestinationToClipboard() {
-		String next = RouteTabPanel.nextRouteDestinationSystemName(routeSession);
-		if (next == null || next.isBlank()) {
-			return;
-		}
-		StringSelection selection = new StringSelection(next);
-		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
-		SystemTableHoverCopyManager.showCopiedToast(destinationField, next);
-	}
-
-	@Override
-	public void applyUiFont(Font font) {
-		super.applyUiFont(font);
-		if (copyNextDestinationButton != null && font != null) {
-			copyNextDestinationButton.setFont(font.deriveFont(Font.BOLD, OverlayPreferences.getUiFontSize() + 3));
-		}
+	private static void styleFleetSecondaryButton(JButton b) {
+		b.setFocusable(false);
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		b.setMargin(new Insets(5, 12, 5, 12));
+		b.setContentAreaFilled(false);
+		b.setOpaque(false);
+		b.setBorderPainted(true);
+		b.setBackground(EdoUi.Internal.TRANSPARENT);
+		b.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(EdoUi.Internal.MAIN_TEXT_ALPHA_180, 1),
+				new EmptyBorder(2, 4, 2, 4)));
 	}
 
 	private void fetchRouteFromSpansh() {
@@ -277,6 +223,32 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 				});
 			}
 		}, "SpanshFleetCarrierFetch").start();
+	}
+
+	@Override
+	public void applyUiFont(Font font) {
+		super.applyUiFont(font);
+		// Hint line uses the platform / LAF label font, not the overlay UI font (super applies font recursively).
+		if (statusLabel != null) {
+			statusLabel.setFont(spanshDropHintFont());
+		}
+		if (font != null) {
+			if (destinationLabel != null) {
+				destinationLabel.setFont(font);
+			}
+			if (destinationField != null) {
+				destinationField.setFont(font);
+			}
+		}
+	}
+
+	/** Slightly smaller than the default JLabel font so it reads as secondary hint text. */
+	private static Font spanshDropHintFont() {
+		Font lf = UIManager.getFont("Label.font");
+		if (lf == null) {
+			return new Font(Font.DIALOG, Font.PLAIN, 12);
+		}
+		return lf.deriveFont(Math.max(10f, lf.getSize2D() - 1f));
 	}
 
 	@Override
@@ -357,17 +329,6 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		}
 	}
 
-	private void doImport(Path file) {
-		// Import might throw; ensure the UI stays usable.
-		try {
-			importSpanshFleetCarrierRouteFile(Objects.requireNonNull(file, "file"));
-		} catch (Exception ex) {
-			ex.printStackTrace();
-			spanshRouteLoaded = false;
-			statusLabel.setText("Invalid/unsupported Spansh fleet-carrier JSON or CSV");
-		}
-	}
-
 	@Override
 	public void handleLogEvent(EliteLogEvent event) {
 		if (event == null) {
@@ -406,24 +367,17 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 	 * Update button opacity/colors when the overlay transparency changes.
 	 * This keeps the tab consistent with the original Route/System tabs.
 	 */
+	@Override
 	public void applyOverlayBackground(Color bgWithAlpha, boolean treatAsTransparent) {
+		super.applyOverlayBackground(bgWithAlpha, treatAsTransparent);
 		boolean opaque = !treatAsTransparent;
 
-		// Bottom container stays non-opaque; the card panel background does the heavy lifting.
 		bottomBar.setOpaque(false);
 		statusLabel.setOpaque(false);
 		destinationLabel.setOpaque(false);
 
-		// JButton needs explicit opacity so it doesn't look “wrong” in transparent mode.
-		importButton.setOpaque(!opaque ? false : true);
-		importButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
-		importButton.setForeground(EdoUi.User.MAIN_TEXT);
-		calculateButton.setOpaque(!opaque ? false : true);
-		calculateButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
 		calculateButton.setForeground(EdoUi.User.MAIN_TEXT);
-		copyNextDestinationButton.setOpaque(!opaque ? false : true);
-		copyNextDestinationButton.setBackground(opaque ? EdoUi.Internal.GRAY_180 : EdoUi.Internal.DARK_ALPHA_220);
-		copyNextDestinationButton.setForeground(EdoUi.User.MAIN_TEXT);
+
 		destinationField.setOpaque(opaque);
 		if (opaque) {
 			destinationField.setBackground(EdoUi.Internal.GRAY_180);
@@ -434,4 +388,3 @@ public class FleetCarrierTabPanel extends RouteTabPanel {
 		repaint();
 	}
 }
-

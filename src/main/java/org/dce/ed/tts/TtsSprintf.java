@@ -554,22 +554,106 @@ public class TtsSprintf {
         return resolveWhitespaceDelimitedSpeech(value, "unknown material");
     }
 
+    /**
+     * Speaks whole integers as a <strong>small set of numeric clips</strong> Polly reads naturally, e.g.
+     * {@code 41} → {@code "40"} then {@code "1"} (forty + one), not one clip {@code "41"}. Cache keys stay
+     * {@code N|…|MID/END} per chunk. Non-integers fall back to a single spoken string.
+     */
     private static List<String> resolveNumberDefault(String tag, Object value) {
         if (value == null) {
             return List.of("zero");
         }
-
-        if (value instanceof Number) {
-            // For now: speak the number as a single chunk so Polly handles intonation.
-            // Later: you can switch to digit-by-digit, or spell-out rules, etc.
-            return List.of(stripTrailingDotZero(value.toString()));
-        }
-
-        String s = value.toString().trim();
-        if (s.isEmpty()) {
+        String raw = stripTrailingDotZero(value.toString()).trim();
+        if (raw.isEmpty()) {
             return List.of("zero");
         }
-        return List.of(s);
+        if (raw.matches("-?\\d+")) {
+            try {
+                return expandSignedLongToNumericChunks(Long.parseLong(raw));
+            } catch (NumberFormatException e) {
+                return List.of(raw);
+            }
+        }
+        return List.of(raw);
+    }
+
+    private static List<String> expandSignedLongToNumericChunks(long n) {
+        if (n == Long.MIN_VALUE) {
+            return List.of(Long.toString(n));
+        }
+        if (n < 0) {
+            List<String> out = new ArrayList<>();
+            out.add("minus");
+            out.addAll(expandPositiveLongToNumericChunks(Math.abs(n)));
+            return out;
+        }
+        if (n == 0) {
+            return List.of("0");
+        }
+        return expandPositiveLongToNumericChunks(n);
+    }
+
+    /**
+     * Decomposes {@code n &gt; 0} into spoken sub-amounts: tens+ones under 100, then hundreds / thousands / millions /
+     * billions as round blocks plus remainder (e.g. 5341 → 5000, 300, 40, 1).
+     */
+    private static List<String> expandPositiveLongToNumericChunks(long n) {
+        if (n <= 0) {
+            return n == 0 ? List.of("0") : List.of(Long.toString(n));
+        }
+        if (n < 10L) {
+            return List.of(Long.toString(n));
+        }
+        if (n < 100L) {
+            long tens = (n / 10L) * 10L;
+            long ones = n % 10L;
+            if (ones == 0L) {
+                return List.of(Long.toString(n));
+            }
+            return List.of(Long.toString(tens), Long.toString(ones));
+        }
+        if (n < 1000L) {
+            long rem = n % 100L;
+            if (rem == 0L) {
+                return List.of(Long.toString(n));
+            }
+            long hundreds = (n / 100L) * 100L;
+            List<String> out = new ArrayList<>();
+            out.add(Long.toString(hundreds));
+            out.addAll(expandPositiveLongToNumericChunks(rem));
+            return out;
+        }
+        if (n < 1_000_000L) {
+            long rem = n % 1000L;
+            if (rem == 0L) {
+                return List.of(Long.toString(n));
+            }
+            long thousands = (n / 1000L) * 1000L;
+            List<String> out = new ArrayList<>();
+            out.add(Long.toString(thousands));
+            out.addAll(expandPositiveLongToNumericChunks(rem));
+            return out;
+        }
+        if (n < 1_000_000_000L) {
+            long rem = n % 1_000_000L;
+            if (rem == 0L) {
+                return List.of(Long.toString(n));
+            }
+            long millions = (n / 1_000_000L) * 1_000_000L;
+            List<String> out = new ArrayList<>();
+            out.add(Long.toString(millions));
+            out.addAll(expandPositiveLongToNumericChunks(rem));
+            return out;
+        }
+        long rem = n % 1_000_000_000L;
+        if (rem == 0L) {
+            return List.of(Long.toString(n));
+        }
+        long billions = (n / 1_000_000_000L) * 1_000_000_000L;
+        List<String> out = new ArrayList<>();
+        out.add(Long.toString(billions));
+        out.addAll(expandPositiveLongToNumericChunks(rem));
+        return out;
     }
 
     private static List<String> resolveCreditsDefault(String tag, Object value) {

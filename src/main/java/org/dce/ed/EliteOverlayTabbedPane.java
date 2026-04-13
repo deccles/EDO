@@ -1286,6 +1286,9 @@ public class EliteOverlayTabbedPane extends JPanel {
 		applyTabButtonStyle(miningButton);
 		applyTabButtonStyle(fleetCarrierButton);
 
+		if (routeTab != null) {
+			routeTab.applyOverlayBackground(bgWithAlpha, treatAsTransparent);
+		}
 		if (nearbyTab != null) {
 			nearbyTab.applyOverlayBackground(bgWithAlpha);
 		}
